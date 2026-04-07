@@ -2,17 +2,55 @@
  * GitHub Contents API service.
  * Reads and writes app data as JSON files in a user-configured GitHub repository.
  *
- * Each data type is stored as a separate file under the `data/` folder:
- *   members            → data/members.json
- *   matches            → data/matches.json
+ * Matches are stored in per-tournament-day files using the backup format:
+ *   YYYY/YYYY-MM/YYYY-MM-DD.json  (PascalCase fields, metadata wrapper)
+ *
+ * Other data lives in the data/ folder:
  *   active_tournament  → data/active_tournament.json
  *   changelog          → data/changelog.json
  *   doodle_YYYY-MM     → data/doodle_YYYY-MM.json
+ *
+ * Members and theme are local-only and are never synced to GitHub.
  */
 
 import { Store } from '../store.js';
 
 const API_BASE = 'https://api.github.com';
+
+// ─── Field converters (camelCase ↔ backup PascalCase) ────────────────────────
+
+function toBackupMatch(m) {
+  return {
+    Date: m.date,
+    RoundNumber: m.roundNumber,
+    ScoreTeam1: m.scoreTeam1,
+    ScoreTeam2: m.scoreTeam2,
+    Team1Player1Name: m.team1Player1Name,
+    Team1Player2Name: m.team1Player2Name,
+    Team2Player1Name: m.team2Player1Name,
+    Team2Player2Name: m.team2Player2Name,
+  };
+}
+
+function fromBackupMatch(m) {
+  return {
+    date: m.Date,
+    roundNumber: m.RoundNumber,
+    scoreTeam1: m.ScoreTeam1,
+    scoreTeam2: m.ScoreTeam2,
+    team1Player1Name: m.Team1Player1Name,
+    team1Player2Name: m.Team1Player2Name,
+    team2Player1Name: m.Team2Player1Name,
+    team2Player2Name: m.Team2Player2Name,
+  };
+}
+
+/** Maps a date string ('YYYY-MM-DD') to its repo file path. */
+function datePath(date) {
+  const year = date.slice(0, 4);
+  const month = date.slice(0, 7);
+  return `${year}/${month}/${date}.json`;
+}
 
 /** Returns the configured GitHub credentials or null if not set. */
 function getConfig() {
@@ -31,8 +69,8 @@ function authHeaders(pat) {
 /** Map a Store key to a GitHub file path (returns null if the key should not be synced). */
 export function keyToPath(key) {
   if (!key) return null;
-  // Skip config/theme/user-preference keys
-  if (['github_config', 'theme', 'current_user'].includes(key)) return null;
+  // matches are written per-date; members/theme/user-prefs are local-only
+  if (['github_config', 'theme', 'current_user', 'matches', 'members'].includes(key)) return null;
   return `data/${key}.json`;
 }
 
@@ -53,6 +91,23 @@ export async function readFile(path) {
   const json = await res.json();
   const content = JSON.parse(atob(json.content.replace(/\n/g, '')));
   return { content, sha: json.sha };
+}
+
+/**
+ * List the contents of a directory in the repo.
+ * Returns an array of GitHub content objects, or [] if the path doesn't exist.
+ */
+async function listContents(path) {
+  const cfg = getConfig();
+  if (!cfg?.owner || !cfg?.repo || !cfg?.pat) return [];
+
+  const url = `${API_BASE}/repos/${encodeURIComponent(cfg.owner)}/${encodeURIComponent(cfg.repo)}/contents/${path}`;
+  const res = await fetch(url, { headers: authHeaders(cfg.pat) });
+
+  if (res.status === 404) return [];
+  if (!res.ok) throw new Error(`GitHub list failed (${res.status}): ${path}`);
+
+  return res.json();
 }
 
 /**
@@ -111,54 +166,119 @@ export async function testConnection() {
 
 /**
  * Push all local Store data to GitHub.
- * For each synced key, reads the current SHA then writes the local value.
- * @param {function} [onProgress] - called with (key, total, index) for each file written
+ *
+ * Matches are written as per-tournament-day files: YYYY/YYYY-MM/YYYY-MM-DD.json
+ * (PascalCase fields, backup metadata wrapper).
+ *
+ * Other synced keys (doodle, changelog, active_tournament) are written to data/.
+ *
+ * @param {function} [onProgress] - called with (label, total, index) for each file written
  */
 export async function pushAll(onProgress) {
   const data = Store.exportAll();
+
+  // 1. Push non-matches data (doodle, changelog, active_tournament, …)
   const entries = Object.entries(data).filter(([k]) => keyToPath(k));
+  let total = entries.length;
   let i = 0;
   for (const [key, value] of entries) {
     const path = keyToPath(key);
-    // Get current SHA (if file already exists)
     let sha;
-    try {
-      const existing = await readFile(path);
-      sha = existing?.sha;
-    } catch {
-      sha = undefined;
-    }
+    try { const existing = await readFile(path); sha = existing?.sha; } catch { sha = undefined; }
     await writeFile(path, value, sha);
-    onProgress?.(key, entries.length, ++i);
+    onProgress?.(key, total, ++i);
+  }
+
+  // 2. Push matches as per-date files
+  const matches = data.matches || [];
+  const byDate = {};
+  for (const m of matches) {
+    if (!m.date) continue;
+    if (!byDate[m.date]) byDate[m.date] = [];
+    byDate[m.date].push(m);
+  }
+
+  const dateEntries = Object.entries(byDate);
+  total = dateEntries.length;
+  i = 0;
+  for (const [date, dateMatches] of dateEntries) {
+    const path = datePath(date);
+    const backupData = {
+      backup_timestamp: new Date().toISOString(),
+      match_date: date,
+      match_count: dateMatches.length,
+      matches: dateMatches.map(toBackupMatch),
+    };
+    let sha;
+    try { const existing = await readFile(path); sha = existing?.sha; } catch { sha = undefined; }
+    await writeFile(path, backupData, sha);
+    onProgress?.(date, dateEntries.length, ++i);
   }
 }
 
 /**
  * Pull all data from GitHub into local Store.
- * Only overwrites keys that exist in the repo.
- * @param {function} [onProgress] - called with (key, total, index)
+ *
+ * Matches are read from the hierarchical YYYY/YYYY-MM/YYYY-MM-DD.json structure
+ * and aggregated into a flat camelCase array.
+ *
+ * Other data (doodle, changelog, active_tournament) is read from data/.
+ *
+ * @param {function} [onProgress] - called with (label, total, index)
  */
 export async function pullAll(onProgress) {
   const cfg = getConfig();
   if (!cfg?.owner || !cfg?.repo || !cfg?.pat) throw new Error('GitHub not configured');
 
-  // List files in data/ folder
-  const url = `${API_BASE}/repos/${encodeURIComponent(cfg.owner)}/${encodeURIComponent(cfg.repo)}/contents/data`;
-  const res = await fetch(url, { headers: authHeaders(cfg.pat) });
-  if (res.status === 404) return; // No data folder yet
-  if (!res.ok) throw new Error(`GitHub list failed (${res.status})`);
+  _isPulling = true;
+  try {
+    // ── 1. Pull matches from YYYY/YYYY-MM/YYYY-MM-DD.json ──────────────────
+    const rootContents = await listContents('');
+    const yearDirs = rootContents.filter(f => f.type === 'dir' && /^\d{4}$/.test(f.name));
 
-  const files = await res.json();
-  const jsonFiles = files.filter(f => f.name.endsWith('.json'));
-  let i = 0;
-  for (const file of jsonFiles) {
-    const key = file.name.replace(/\.json$/, '');
-    if (keyToPath(key) === null) continue; // skip config keys
-    const result = await readFile(`data/${file.name}`);
-    if (result !== null) {
-      Store.set(key, result.content);
+    // Collect all day-file paths across all year/month dirs
+    const dayFilePaths = [];
+    for (const yearDir of yearDirs) {
+      const monthContents = await listContents(yearDir.path);
+      const monthDirs = monthContents.filter(f => f.type === 'dir' && /^\d{4}-\d{2}$/.test(f.name));
+      for (const monthDir of monthDirs) {
+        const dayContents = await listContents(monthDir.path);
+        const dayFiles = dayContents.filter(
+          f => f.type === 'file' && /^\d{4}-\d{2}-\d{2}\.json$/.test(f.name)
+        );
+        dayFilePaths.push(...dayFiles.map(f => f.path));
+      }
     }
-    onProgress?.(key, jsonFiles.length, ++i);
+
+    const allMatches = [];
+    for (let idx = 0; idx < dayFilePaths.length; idx++) {
+      const path = dayFilePaths[idx];
+      const result = await readFile(path);
+      if (result?.content?.matches) {
+        for (const m of result.content.matches) {
+          allMatches.push(fromBackupMatch(m));
+        }
+      }
+      onProgress?.(path, dayFilePaths.length, idx + 1);
+    }
+
+    // Write directly to localStorage to avoid triggering auto-push
+    localStorage.setItem('mexicano_matches', JSON.stringify(allMatches));
+
+    // ── 2. Pull data/ files (doodle, changelog, active_tournament) ─────────
+    const dataFiles = await listContents('data');
+    const jsonFiles = dataFiles.filter(f => f.type === 'file' && f.name.endsWith('.json'));
+    for (const file of jsonFiles) {
+      const key = file.name.replace(/\.json$/, '');
+      if (keyToPath(key) === null) continue;
+      const result = await readFile(`data/${file.name}`);
+      if (result !== null) {
+        // Write directly to localStorage to avoid triggering auto-push
+        localStorage.setItem(`mexicano_${key}`, JSON.stringify(result.content));
+      }
+    }
+  } finally {
+    _isPulling = false;
   }
 }
 
@@ -166,6 +286,7 @@ export async function pullAll(onProgress) {
 
 let _syncTimer = null;
 let _syncStatus = 'idle'; // idle | syncing | success | error
+let _isPulling = false;   // suppresses auto-push during pullAll
 const _listeners = new Set();
 
 export function onSyncStatus(fn) {
@@ -185,10 +306,13 @@ export function getSyncStatus() {
 /**
  * Schedule a debounced auto-push.
  * Called by Store.set() when GitHub is configured.
+ * Handles both regular data keys and the special 'matches' key.
  */
 export function schedulePush(key) {
+  if (_isPulling) return;
   if (!getConfig()?.pat) return;
-  if (keyToPath(key) === null) return;
+  // Allow matches through even though keyToPath returns null for it
+  if (keyToPath(key) === null && key !== 'matches') return;
 
   clearTimeout(_syncTimer);
   _syncTimer = setTimeout(async () => {
