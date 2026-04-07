@@ -1,0 +1,542 @@
+/* ─── Bottom Navigation ─── */
+.bottom-nav {
+  position: fixed;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 100%;
+  max-width: var(--max-width);
+  background: var(--bg-nav);
+  border-top: 1px solid var(--border);
+  display: flex;
+  justify-content: space-around;
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  z-index: 100;
+  box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.05);
+}
+
+.nav-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-sm) var(--space-xs);
+  min-height: var(--nav-height);
+  flex: 1;
+  color: var(--text-tertiary);
+  font-size: var(--font-size-xs);
+  transition: color var(--transition-fast);
+  gap: 2px;
+  text-decoration: none;
+}
+
+.nav-item.active {
+  color: var(--color-primary);
+}
+
+.nav-item-icon {
+  font-size: 1.25rem;
+  line-height: 1;
+}
+
+/* ─── Home Page ─── */
+.home-hero {
+  text-align: center;
+  padding: var(--space-lg) 0;
+}
+
+.home-hero h2 {
+  font-size: var(--font-size-2xl);
+  font-weight: var(--font-weight-bold);
+}
+
+.home-quick-stats {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--space-sm);
+  margin: var(--space-md) 0;
+}
+
+.quick-stat-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: var(--space-md);
+  text-align: center;
+}
+
+/* ─── Tournament List ─── */
+.tournament-list-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-md);
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  margin-bottom: var(--space-sm);
+  cursor: pointer;
+  transition: box-shadow var(--transition-fast);
+}
+
+.tournament-list-item:hover {
+  box-shadow: var(--shadow-md);
+}
+
+.tournament-list-date {
+  font-weight: var(--font-weight-semibold);
+}
+
+.tournament-list-meta {
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+}
+
+/* ─── Create Tournament ─── */
+.player-count-selector {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--space-sm);
+  margin: var(--space-md) 0;
+}
+
+.player-count-option {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-md);
+  background: var(--bg-input);
+  border: 2px solid var(--border);
+  border-radius: var(--radius-md);
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-bold);
+  min-height: var(--tap-target);
+  transition: all var(--transition-fast);
+}
+
+.player-count-option.selected {
+  border-color: var(--color-primary);
+  background: var(--color-primary-light);
+  color: var(--color-primary);
+}
+
+.player-slots {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  margin: var(--space-md) 0;
+}
+
+.player-slot {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.player-slot-number {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--bg-input);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-bold);
+  color: var(--text-secondary);
+  flex-shrink: 0;
+}
+
+.player-slot input {
+  flex: 1;
+}
+
+/* ─── Tournament View ─── */
+.round-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-md);
+}
+
+.round-title {
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-semibold);
+}
+
+.round-progress {
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+}
+
+.match-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: var(--space-md);
+  margin-bottom: var(--space-sm);
+  cursor: pointer;
+  transition: box-shadow var(--transition-fast);
+}
+
+.match-card:hover {
+  box-shadow: var(--shadow-md);
+}
+
+.match-card.completed {
+  border-left: 3px solid var(--color-success);
+}
+
+.match-teams {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.match-team {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.match-team-name {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+}
+
+.match-vs {
+  font-size: var(--font-size-xs);
+  color: var(--text-tertiary);
+  font-weight: var(--font-weight-bold);
+  padding: 0 var(--space-sm);
+}
+
+.match-score {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  margin-top: var(--space-sm);
+  justify-content: center;
+}
+
+.match-score-value {
+  font-size: var(--font-size-xl);
+  font-weight: var(--font-weight-bold);
+  width: 40px;
+  text-align: center;
+}
+
+.match-score-separator {
+  color: var(--text-tertiary);
+}
+
+.match-court {
+  font-size: var(--font-size-xs);
+  color: var(--text-tertiary);
+  margin-top: var(--space-xs);
+}
+
+/* ─── Score Input Sheet ─── */
+.score-input-header {
+  text-align: center;
+  margin-bottom: var(--space-lg);
+}
+
+.score-input-teams {
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+}
+
+.score-input-fields {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-md);
+  margin: var(--space-lg) 0;
+}
+
+.score-input-field {
+  width: 80px;
+  height: 64px;
+  text-align: center;
+  font-size: var(--font-size-2xl);
+  font-weight: var(--font-weight-bold);
+  border-radius: var(--radius-md);
+}
+
+.score-presets {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--space-sm);
+  margin: var(--space-md) 0;
+}
+
+.score-preset {
+  padding: var(--space-sm);
+  text-align: center;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  background: var(--bg-input);
+  min-height: var(--tap-target);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.score-preset:hover {
+  border-color: var(--color-primary);
+  background: var(--color-primary-light);
+}
+
+.score-actions {
+  display: flex;
+  gap: var(--space-sm);
+  margin-top: var(--space-lg);
+}
+
+/* ─── Leaderboard ─── */
+.leaderboard-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  padding: var(--space-sm) 0;
+  border-bottom: 1px solid var(--border-light);
+}
+
+.leaderboard-rank {
+  width: 28px;
+  font-weight: var(--font-weight-bold);
+  color: var(--text-secondary);
+  text-align: center;
+  flex-shrink: 0;
+}
+
+.leaderboard-rank.gold { color: #f59e0b; }
+.leaderboard-rank.silver { color: #94a3b8; }
+.leaderboard-rank.bronze { color: #d97706; }
+
+.leaderboard-name {
+  flex: 1;
+  font-weight: var(--font-weight-medium);
+}
+
+.leaderboard-value {
+  font-weight: var(--font-weight-semibold);
+  font-variant-numeric: tabular-nums;
+}
+
+.leaderboard-sub {
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
+}
+
+/* ─── Doodle Calendar Matrix ─── */
+.doodle-matrix {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.doodle-table {
+  border-collapse: collapse;
+  min-width: 100%;
+}
+
+.doodle-table th,
+.doodle-table td {
+  padding: var(--space-xs) var(--space-sm);
+  text-align: center;
+  font-size: var(--font-size-xs);
+  border: 1px solid var(--border);
+  min-width: 44px;
+}
+
+.doodle-table th {
+  background: var(--bg-secondary);
+  font-weight: var(--font-weight-semibold);
+  position: sticky;
+  top: 0;
+}
+
+.doodle-table .player-col {
+  text-align: left;
+  position: sticky;
+  left: 0;
+  background: var(--bg-card);
+  z-index: 1;
+  font-weight: var(--font-weight-medium);
+  min-width: 80px;
+}
+
+.doodle-cell {
+  cursor: pointer;
+  min-height: var(--tap-target);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.doodle-cell.selected {
+  background: var(--color-success-light);
+  color: var(--color-success);
+}
+
+.doodle-cell.readonly {
+  cursor: default;
+}
+
+.doodle-total-row td {
+  font-weight: var(--font-weight-bold);
+  background: var(--bg-secondary);
+}
+
+.doodle-best {
+  background: var(--color-success-light) !important;
+}
+
+/* ─── Attendance Calendar ─── */
+.attendance-calendar {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 2px;
+}
+
+.attendance-day {
+  aspect-ratio: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm);
+  font-size: var(--font-size-xs);
+  background: var(--bg-card);
+  border: 1px solid var(--border-light);
+}
+
+.attendance-day.has-tournament {
+  background: var(--color-primary-light);
+  border-color: var(--color-primary);
+}
+
+.attendance-day-number {
+  font-weight: var(--font-weight-bold);
+}
+
+.attendance-day-count {
+  font-size: 0.625rem;
+  color: var(--text-secondary);
+}
+
+/* ─── Statistics Page ─── */
+.stats-filter-bar {
+  display: flex;
+  gap: var(--space-sm);
+  margin-bottom: var(--space-md);
+  overflow-x: auto;
+  padding-bottom: var(--space-xs);
+}
+
+/* ─── ELO Charts ─── */
+.chart-container {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: var(--space-md);
+  margin-bottom: var(--space-md);
+}
+
+.chart-canvas {
+  width: 100%;
+  height: 250px;
+}
+
+/* ─── Settings ─── */
+.settings-section {
+  margin-bottom: var(--space-xl);
+}
+
+.settings-section-title {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: var(--space-md);
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+}
+
+.github-sync-icon {
+  font-size: 0.9rem;
+  line-height: 1;
+  cursor: default;
+  user-select: none;
+}
+
+.member-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-sm) 0;
+  border-bottom: 1px solid var(--border-light);
+}
+
+.member-name {
+  font-weight: var(--font-weight-medium);
+}
+
+/* ─── FAB (Floating Action Button) ─── */
+.fab {
+  position: fixed;
+  bottom: calc(var(--nav-height) + var(--space-md));
+  right: calc(50% - var(--max-width) / 2 + var(--space-md));
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: var(--color-primary);
+  color: var(--text-on-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.5rem;
+  box-shadow: var(--shadow-lg);
+  z-index: 50;
+  cursor: pointer;
+  transition: transform var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.fab:hover {
+  transform: scale(1.05);
+  box-shadow: var(--shadow-lg);
+}
+
+@media (max-width: 480px) {
+  .fab {
+    right: var(--space-md);
+  }
+}
+
+/* ─── User Selector ─── */
+.user-selector {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.user-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--color-primary-light);
+  color: var(--color-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: var(--font-weight-bold);
+  font-size: var(--font-size-sm);
+}
