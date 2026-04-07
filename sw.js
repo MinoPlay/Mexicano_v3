@@ -1,39 +1,39 @@
-const CACHE_NAME = 'mexicano-v1';
+const CACHE_NAME = 'mexicano-v20260407145443';
 const ASSETS = [
-  '/',
-  '/index.html',
-  '/manifest.json',
-  '/css/variables.css',
-  '/css/base.css',
-  '/css/components.css',
-  '/css/pages.css',
-  '/js/app.js',
-  '/js/router.js',
-  '/js/store.js',
-  '/js/state.js',
-  '/js/services/tournament.js',
-  '/js/services/elo.js',
-  '/js/services/statistics.js',
-  '/js/services/ranking.js',
-  '/js/services/attendance.js',
-  '/js/services/doodle.js',
-  '/js/services/members.js',
-  '/js/components/nav.js',
-  '/js/components/match-card.js',
-  '/js/components/score-input.js',
-  '/js/components/player-profile.js',
-  '/js/components/leaderboard.js',
-  '/js/components/chart.js',
-  '/js/components/theme-toggle.js',
-  '/js/pages/home.js',
-  '/js/pages/tournaments.js',
-  '/js/pages/tournament.js',
-  '/js/pages/create-tournament.js',
-  '/js/pages/statistics.js',
-  '/js/pages/elo-charts.js',
-  '/js/pages/attendance.js',
-  '/js/pages/doodle.js',
-  '/js/pages/settings.js'
+  './',
+  './index.html',
+  './manifest.json',
+  './css/variables.css',
+  './css/base.css',
+  './css/components.css',
+  './css/pages.css',
+  './js/app.js',
+  './js/router.js',
+  './js/store.js',
+  './js/state.js',
+  './js/services/tournament.js',
+  './js/services/elo.js',
+  './js/services/statistics.js',
+  './js/services/ranking.js',
+  './js/services/attendance.js',
+  './js/services/doodle.js',
+  './js/services/members.js',
+  './js/components/nav.js',
+  './js/components/match-card.js',
+  './js/components/score-input.js',
+  './js/components/player-profile.js',
+  './js/components/leaderboard.js',
+  './js/components/chart.js',
+  './js/components/theme-toggle.js',
+  './js/pages/home.js',
+  './js/pages/tournaments.js',
+  './js/pages/tournament.js',
+  './js/pages/create-tournament.js',
+  './js/pages/statistics.js',
+  './js/pages/elo-charts.js',
+  './js/pages/attendance.js',
+  './js/pages/doodle.js',
+  './js/pages/settings.js'
 ];
 
 self.addEventListener('install', (event) => {
@@ -58,6 +58,6 @@ self.addEventListener('fetch', (event) => {
   event.respondWith(
     caches.match(event.request)
       .then(cached => cached || fetch(event.request))
-      .catch(() => caches.match('/index.html'))
+      .catch(() => caches.match('./index.html'))
   );
 });
