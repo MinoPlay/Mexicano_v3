@@ -45,11 +45,19 @@ function fromBackupMatch(m) {
   };
 }
 
-/** Maps a date string ('YYYY-MM-DD') to its repo file path. */
+/** Maps a date string ('YYYY-MM-DD') to its repo file path, under the configured base path. */
 function datePath(date) {
   const year = date.slice(0, 4);
   const month = date.slice(0, 7);
-  return `${year}/${month}/${date}.json`;
+  const base = getConfig()?.basePath?.trim().replace(/\/$/, '') || '';
+  const prefix = base ? `${base}/` : '';
+  return `${prefix}${year}/${month}/${date}.json`;
+}
+
+/** Returns the base path for tournament files, without a trailing slash. */
+function matchesBase() {
+  const base = getConfig()?.basePath?.trim().replace(/\/$/, '') || '';
+  return base;
 }
 
 /** Returns the configured GitHub credentials or null if not set. */
@@ -233,7 +241,8 @@ export async function pullAll(onProgress) {
   _isPulling = true;
   try {
     // ── 1. Pull matches from YYYY/YYYY-MM/YYYY-MM-DD.json ──────────────────
-    const rootContents = await listContents('');
+    const base = matchesBase();
+    const rootContents = await listContents(base);
     const yearDirs = rootContents.filter(f => f.type === 'dir' && /^\d{4}$/.test(f.name));
 
     // Collect all day-file paths across all year/month dirs
