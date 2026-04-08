@@ -1,5 +1,5 @@
 import { createTournament, startTournament, getActiveTournament, loadTournamentByDate } from '../services/tournament.js';
-import { getMembers } from '../services/members.js';
+import { getRecentMembers } from '../services/members.js';
 import { showToast } from '../components/toast.js';
 
 const PLAYER_COUNTS = [4, 8, 12, 16];
@@ -55,7 +55,7 @@ export function renderCreateTournament(container) {
   const datalist = container.querySelector('#member-suggestions');
 
   // Populate member suggestions
-  const members = getMembers();
+  const members = getRecentMembers();
   datalist.innerHTML = members.map(m => `<option value="${m}">`).join('');
 
   // Player count selection
