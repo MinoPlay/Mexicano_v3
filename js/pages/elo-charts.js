@@ -1,5 +1,6 @@
 import { getEloHistoryAllTime, getEloHistoryForLatestTournament } from '../services/elo.js';
 import { Store } from '../store.js';
+import { getMembers } from '../services/members.js';
 
 // ─── Color Generator ───
 
@@ -208,6 +209,19 @@ function renderLegend(container, datasets) {
   container.appendChild(legend);
 }
 
+// ─── Filter history to Members list ───
+
+function filterHistoryToMembers(history) {
+  const members = getMembers();
+  if (!members.length || !history.players) return;
+  const memberSet = new Set(members.map(m => m.toLowerCase()));
+  for (const name of Object.keys(history.players)) {
+    if (!memberSet.has(name.toLowerCase())) {
+      delete history.players[name];
+    }
+  }
+}
+
 // ─── Build datasets from ELO history ───
 
 function buildAllTimeDatasets(history) {
@@ -309,9 +323,11 @@ export function renderEloCharts(container, params = {}) {
     let chartData;
     if (activeTab === 'all-time') {
       const history = getEloHistoryAllTime(allMatches);
+      filterHistoryToMembers(history);
       chartData = buildAllTimeDatasets(history);
     } else {
       const history = getEloHistoryForLatestTournament(allMatches);
+      filterHistoryToMembers(history);
       chartData = buildTournamentDatasets(history);
     }
 

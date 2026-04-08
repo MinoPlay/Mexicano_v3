@@ -1,5 +1,6 @@
 import { calculatePlayerStatistics, calculateOpponentStats, calculatePartnershipStats, generatePlayerSummary } from '../services/statistics.js';
 import { Store } from '../store.js';
+import { getMembers } from '../services/members.js';
 
 // ─── Helpers ───
 
@@ -350,14 +351,19 @@ export function renderStatistics(container, params = {}) {
     }
 
     const stats = calculatePlayerStatistics(matches);
+    const members = getMembers();
+    const memberSet = new Set(members.map(m => m.toLowerCase()));
+    const filteredStats = memberSet.size > 0
+      ? stats.filter(s => memberSet.has(s.name.toLowerCase()))
+      : stats;
     tableContainer.innerHTML = '';
 
-    if (!stats.length) {
+    if (!filteredStats.length) {
       tableContainer.innerHTML = '<p class="text-secondary text-center mt-lg">No data for this filter</p>';
       return;
     }
 
-    renderSortableTable(tableContainer, stats, name => showPlayerProfile(name, matches));
+    renderSortableTable(tableContainer, filteredStats, name => showPlayerProfile(name, matches));
   }
 
   renderFilterBar();

@@ -1,6 +1,7 @@
 import { getDoodle, saveDoodle, deleteDoodle, getChangelog, getAllDatesInMonth } from '../services/doodle.js';
 import { Store } from '../store.js';
 import { showToast } from '../components/toast.js';
+import { getMembers } from '../services/members.js';
 
 // ─── Helpers ───
 
@@ -95,12 +96,10 @@ export function renderDoodle(container, params = {}) {
       return;
     }
 
-    // Collect all players
-    const playerSet = new Set();
-    if (doodleData) {
-      doodleData.forEach(entry => playerSet.add(entry.name));
-    }
-    if (!playerSet.has(currentUser)) playerSet.add(currentUser);
+    // Collect players: use Members list as source of truth
+    const members = getMembers();
+    const playerSet = new Set(members.length > 0 ? members : []);
+    if (currentUser && !playerSet.has(currentUser)) playerSet.add(currentUser);
     const players = [...playerSet].sort((a, b) => a.localeCompare(b));
 
     // Build lookup: player → Set of selected dates

@@ -3,6 +3,7 @@ import { State } from '../state.js';
 import { renderThemeToggle } from '../components/theme-toggle.js';
 import { calculateAllEloRankings } from '../services/elo.js';
 import { getAllTournamentDates, getActiveTournament } from '../services/tournament.js';
+import { getMembers } from '../services/members.js';
 
 function formatDate(dateStr) {
   try {
@@ -36,7 +37,12 @@ export function renderHome(container, params) {
     ? formatDate(tournamentDates[0])
     : '—';
 
-  const top10 = rankings.slice(0, 10);
+  const members = getMembers();
+  const memberSet = new Set(members.map(m => m.toLowerCase()));
+  const filteredRankings = memberSet.size > 0
+    ? rankings.filter(p => memberSet.has(p.name.toLowerCase()))
+    : rankings;
+  const top10 = filteredRankings.slice(0, 10);
 
   container.innerHTML = `
     <header class="page-header">
