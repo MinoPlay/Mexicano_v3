@@ -56,7 +56,7 @@ export function renderCreateTournament(container) {
 
   // Populate member suggestions
   const members = getMembers();
-  datalist.innerHTML = members.map(m => `<option value="${m.name}">`).join('');
+  datalist.innerHTML = members.map(m => `<option value="${m}">`).join('');
 
   // Player count selection
   countSelector.addEventListener('click', (e) => {
