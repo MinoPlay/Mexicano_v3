@@ -97,7 +97,8 @@ export async function readFile(path) {
   if (!res.ok) throw new Error(`GitHub read failed (${res.status}): ${path}`);
 
   const json = await res.json();
-  const content = JSON.parse(atob(json.content.replace(/\n/g, '')));
+  const bytes = Uint8Array.from(atob(json.content.replace(/\n/g, '')), c => c.charCodeAt(0));
+  const content = JSON.parse(new TextDecoder().decode(bytes));
   return { content, sha: json.sha };
 }
 
