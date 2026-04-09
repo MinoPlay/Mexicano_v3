@@ -1,6 +1,5 @@
 import { calculatePlayerStatistics, calculateOpponentStats, calculatePartnershipStats, generatePlayerSummary } from '../services/statistics.js';
 import { Store } from '../store.js';
-import { getMembers } from '../services/members.js';
 
 // ─── Helpers ───
 
@@ -480,17 +479,11 @@ export function renderStatistics(container, params = {}) {
     }
   }
 
-  function applyMemberFilter(stats) {
-    const members = getMembers();
-    const memberSet = new Set(members.map(m => m.toLowerCase()));
-    return memberSet.size > 0 ? stats.filter(s => memberSet.has(s.name.toLowerCase())) : stats;
-  }
-
   function renderTable() {
     // "All Time" — prefer aggregated overviews
     if (activeFilter === 'all') {
       if (hasSummaryData) {
-        const stats = applyMemberFilter(aggregateOverviews());
+        const stats = aggregateOverviews();
         tableContainer.innerHTML = '';
         if (!stats.length) {
           tableContainer.innerHTML = '<p class="text-secondary text-center mt-lg">No data for this filter</p>';
@@ -498,7 +491,7 @@ export function renderStatistics(container, params = {}) {
         }
         renderSortableTable(tableContainer, stats, null, OVERVIEW_COLUMNS);
       } else {
-        const stats = applyMemberFilter(calculatePlayerStatistics(allMatches));
+        const stats = calculatePlayerStatistics(allMatches);
         tableContainer.innerHTML = '';
         if (!stats.length) {
           tableContainer.innerHTML = '<p class="text-secondary text-center mt-lg">No data for this filter</p>';
@@ -512,7 +505,7 @@ export function renderStatistics(container, params = {}) {
     // Monthly overview
     if (/^\d{4}-\d{2}$/.test(activeFilter)) {
       const overview = Store.getMonthlyOverview(activeFilter);
-      const stats = applyMemberFilter(overviewToStats(overview));
+      const stats = overviewToStats(overview);
       tableContainer.innerHTML = '';
       if (!stats.length) {
         tableContainer.innerHTML = '<p class="text-secondary text-center mt-lg">No data for this month</p>';
@@ -556,7 +549,7 @@ export function renderStatistics(container, params = {}) {
   }
 
   function renderDayStats(matches) {
-    const stats = applyMemberFilter(calculatePlayerStatistics(matches));
+    const stats = calculatePlayerStatistics(matches);
     tableContainer.innerHTML = '';
     if (!stats.length) {
       tableContainer.innerHTML = '<p class="text-secondary text-center mt-lg">No data for this filter</p>';
