@@ -12,6 +12,8 @@ function formatDate(dateStr) {
 
 function getTournamentInfo(matches, date) {
   const dateMatches = matches.filter(m => m.date === date);
+  if (dateMatches.length === 0) return null;
+
   const players = new Set();
   const rounds = new Set();
   let completed = 0;
@@ -56,18 +58,20 @@ export function renderTournaments(container, params) {
         <div id="tournament-list">
           ${sorted.map(date => {
             const info = getTournamentInfo(matches, date);
-            const statusBadge = info.isComplete
-              ? '<span class="badge badge-success">Complete</span>'
-              : info.completedCount > 0
-                ? `<span class="badge badge-warning">${info.completedCount}/${info.matchCount}</span>`
-                : '<span class="badge badge-primary">Pending</span>';
+            const statusBadge = info
+              ? (info.isComplete
+                ? '<span class="badge badge-success">Complete</span>'
+                : info.completedCount > 0
+                  ? `<span class="badge badge-warning">${info.completedCount}/${info.matchCount}</span>`
+                  : '<span class="badge badge-primary">Pending</span>')
+              : '';
 
             return `
               <div class="tournament-list-item" data-date="${date}">
                 <div>
                   <div class="tournament-list-date">${formatDate(date)}</div>
                   <div class="tournament-list-meta">
-                    ${info.playerCount} players · ${info.roundCount} round${info.roundCount !== 1 ? 's' : ''}
+                    ${info ? `${info.playerCount} players · ${info.roundCount} round${info.roundCount !== 1 ? 's' : ''}` : ''}
                   </div>
                 </div>
                 <div>${statusBadge}</div>

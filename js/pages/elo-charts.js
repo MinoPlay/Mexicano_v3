@@ -281,8 +281,34 @@ export function renderEloCharts(container, params = {}) {
   content.className = 'page-content';
   container.appendChild(content);
 
-  const allMatches = Store.getMatches();
+  let allMatches = Store.getMatches();
+  let _chartCleanup = null;
+
   if (!allMatches.length) {
+    const hasSummaryData = Store.getPlayersSummary().length > 0;
+
+    if (hasSummaryData && Store.getGitHubConfig()?.pat) {
+      content.innerHTML = `<div class="empty-state">
+        <div class="empty-state-icon">⏳</div>
+        <div class="empty-state-text">Loading match history…</div>
+        <p class="text-secondary text-sm">This may take a moment</p>
+      </div>`;
+
+      import('../services/github.js').then(({ ensureAllMatchesLoaded }) =>
+        ensureAllMatchesLoaded()
+      ).then(matches => {
+        allMatches = matches;
+        content.innerHTML = '';
+        _chartCleanup = renderChartContent();
+      }).catch(() => {
+        content.innerHTML = `<div class="empty-state">
+          <div class="empty-state-icon">❌</div>
+          <div class="empty-state-text">Failed to load match history</div>
+        </div>`;
+      });
+      return () => { if (_chartCleanup) _chartCleanup(); };
+    }
+
     content.innerHTML = `<div class="empty-state">
       <div class="empty-state-icon">📈</div>
       <div class="empty-state-text">No ELO data yet</div>
@@ -291,79 +317,83 @@ export function renderEloCharts(container, params = {}) {
     return;
   }
 
-  // Tabs
-  const tabsEl = document.createElement('div');
-  tabsEl.className = 'tabs';
-  content.appendChild(tabsEl);
+  _chartCleanup = renderChartContent();
 
-  const chartArea = document.createElement('div');
-  chartArea.className = 'mt-md';
-  content.appendChild(chartArea);
+  function renderChartContent() {
+    const tabsEl = document.createElement('div');
+    tabsEl.className = 'tabs';
+    content.appendChild(tabsEl);
 
-  let activeTab = 'all-time';
-  let cleanupTooltip = null;
-  let resizeHandler = null;
+    const chartArea = document.createElement('div');
+    chartArea.className = 'mt-md';
+    content.appendChild(chartArea);
 
-  function renderTabs() {
-    tabsEl.innerHTML = '';
-    [{ id: 'all-time', label: 'All-Time' }, { id: 'latest', label: 'Latest Tournament' }].forEach(t => {
-      const btn = document.createElement('button');
-      btn.className = 'tab' + (activeTab === t.id ? ' active' : '');
-      btn.textContent = t.label;
-      btn.addEventListener('click', () => { activeTab = t.id; renderTabs(); renderChart(); });
-      tabsEl.appendChild(btn);
-    });
+    let activeTab = 'all-time';
+    let cleanupTooltip = null;
+    let resizeHandler = null;
+
+    function renderTabs() {
+      tabsEl.innerHTML = '';
+      [{ id: 'all-time', label: 'All-Time' }, { id: 'latest', label: 'Latest Tournament' }].forEach(t => {
+        const btn = document.createElement('button');
+        btn.className = 'tab' + (activeTab === t.id ? ' active' : '');
+        btn.textContent = t.label;
+        btn.addEventListener('click', () => { activeTab = t.id; renderTabs(); renderChart(); });
+        tabsEl.appendChild(btn);
+      });
+    }
+
+    function renderChart() {
+      chartArea.innerHTML = '';
+      if (cleanupTooltip) { cleanupTooltip(); cleanupTooltip = null; }
+      if (resizeHandler) { window.removeEventListener('resize', resizeHandler); resizeHandler = null; }
+
+      let chartData;
+      if (activeTab === 'all-time') {
+        const history = getEloHistoryAllTime(allMatches);
+        filterHistoryToMembers(history);
+        chartData = buildAllTimeDatasets(history);
+      } else {
+        const history = getEloHistoryForLatestTournament(allMatches);
+        filterHistoryToMembers(history);
+        chartData = buildTournamentDatasets(history);
+      }
+
+      if (!chartData.datasets.length) {
+        chartArea.innerHTML = '<p class="text-secondary text-center mt-lg">No data available</p>';
+        return;
+      }
+
+      const box = document.createElement('div');
+      box.className = 'chart-container';
+      const canvas = document.createElement('canvas');
+      canvas.className = 'chart-canvas';
+      canvas.style.width = '100%';
+      canvas.style.height = '250px';
+      box.appendChild(canvas);
+      chartArea.appendChild(box);
+
+      renderLegend(chartArea, chartData.datasets);
+
+      function draw() {
+        drawLineChart(canvas, chartData.datasets, { xLabels: chartData.xLabels });
+      }
+
+      requestAnimationFrame(draw);
+
+      cleanupTooltip = setupTooltip(canvas);
+      resizeHandler = () => requestAnimationFrame(draw);
+      window.addEventListener('resize', resizeHandler);
+    }
+
+    renderTabs();
+    renderChart();
+
+    return () => {
+      if (cleanupTooltip) cleanupTooltip();
+      if (resizeHandler) window.removeEventListener('resize', resizeHandler);
+    };
   }
 
-  function renderChart() {
-    chartArea.innerHTML = '';
-    if (cleanupTooltip) { cleanupTooltip(); cleanupTooltip = null; }
-    if (resizeHandler) { window.removeEventListener('resize', resizeHandler); resizeHandler = null; }
-
-    let chartData;
-    if (activeTab === 'all-time') {
-      const history = getEloHistoryAllTime(allMatches);
-      filterHistoryToMembers(history);
-      chartData = buildAllTimeDatasets(history);
-    } else {
-      const history = getEloHistoryForLatestTournament(allMatches);
-      filterHistoryToMembers(history);
-      chartData = buildTournamentDatasets(history);
-    }
-
-    if (!chartData.datasets.length) {
-      chartArea.innerHTML = '<p class="text-secondary text-center mt-lg">No data available</p>';
-      return;
-    }
-
-    const box = document.createElement('div');
-    box.className = 'chart-container';
-    const canvas = document.createElement('canvas');
-    canvas.className = 'chart-canvas';
-    canvas.style.width = '100%';
-    canvas.style.height = '250px';
-    box.appendChild(canvas);
-    chartArea.appendChild(box);
-
-    renderLegend(chartArea, chartData.datasets);
-
-    function draw() {
-      drawLineChart(canvas, chartData.datasets, { xLabels: chartData.xLabels });
-    }
-
-    // Need to wait one frame so canvas has layout dimensions
-    requestAnimationFrame(draw);
-
-    cleanupTooltip = setupTooltip(canvas);
-    resizeHandler = () => requestAnimationFrame(draw);
-    window.addEventListener('resize', resizeHandler);
-  }
-
-  renderTabs();
-  renderChart();
-
-  return () => {
-    if (cleanupTooltip) cleanupTooltip();
-    if (resizeHandler) window.removeEventListener('resize', resizeHandler);
-  };
+  return () => { if (_chartCleanup) _chartCleanup(); };
 }

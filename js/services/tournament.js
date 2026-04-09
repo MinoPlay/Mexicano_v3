@@ -374,6 +374,12 @@ export function loadTournamentByDate(date) {
 }
 
 export function getAllTournamentDates() {
+  // Prefer pre-computed dates from pullAll summary
+  const storedDates = Store.getTournamentDates();
+  if (storedDates.length > 0) {
+    return [...storedDates].sort((a, b) => b.localeCompare(a));
+  }
+  // Fall back to deriving from locally cached matches
   const allMatches = Store.getMatches();
   const dates = [...new Set(allMatches.map(m => m.date))];
   return dates.sort((a, b) => b.localeCompare(a));

@@ -79,6 +79,9 @@ export function keyToPath(key) {
   if (!key) return null;
   // matches are written per-date; members/theme/user-prefs are local-only
   if (['github_config', 'theme', 'current_user', 'matches', 'members'].includes(key)) return null;
+  // Pre-computed summary data — never synced back
+  if (key === 'players_summary' || key === 'tournament_dates' || key === 'matches_fully_loaded') return null;
+  if (key.startsWith('monthly_')) return null;
   return `data/${key}.json`;
 }
 
@@ -226,10 +229,11 @@ export async function pushAll(onProgress) {
 }
 
 /**
- * Pull all data from GitHub into local Store.
+ * Pull summary data from GitHub into local Store.
  *
- * Matches are read from the hierarchical YYYY/YYYY-MM/YYYY-MM-DD.json structure
- * and aggregated into a flat camelCase array.
+ * Reads pre-computed summary files (players.json, monthly overviews) and
+ * discovers tournament dates from the directory structure — WITHOUT reading
+ * every individual day file.
  *
  * Other data (doodle, changelog, active_tournament) is read from data/.
  *
@@ -241,41 +245,73 @@ export async function pullAll(onProgress) {
 
   _isPulling = true;
   try {
-    // ── 1. Pull matches from YYYY/YYYY-MM/YYYY-MM-DD.json ──────────────────
     const base = matchesBase();
+
+    // ── 1. Read players.json ────────────────────────────────────────────────
+    const playersPath = base ? `${base}/players.json` : 'players.json';
+    try {
+      const playersResult = await readFile(playersPath);
+      if (playersResult?.content && Array.isArray(playersResult.content)) {
+        const camelPlayers = playersResult.content.map(p => ({
+          name: p.Name,
+          elo: p.ELO,
+        }));
+        localStorage.setItem('mexicano_players_summary', JSON.stringify(camelPlayers));
+      }
+    } catch { /* players.json may not exist yet */ }
+    onProgress?.('players.json', 0, 0);
+
+    // ── 2. Walk directory tree: discover dates + collect month paths ────────
     const rootContents = await listContents(base);
     const yearDirs = rootContents.filter(f => f.type === 'dir' && /^\d{4}$/.test(f.name));
 
-    // Collect all day-file paths across all year/month dirs
-    const dayFilePaths = [];
+    const allDates = [];
+    const monthDirs = [];
+
     for (const yearDir of yearDirs) {
       const monthContents = await listContents(yearDir.path);
-      const monthDirs = monthContents.filter(f => f.type === 'dir' && /^\d{4}-\d{2}$/.test(f.name));
-      for (const monthDir of monthDirs) {
+      const months = monthContents.filter(f => f.type === 'dir' && /^\d{4}-\d{2}$/.test(f.name));
+      for (const monthDir of months) {
+        monthDirs.push(monthDir);
         const dayContents = await listContents(monthDir.path);
         const dayFiles = dayContents.filter(
           f => f.type === 'file' && /^\d{4}-\d{2}-\d{2}\.json$/.test(f.name)
         );
-        dayFilePaths.push(...dayFiles.map(f => f.path));
-      }
-    }
-
-    const allMatches = [];
-    for (let idx = 0; idx < dayFilePaths.length; idx++) {
-      const path = dayFilePaths[idx];
-      const result = await readFile(path);
-      if (result?.content?.matches) {
-        for (const m of result.content.matches) {
-          allMatches.push(fromBackupMatch(m));
+        for (const df of dayFiles) {
+          allDates.push(df.name.replace('.json', ''));
         }
       }
-      onProgress?.(path, dayFilePaths.length, idx + 1);
     }
 
-    // Write directly to localStorage to avoid triggering auto-push
-    localStorage.setItem('mexicano_matches', JSON.stringify(allMatches));
+    allDates.sort();
+    localStorage.setItem('mexicano_tournament_dates', JSON.stringify(allDates));
 
-    // ── 2. Pull data/ files (doodle, changelog, active_tournament) ─────────
+    // ── 3. Read monthly overview files ──────────────────────────────────────
+    const total = monthDirs.length;
+    for (let i = 0; i < monthDirs.length; i++) {
+      const monthDir = monthDirs[i];
+      const overviewPath = `${monthDir.path}/players_overview.json`;
+      try {
+        const result = await readFile(overviewPath);
+        if (result?.content && Array.isArray(result.content)) {
+          const camelOverview = result.content.map(p => ({
+            name: p.Name,
+            totalPoints: p.Total_Points,
+            wins: p.Wins,
+            losses: p.Losses,
+            average: p.Average,
+            elo: p.ELO,
+          }));
+          localStorage.setItem(`mexicano_monthly_${monthDir.name}`, JSON.stringify(camelOverview));
+        }
+      } catch { /* overview may not exist for every month */ }
+      onProgress?.(monthDir.name, total, i + 1);
+    }
+
+    // Clear the fully-loaded flag since we didn't load individual matches
+    localStorage.removeItem('mexicano_matches_fully_loaded');
+
+    // ── 4. Pull data/ files (doodle, changelog, active_tournament) ─────────
     const dataFiles = await listContents('data');
     const jsonFiles = dataFiles.filter(f => f.type === 'file' && f.name.endsWith('.json'));
     for (const file of jsonFiles) {
@@ -283,13 +319,100 @@ export async function pullAll(onProgress) {
       if (keyToPath(key) === null) continue;
       const result = await readFile(`data/${file.name}`);
       if (result !== null) {
-        // Write directly to localStorage to avoid triggering auto-push
         localStorage.setItem(`mexicano_${key}`, JSON.stringify(result.content));
       }
     }
   } finally {
     _isPulling = false;
   }
+}
+
+/**
+ * Read matches for a single tournament day from GitHub.
+ * @param {string} date - 'YYYY-MM-DD'
+ * @returns {Promise<Array>} camelCase match objects
+ */
+export async function readDayMatches(date) {
+  const path = datePath(date);
+  const result = await readFile(path);
+  if (!result?.content?.matches) return [];
+  return result.content.matches.map(fromBackupMatch);
+}
+
+/**
+ * Ensure matches for a specific date are in localStorage.
+ * Returns the day's matches (from cache or freshly fetched).
+ */
+export async function ensureDayMatchesLoaded(date) {
+  const cached = JSON.parse(localStorage.getItem('mexicano_matches') || '[]');
+  const dayMatches = cached.filter(m => m.date === date);
+  if (dayMatches.length > 0) return dayMatches;
+
+  const fetched = await readDayMatches(date);
+  if (fetched.length > 0) {
+    const updated = [...cached, ...fetched];
+    localStorage.setItem('mexicano_matches', JSON.stringify(updated));
+  }
+  return fetched;
+}
+
+/**
+ * Load ALL individual match files from GitHub (for pages that need full history).
+ * Stores them in localStorage and sets the fully-loaded flag.
+ *
+ * @param {function} [onProgress] - called with (label, total, index)
+ * @returns {Promise<Array>} all matches
+ */
+export async function pullAllMatches(onProgress) {
+  const cfg = getConfig();
+  if (!cfg?.owner || !cfg?.repo || !cfg?.pat) throw new Error('GitHub not configured');
+
+  const base = matchesBase();
+  const rootContents = await listContents(base);
+  const yearDirs = rootContents.filter(f => f.type === 'dir' && /^\d{4}$/.test(f.name));
+
+  const dayFilePaths = [];
+  for (const yearDir of yearDirs) {
+    const monthContents = await listContents(yearDir.path);
+    const months = monthContents.filter(f => f.type === 'dir' && /^\d{4}-\d{2}$/.test(f.name));
+    for (const monthDir of months) {
+      const dayContents = await listContents(monthDir.path);
+      const dayFiles = dayContents.filter(
+        f => f.type === 'file' && /^\d{4}-\d{2}-\d{2}\.json$/.test(f.name)
+      );
+      dayFilePaths.push(...dayFiles.map(f => f.path));
+    }
+  }
+
+  const allMatches = [];
+  for (let idx = 0; idx < dayFilePaths.length; idx++) {
+    const path = dayFilePaths[idx];
+    const result = await readFile(path);
+    if (result?.content?.matches) {
+      for (const m of result.content.matches) {
+        allMatches.push(fromBackupMatch(m));
+      }
+    }
+    onProgress?.(path, dayFilePaths.length, idx + 1);
+  }
+
+  localStorage.setItem('mexicano_matches', JSON.stringify(allMatches));
+  localStorage.setItem('mexicano_matches_fully_loaded', JSON.stringify(true));
+  return allMatches;
+}
+
+/**
+ * Ensure ALL matches are loaded into localStorage.
+ * Returns immediately if already loaded; otherwise fetches from GitHub.
+ *
+ * @param {function} [onProgress] - called with (label, total, index)
+ * @returns {Promise<Array>} all matches
+ */
+export async function ensureAllMatchesLoaded(onProgress) {
+  if (JSON.parse(localStorage.getItem('mexicano_matches_fully_loaded') || 'false')) {
+    return JSON.parse(localStorage.getItem('mexicano_matches') || '[]');
+  }
+  return pullAllMatches(onProgress);
 }
 
 // ─── Auto-sync (debounced) ───────────────────────────────────────────────────

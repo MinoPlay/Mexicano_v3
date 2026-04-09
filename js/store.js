@@ -124,6 +124,31 @@ export const Store = {
     this.remove('github_config');
   },
 
+  // ─── Summary data (pre-computed from Python scripts, read-only) ───
+
+  getPlayersSummary() {
+    return this.get('players_summary') || [];
+  },
+
+  getTournamentDates() {
+    return this.get('tournament_dates') || [];
+  },
+
+  getMonthlyOverview(yearMonth) {
+    return this.get(`monthly_${yearMonth}`) || [];
+  },
+
+  getMonthlyOverviewMonths() {
+    return this.keys('monthly_')
+      .map(k => k.replace('monthly_', ''))
+      .filter(k => /^\d{4}-\d{2}$/.test(k))
+      .sort();
+  },
+
+  isMatchesFullyLoaded() {
+    return this.get('matches_fully_loaded') === true;
+  },
+
   // ─── Import / Export ───
 
   exportAll() {

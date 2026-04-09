@@ -26,12 +26,29 @@ function getUniquePlayersFromMatches(matches) {
 }
 
 export function renderHome(container, params) {
-  const matches = Store.getMatches();
+  const playersSummary = Store.getPlayersSummary();
   const tournamentDates = getAllTournamentDates();
   const activeTournament = getActiveTournament();
-  const allPlayers = getUniquePlayersFromMatches(matches);
-  const eloResult = calculateAllEloRankings(matches);
-  const rankings = eloResult.rankings || [];
+
+  let rankings;
+  let allPlayersCount;
+
+  if (playersSummary.length > 0) {
+    // Use pre-computed ELO data (avoids loading all match files)
+    rankings = playersSummary.map((p, idx) => ({
+      place: idx + 1,
+      name: p.name,
+      elo: p.elo,
+      change: 0,
+    }));
+    allPlayersCount = playersSummary.length;
+  } else {
+    // Fall back to computing from locally cached matches
+    const matches = Store.getMatches();
+    const eloResult = calculateAllEloRankings(matches);
+    rankings = eloResult.rankings || [];
+    allPlayersCount = getUniquePlayersFromMatches(matches).size;
+  }
 
   const latestDate = tournamentDates.length > 0
     ? formatDate(tournamentDates[0])
@@ -56,7 +73,7 @@ export function renderHome(container, params) {
           <div class="stat-label">Tournaments</div>
         </div>
         <div class="quick-stat-card">
-          <div class="stat-value">${allPlayers.size}</div>
+          <div class="stat-value">${allPlayersCount}</div>
           <div class="stat-label">Players</div>
         </div>
         <div class="quick-stat-card">

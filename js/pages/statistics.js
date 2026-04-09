@@ -23,22 +23,135 @@ function formatDate(dateStr) {
   }
 }
 
+function formatMonth(yearMonth) {
+  try {
+    const [y, m] = yearMonth.split('-');
+    const d = new Date(parseInt(y), parseInt(m) - 1, 1);
+    return d.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+  } catch {
+    return yearMonth;
+  }
+}
+
+// ─── Column definitions ───
+
+const FULL_COLUMNS = [
+  { key: 'rank', label: '#', cls: 'rank-cell' },
+  { key: 'name', label: 'Name', cls: 'name-cell' },
+  { key: 'wins', label: 'W', cls: 'num-cell' },
+  { key: 'losses', label: 'L', cls: 'num-cell' },
+  { key: 'points', label: 'Pts', cls: 'num-cell' },
+  { key: 'average', label: 'Avg', cls: 'num-cell' },
+  { key: 'winRate', label: 'Win%', cls: 'num-cell' },
+  { key: 'tightWins', label: 'TW', cls: 'num-cell' },
+  { key: 'solidWins', label: 'SW', cls: 'num-cell' },
+  { key: 'dominatingWins', label: 'DW', cls: 'num-cell' },
+];
+
+const OVERVIEW_COLUMNS = [
+  { key: 'rank', label: '#', cls: 'rank-cell' },
+  { key: 'name', label: 'Name', cls: 'name-cell' },
+  { key: 'wins', label: 'W', cls: 'num-cell' },
+  { key: 'losses', label: 'L', cls: 'num-cell' },
+  { key: 'points', label: 'Pts', cls: 'num-cell' },
+  { key: 'average', label: 'Avg', cls: 'num-cell' },
+  { key: 'winRate', label: 'Win%', cls: 'num-cell' },
+];
+
+// ─── Aggregate monthly overviews into all-time stats ───
+
+function aggregateOverviews() {
+  const months = Store.getMonthlyOverviewMonths();
+  const playerMap = {};
+
+  for (const m of months) {
+    const overview = Store.getMonthlyOverview(m);
+    for (const p of overview) {
+      if (!playerMap[p.name]) {
+        playerMap[p.name] = { name: p.name, wins: 0, losses: 0, points: 0 };
+      }
+      playerMap[p.name].wins += p.wins;
+      playerMap[p.name].losses += p.losses;
+      playerMap[p.name].points += p.totalPoints;
+    }
+  }
+
+  const stats = Object.values(playerMap).map(p => {
+    const totalMatches = p.wins + p.losses;
+    return {
+      rank: 0,
+      name: p.name,
+      wins: p.wins,
+      losses: p.losses,
+      points: p.points,
+      average: totalMatches > 0 ? Math.round((p.points / totalMatches) * 100) / 100 : 0,
+      winRate: totalMatches > 0 ? Math.round((p.wins / totalMatches) * 100 * 100) / 100 : 0,
+      change: 0,
+      tightWins: 0,
+      solidWins: 0,
+      dominatingWins: 0,
+    };
+  });
+
+  stats.sort((a, b) => {
+    if (b.average !== a.average) return b.average - a.average;
+    return b.winRate - a.winRate;
+  });
+
+  let currentRank = 1;
+  for (let i = 0; i < stats.length; i++) {
+    if (i > 0 && stats[i].average === stats[i - 1].average && stats[i].winRate === stats[i - 1].winRate) {
+      stats[i].rank = stats[i - 1].rank;
+    } else {
+      currentRank = i + 1;
+      stats[i].rank = currentRank;
+    }
+  }
+
+  return stats;
+}
+
+// ─── Convert monthly overview to stats rows ───
+
+function overviewToStats(overview) {
+  const stats = overview.map(p => {
+    const totalMatches = p.wins + p.losses;
+    return {
+      rank: 0,
+      name: p.name,
+      wins: p.wins,
+      losses: p.losses,
+      points: p.totalPoints,
+      average: p.average,
+      winRate: totalMatches > 0 ? Math.round((p.wins / totalMatches) * 100 * 100) / 100 : 0,
+      change: 0,
+      tightWins: 0,
+      solidWins: 0,
+      dominatingWins: 0,
+    };
+  });
+
+  stats.sort((a, b) => {
+    if (b.average !== a.average) return b.average - a.average;
+    return b.winRate - a.winRate;
+  });
+
+  let currentRank = 1;
+  for (let i = 0; i < stats.length; i++) {
+    if (i > 0 && stats[i].average === stats[i - 1].average && stats[i].winRate === stats[i - 1].winRate) {
+      stats[i].rank = stats[i - 1].rank;
+    } else {
+      currentRank = i + 1;
+      stats[i].rank = currentRank;
+    }
+  }
+
+  return stats;
+}
+
 // ─── Sortable Table Renderer ───
 
-function renderSortableTable(container, stats, onPlayerClick) {
-  const columns = [
-    { key: 'rank', label: '#', cls: 'rank-cell' },
-    { key: 'name', label: 'Name', cls: 'name-cell' },
-    { key: 'wins', label: 'W', cls: 'num-cell' },
-    { key: 'losses', label: 'L', cls: 'num-cell' },
-    { key: 'points', label: 'Pts', cls: 'num-cell' },
-    { key: 'average', label: 'Avg', cls: 'num-cell' },
-    { key: 'winRate', label: 'Win%', cls: 'num-cell' },
-    { key: 'tightWins', label: 'TW', cls: 'num-cell' },
-    { key: 'solidWins', label: 'SW', cls: 'num-cell' },
-    { key: 'dominatingWins', label: 'DW', cls: 'num-cell' },
-  ];
-
+function renderSortableTable(container, stats, onPlayerClick, columns = FULL_COLUMNS) {
   let sortCol = 'points';
   let sortDir = 'desc';
 
@@ -104,7 +217,7 @@ function renderSortableTable(container, stats, onPlayerClick) {
         } else {
           td.textContent = row[col.key] ?? '';
         }
-        if (col.key === 'name') {
+        if (col.key === 'name' && onPlayerClick) {
           td.addEventListener('click', () => onPlayerClick(row.name));
         }
         tr.appendChild(td);
@@ -278,7 +391,13 @@ export function renderStatistics(container, params = {}) {
   container.appendChild(content);
 
   const allMatches = Store.getMatches();
-  if (!allMatches.length) {
+  const overviewMonths = Store.getMonthlyOverviewMonths();
+  const hasSummaryData = overviewMonths.length > 0;
+  const tournamentDates = hasSummaryData
+    ? [...Store.getTournamentDates()].sort()
+    : getUniqueDates(allMatches);
+
+  if (!allMatches.length && !hasSummaryData) {
     content.innerHTML = `<div class="empty-state">
       <div class="empty-state-icon">📊</div>
       <div class="empty-state-text">No statistics yet</div>
@@ -287,8 +406,8 @@ export function renderStatistics(container, params = {}) {
     return;
   }
 
-  const dates = getUniqueDates(allMatches);
-  const latestDate = dates[dates.length - 1];
+  const dates = tournamentDates;
+  const latestDate = dates.length > 0 ? dates[dates.length - 1] : null;
 
   let activeFilter = 'all';
 
@@ -318,6 +437,27 @@ export function renderStatistics(container, params = {}) {
       filterBar.appendChild(chip);
     });
 
+    // Month picker (from overviews)
+    if (overviewMonths.length > 1) {
+      const monthSelect = document.createElement('select');
+      monthSelect.style.cssText = 'width:auto;min-width:120px;padding:var(--space-xs) var(--space-sm);font-size:var(--font-size-sm);border-radius:var(--radius-full);';
+      const defaultOpt = document.createElement('option');
+      defaultOpt.value = '';
+      defaultOpt.textContent = 'Pick month…';
+      defaultOpt.disabled = true;
+      defaultOpt.selected = !/^\d{4}-\d{2}$/.test(activeFilter);
+      monthSelect.appendChild(defaultOpt);
+      [...overviewMonths].reverse().forEach(ym => {
+        const opt = document.createElement('option');
+        opt.value = ym;
+        opt.textContent = formatMonth(ym);
+        if (activeFilter === ym) opt.selected = true;
+        monthSelect.appendChild(opt);
+      });
+      monthSelect.addEventListener('change', () => { activeFilter = monthSelect.value; renderFilterBar(); renderTable(); });
+      filterBar.appendChild(monthSelect);
+    }
+
     // Per-tournament date selector
     if (dates.length > 1) {
       const select = document.createElement('select');
@@ -328,7 +468,7 @@ export function renderStatistics(container, params = {}) {
       defaultOpt.disabled = true;
       defaultOpt.selected = !dates.includes(activeFilter);
       select.appendChild(defaultOpt);
-      dates.forEach(d => {
+      [...dates].reverse().forEach(d => {
         const opt = document.createElement('option');
         opt.value = d;
         opt.textContent = formatDate(d);
@@ -340,30 +480,89 @@ export function renderStatistics(container, params = {}) {
     }
   }
 
-  function renderTable() {
-    let matches;
-    if (activeFilter === 'all') {
-      matches = allMatches;
-    } else if (activeFilter === 'latest') {
-      matches = filterByDate(allMatches, latestDate);
-    } else {
-      matches = filterByDate(allMatches, activeFilter);
-    }
-
-    const stats = calculatePlayerStatistics(matches);
+  function applyMemberFilter(stats) {
     const members = getMembers();
     const memberSet = new Set(members.map(m => m.toLowerCase()));
-    const filteredStats = memberSet.size > 0
-      ? stats.filter(s => memberSet.has(s.name.toLowerCase()))
-      : stats;
-    tableContainer.innerHTML = '';
+    return memberSet.size > 0 ? stats.filter(s => memberSet.has(s.name.toLowerCase())) : stats;
+  }
 
-    if (!filteredStats.length) {
-      tableContainer.innerHTML = '<p class="text-secondary text-center mt-lg">No data for this filter</p>';
+  function renderTable() {
+    // "All Time" — prefer aggregated overviews
+    if (activeFilter === 'all') {
+      if (hasSummaryData) {
+        const stats = applyMemberFilter(aggregateOverviews());
+        tableContainer.innerHTML = '';
+        if (!stats.length) {
+          tableContainer.innerHTML = '<p class="text-secondary text-center mt-lg">No data for this filter</p>';
+          return;
+        }
+        renderSortableTable(tableContainer, stats, null, OVERVIEW_COLUMNS);
+      } else {
+        const stats = applyMemberFilter(calculatePlayerStatistics(allMatches));
+        tableContainer.innerHTML = '';
+        if (!stats.length) {
+          tableContainer.innerHTML = '<p class="text-secondary text-center mt-lg">No data for this filter</p>';
+          return;
+        }
+        renderSortableTable(tableContainer, stats, name => showPlayerProfile(name, allMatches));
+      }
       return;
     }
 
-    renderSortableTable(tableContainer, filteredStats, name => showPlayerProfile(name, matches));
+    // Monthly overview
+    if (/^\d{4}-\d{2}$/.test(activeFilter)) {
+      const overview = Store.getMonthlyOverview(activeFilter);
+      const stats = applyMemberFilter(overviewToStats(overview));
+      tableContainer.innerHTML = '';
+      if (!stats.length) {
+        tableContainer.innerHTML = '<p class="text-secondary text-center mt-lg">No data for this month</p>';
+        return;
+      }
+      renderSortableTable(tableContainer, stats, null, OVERVIEW_COLUMNS);
+      return;
+    }
+
+    // Per-date: "latest" or specific date — load on demand
+    const targetDate = activeFilter === 'latest' ? latestDate : activeFilter;
+    if (!targetDate) {
+      tableContainer.innerHTML = '<p class="text-secondary text-center mt-lg">No data available</p>';
+      return;
+    }
+
+    // Check locally cached matches first
+    let dayMatches = allMatches.filter(m => m.date === targetDate);
+    if (dayMatches.length > 0) {
+      renderDayStats(dayMatches);
+      return;
+    }
+
+    // Try loading from GitHub
+    if (Store.getGitHubConfig()?.pat) {
+      tableContainer.innerHTML = '<p class="text-center mt-lg">⏳ Loading…</p>';
+      import('../services/github.js').then(({ ensureDayMatchesLoaded }) =>
+        ensureDayMatchesLoaded(targetDate)
+      ).then(matches => {
+        if (matches.length > 0) {
+          renderDayStats(matches);
+        } else {
+          tableContainer.innerHTML = '<p class="text-secondary text-center mt-lg">No data for this date</p>';
+        }
+      }).catch(() => {
+        tableContainer.innerHTML = '<p class="text-secondary text-center mt-lg">Failed to load data</p>';
+      });
+    } else {
+      tableContainer.innerHTML = '<p class="text-secondary text-center mt-lg">No data for this filter</p>';
+    }
+  }
+
+  function renderDayStats(matches) {
+    const stats = applyMemberFilter(calculatePlayerStatistics(matches));
+    tableContainer.innerHTML = '';
+    if (!stats.length) {
+      tableContainer.innerHTML = '<p class="text-secondary text-center mt-lg">No data for this filter</p>';
+      return;
+    }
+    renderSortableTable(tableContainer, stats, name => showPlayerProfile(name, matches));
   }
 
   renderFilterBar();

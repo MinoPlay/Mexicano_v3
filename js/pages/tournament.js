@@ -12,6 +12,7 @@ import {
 } from '../services/tournament.js';
 import { rankPlayers } from '../services/ranking.js';
 import { State } from '../state.js';
+import { Store } from '../store.js';
 import { showToast } from '../components/toast.js';
 
 function formatDate(dateStr) {
@@ -35,6 +36,44 @@ export function renderTournament(container, params) {
   let currentTab = 'matches';
   let viewingRound = -1; // -1 means latest
   let unsubscribe = null;
+  let isLoading = false;
+
+  // Initial load
+  initLoad();
+
+  function initLoad() {
+    const active = getActiveTournament();
+    if (active && active.tournamentDate === date) {
+      tournament = active;
+      render();
+      return;
+    }
+
+    tournament = loadTournamentByDate(date);
+    if (tournament) {
+      render();
+      return;
+    }
+
+    // Try loading from GitHub on demand
+    if (Store.getGitHubConfig()?.pat) {
+      isLoading = true;
+      render(); // shows loading state
+      import('../services/github.js')
+        .then(({ ensureDayMatchesLoaded }) => ensureDayMatchesLoaded(date))
+        .then(() => {
+          tournament = loadTournamentByDate(date);
+          isLoading = false;
+          render();
+        })
+        .catch(() => {
+          isLoading = false;
+          render();
+        });
+    } else {
+      render(); // shows "no data" state
+    }
+  }
 
   function loadTournament() {
     const active = getActiveTournament();
@@ -57,6 +96,21 @@ export function renderTournament(container, params) {
   }
 
   function render() {
+    if (isLoading) {
+      container.innerHTML = `
+        <div class="page-header">
+          <h1>Tournament</h1>
+        </div>
+        <div class="page-content">
+          <div class="empty-state">
+            <div class="empty-state-icon">⏳</div>
+            <div class="empty-state-text">Loading tournament data…</div>
+          </div>
+        </div>
+      `;
+      return;
+    }
+
     loadTournament();
 
     if (!tournament) {
@@ -447,7 +501,7 @@ export function renderTournament(container, params) {
   }
 
   // ─── Init ───
-  render();
+  // initLoad() is called at the top of renderTournament
 
   // Subscribe to external changes
   unsubscribe = State.on('tournament-changed', () => {

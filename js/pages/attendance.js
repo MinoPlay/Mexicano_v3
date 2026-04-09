@@ -209,7 +209,7 @@ function renderStatsTable(el, allMatches) {
 export function renderAttendance(container, params = {}) {
   container.innerHTML = '';
 
-  const allMatches = Store.getMatches();
+  let allMatches = Store.getMatches();
   const init = getInitialMonth(allMatches);
   let currentYear = init.year;
   let currentMonth = init.month;
@@ -225,6 +225,33 @@ export function renderAttendance(container, params = {}) {
   container.appendChild(content);
 
   if (!allMatches.length) {
+    const hasSummaryData = Store.getPlayersSummary().length > 0;
+
+    if (hasSummaryData && Store.getGitHubConfig()?.pat) {
+      content.innerHTML = `<div class="empty-state">
+        <div class="empty-state-icon">⏳</div>
+        <div class="empty-state-text">Loading match history…</div>
+        <p class="text-secondary text-sm">This may take a moment</p>
+      </div>`;
+
+      import('../services/github.js').then(({ ensureAllMatchesLoaded }) =>
+        ensureAllMatchesLoaded()
+      ).then(matches => {
+        allMatches = matches;
+        const newInit = getInitialMonth(allMatches);
+        currentYear = newInit.year;
+        currentMonth = newInit.month;
+        content.innerHTML = '';
+        buildContent();
+      }).catch(() => {
+        content.innerHTML = `<div class="empty-state">
+          <div class="empty-state-icon">❌</div>
+          <div class="empty-state-text">Failed to load match history</div>
+        </div>`;
+      });
+      return;
+    }
+
     content.innerHTML = `<div class="empty-state">
       <div class="empty-state-icon">📅</div>
       <div class="empty-state-text">No attendance data</div>
@@ -233,7 +260,9 @@ export function renderAttendance(container, params = {}) {
     return;
   }
 
-  // Month navigator
+  buildContent();
+
+  function buildContent() {
   const nav = document.createElement('div');
   nav.className = 'flex items-center justify-between mb-md';
   content.appendChild(nav);
@@ -296,4 +325,5 @@ export function renderAttendance(container, params = {}) {
   }
 
   renderContent();
+  } // end buildContent
 }
