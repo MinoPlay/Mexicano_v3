@@ -257,6 +257,9 @@ export async function pullAll(onProgress) {
           elo: p.ELO,
         }));
         localStorage.setItem('mexicano_players_summary', JSON.stringify(camelPlayers));
+        // Update members list from the authoritative players.json
+        const playerNames = camelPlayers.map(p => p.name).sort();
+        localStorage.setItem('mexicano_members', JSON.stringify(playerNames));
       }
     } catch { /* players.json may not exist yet */ }
     onProgress?.('players.json', 0, 0);
