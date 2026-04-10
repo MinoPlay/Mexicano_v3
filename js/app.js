@@ -17,6 +17,34 @@ import { renderSettings } from './pages/settings.js';
 // Initialize theme
 initTheme();
 
+// Load local test data if available (dev server with local-config.json)
+async function loadLocalData() {
+  try {
+    const status = await fetch('/api/local-data/status').then(r => r.json());
+    if (!status.available) return;
+    // Skip if we already loaded local data this session
+    if (localStorage.getItem('mexicano_local_data_loaded') === 'true') return;
+    console.log('Loading local test data…');
+    const [matches, players] = await Promise.all([
+      fetch('/api/local-data/matches').then(r => r.json()),
+      fetch('/api/local-data/players').then(r => r.json()).catch(() => null),
+    ]);
+    if (matches.length > 0) {
+      Store.setMatches(matches);
+      localStorage.setItem('mexicano_matches_fully_loaded', JSON.stringify(true));
+      // Load members from players.json
+      if (Array.isArray(players)) {
+        const names = players.map(p => p.Name).sort();
+        Store.setMembers(names);
+      }
+      localStorage.setItem('mexicano_local_data_loaded', 'true');
+      console.log(`Loaded ${matches.length} matches from local data`);
+      location.reload();
+    }
+  } catch { /* not running on dev server, or no local data */ }
+}
+loadLocalData();
+
 // Mount bottom nav
 const app = document.getElementById('app');
 app.appendChild(renderNav());

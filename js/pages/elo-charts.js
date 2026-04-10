@@ -13,6 +13,15 @@ function generateColors(count) {
   return colors;
 }
 
+// Stable color assignment: each member always gets the same color
+function getMemberColorMap(members) {
+  const sorted = [...members].sort((a, b) => a.localeCompare(b));
+  const colors = generateColors(sorted.length);
+  const map = {};
+  sorted.forEach((name, i) => { map[name] = colors[i]; });
+  return map;
+}
+
 // ─── Reusable Line Chart ───
 
 function drawLineChart(canvas, datasets, options = {}) {
@@ -222,18 +231,28 @@ function filterHistoryToMembers(history) {
   }
 }
 
+// ─── Filter history to selected members ───
+
+function filterHistoryToSelected(history, selectedNames) {
+  if (!history.players) return;
+  const selectedLower = new Set([...selectedNames].map(n => n.toLowerCase()));
+  for (const name of Object.keys(history.players)) {
+    if (!selectedLower.has(name.toLowerCase())) {
+      delete history.players[name];
+    }
+  }
+}
+
 // ─── Build datasets from ELO history ───
 
-function buildAllTimeDatasets(history) {
-  // history: { players: { name: [{date, elo}] }, dates: string[] }
+function buildAllTimeDatasets(history, colorMap) {
   const players = Object.keys(history.players || {});
-  const colors = generateColors(players.length);
   const dates = history.dates || [];
 
   return {
-    datasets: players.map((name, i) => ({
+    datasets: players.map(name => ({
       label: name,
-      color: colors[i],
+      color: colorMap[name] || '#888',
       data: (history.players[name] || []).map(pt => ({
         x: dates.indexOf(pt.date),
         y: pt.elo,
@@ -247,16 +266,14 @@ function buildAllTimeDatasets(history) {
   };
 }
 
-function buildTournamentDatasets(history) {
-  // history: { players: { name: [{round, elo}] }, rounds: number[] }
+function buildTournamentDatasets(history, colorMap) {
   const players = Object.keys(history.players || {});
-  const colors = generateColors(players.length);
   const rounds = history.rounds || [];
 
   return {
-    datasets: players.map((name, i) => ({
+    datasets: players.map(name => ({
       label: name,
-      color: colors[i],
+      color: colorMap[name] || '#888',
       data: (history.players[name] || []).map(pt => ({
         x: rounds.indexOf(pt.round),
         y: pt.elo,
@@ -264,6 +281,94 @@ function buildTournamentDatasets(history) {
     })),
     xLabels: rounds.map(r => `Round ${r}`),
   };
+}
+
+// ─── Member Picker ───
+
+function renderMemberPicker(container, { allMembers, selectedMembers, colorMap, onChange }) {
+  container.innerHTML = '';
+
+  // Chips for selected members
+  [...selectedMembers].sort((a, b) => a.localeCompare(b)).forEach(name => {
+    const chip = document.createElement('span');
+    chip.className = 'elo-member-chip';
+
+    const dot = document.createElement('span');
+    dot.className = 'elo-member-chip-dot';
+    dot.style.background = colorMap[name] || '#888';
+    chip.appendChild(dot);
+
+    chip.appendChild(document.createTextNode(name));
+
+    // Only allow removal if more than 1 selected
+    if (selectedMembers.size > 1) {
+      const removeBtn = document.createElement('button');
+      removeBtn.className = 'elo-member-chip-remove';
+      removeBtn.innerHTML = '×';
+      removeBtn.title = `Remove ${name}`;
+      removeBtn.addEventListener('click', () => {
+        selectedMembers.delete(name);
+        onChange();
+      });
+      chip.appendChild(removeBtn);
+    }
+
+    container.appendChild(chip);
+  });
+
+  // Add button + dropdown
+  const available = allMembers.filter(m => !selectedMembers.has(m));
+  if (available.length > 0) {
+    const wrapper = document.createElement('div');
+    wrapper.className = 'elo-add-member-wrapper';
+
+    const addBtn = document.createElement('button');
+    addBtn.className = 'elo-add-member-btn';
+    addBtn.textContent = '+ Add';
+    wrapper.appendChild(addBtn);
+
+    let dropdown = null;
+
+    function closeDropdown() {
+      if (dropdown) { dropdown.remove(); dropdown = null; }
+    }
+
+    addBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (dropdown) { closeDropdown(); return; }
+
+      dropdown = document.createElement('div');
+      dropdown.className = 'elo-add-member-dropdown';
+
+      const currentAvailable = allMembers.filter(m => !selectedMembers.has(m));
+      if (currentAvailable.length === 0) {
+        const empty = document.createElement('div');
+        empty.className = 'elo-add-member-dropdown-empty';
+        empty.textContent = 'All members shown';
+        dropdown.appendChild(empty);
+      } else {
+        currentAvailable.sort((a, b) => a.localeCompare(b)).forEach(name => {
+          const item = document.createElement('div');
+          item.className = 'elo-add-member-dropdown-item';
+          item.textContent = name;
+          item.addEventListener('click', () => {
+            selectedMembers.add(name);
+            closeDropdown();
+            onChange();
+          });
+          dropdown.appendChild(item);
+        });
+      }
+
+      wrapper.appendChild(dropdown);
+
+      // Close on outside click
+      const outsideHandler = () => { closeDropdown(); };
+      setTimeout(() => document.addEventListener('click', outsideHandler, { once: true }), 0);
+    });
+
+    container.appendChild(wrapper);
+  }
 }
 
 // ─── Main Render ───
@@ -324,6 +429,10 @@ export function renderEloCharts(container, params = {}) {
     tabsEl.className = 'tabs';
     content.appendChild(tabsEl);
 
+    const pickerEl = document.createElement('div');
+    pickerEl.className = 'elo-member-picker';
+    content.appendChild(pickerEl);
+
     const chartArea = document.createElement('div');
     chartArea.className = 'mt-md';
     content.appendChild(chartArea);
@@ -331,6 +440,21 @@ export function renderEloCharts(container, params = {}) {
     let activeTab = 'all-time';
     let cleanupTooltip = null;
     let resizeHandler = null;
+
+    // Resolve available members (those in the members list that have ELO data)
+    const allMemberNames = getMembers();
+    const colorMap = getMemberColorMap(allMemberNames);
+
+    // Initialize selected set: default to current user if set, otherwise all members
+    const currentUser = Store.getCurrentUser();
+    const selectedMembers = new Set();
+    if (currentUser && allMemberNames.some(m => m.toLowerCase() === currentUser.toLowerCase())) {
+      // Use the exact casing from the members list
+      const exact = allMemberNames.find(m => m.toLowerCase() === currentUser.toLowerCase());
+      selectedMembers.add(exact);
+    } else {
+      allMemberNames.forEach(m => selectedMembers.add(m));
+    }
 
     function renderTabs() {
       tabsEl.innerHTML = '';
@@ -343,6 +467,15 @@ export function renderEloCharts(container, params = {}) {
       });
     }
 
+    function renderPicker() {
+      renderMemberPicker(pickerEl, {
+        allMembers: allMemberNames,
+        selectedMembers,
+        colorMap,
+        onChange: () => { renderPicker(); renderChart(); },
+      });
+    }
+
     function renderChart() {
       chartArea.innerHTML = '';
       if (cleanupTooltip) { cleanupTooltip(); cleanupTooltip = null; }
@@ -352,11 +485,13 @@ export function renderEloCharts(container, params = {}) {
       if (activeTab === 'all-time') {
         const history = getEloHistoryAllTime(allMatches);
         filterHistoryToMembers(history);
-        chartData = buildAllTimeDatasets(history);
+        filterHistoryToSelected(history, selectedMembers);
+        chartData = buildAllTimeDatasets(history, colorMap);
       } else {
         const history = getEloHistoryForLatestTournament(allMatches);
         filterHistoryToMembers(history);
-        chartData = buildTournamentDatasets(history);
+        filterHistoryToSelected(history, selectedMembers);
+        chartData = buildTournamentDatasets(history, colorMap);
       }
 
       if (!chartData.datasets.length) {
@@ -387,6 +522,7 @@ export function renderEloCharts(container, params = {}) {
     }
 
     renderTabs();
+    renderPicker();
     renderChart();
 
     return () => {

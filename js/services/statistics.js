@@ -67,8 +67,8 @@ export function calculatePlayerStatistics(matches) {
       if (myScore > oppScore) {
         wins++;
         if (myScore === 13) tightWins++;
-        else if (myScore >= 15 && myScore <= 20) solidWins++;
-        else if (myScore > 20) dominatingWins++;
+        else if (myScore >= 14 && myScore <= 18) solidWins++;
+        else if (myScore >= 19) dominatingWins++;
       } else {
         losses++;
         if (oppScore === 13 && myScore === 12) tightLosses++;
@@ -182,18 +182,19 @@ export function generatePlayerSummary(playerName, allMatches) {
   );
 
   const tournamentDates = [...new Set(validMatches.map(m => m.date))];
-  let totalWins = 0, totalLosses = 0;
+  let totalWins = 0, totalLosses = 0, totalPoints = 0;
   let tightWins = 0, solidWins = 0, dominatingWins = 0;
   let firstPlaceFinishes = 0, secondPlaceFinishes = 0, thirdPlaceFinishes = 0;
 
   for (const m of validMatches) {
     const myScore = getPlayerTeamScore(m, playerName);
     const oppScore = getOpponentTeamScore(m, playerName);
+    totalPoints += myScore;
     if (myScore > oppScore) {
       totalWins++;
       if (myScore === 13) tightWins++;
-      else if (myScore >= 15 && myScore <= 20) solidWins++;
-      else if (myScore > 20) dominatingWins++;
+      else if (myScore >= 14 && myScore <= 18) solidWins++;
+      else if (myScore >= 19) dominatingWins++;
     } else {
       totalLosses++;
     }
@@ -235,6 +236,7 @@ export function generatePlayerSummary(playerName, allMatches) {
     totalTournaments: tournamentDates.length,
     totalWins,
     totalLosses,
+    totalPoints,
     tightWins,
     solidWins,
     dominatingWins,

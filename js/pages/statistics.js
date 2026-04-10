@@ -1,4 +1,5 @@
 import { calculatePlayerStatistics, calculateOpponentStats, calculatePartnershipStats, generatePlayerSummary } from '../services/statistics.js';
+import { calculateAllEloRankings } from '../services/elo.js';
 import { Store } from '../store.js';
 
 // ─── Helpers ───
@@ -55,6 +56,17 @@ const OVERVIEW_COLUMNS = [
   { key: 'points', label: 'Pts', cls: 'num-cell' },
   { key: 'average', label: 'Avg', cls: 'num-cell' },
   { key: 'winRate', label: 'Win%', cls: 'num-cell' },
+];
+
+const LATEST_COLUMNS = [
+  { key: 'rank', label: '#', cls: 'rank-cell' },
+  { key: 'name', label: 'Name', cls: 'name-cell' },
+  { key: 'wins', label: 'W', cls: 'num-cell' },
+  { key: 'losses', label: 'L', cls: 'num-cell' },
+  { key: 'average', label: 'Avg', cls: 'num-cell' },
+  { key: 'winRate', label: 'Win%', cls: 'num-cell' },
+  { key: 'elo', label: 'ELO', cls: 'num-cell' },
+  { key: 'eloChange', label: '±ELO', cls: 'num-cell' },
 ];
 
 // ─── Aggregate monthly overviews into all-time stats ───
@@ -150,8 +162,8 @@ function overviewToStats(overview) {
 
 // ─── Sortable Table Renderer ───
 
-function renderSortableTable(container, stats, onPlayerClick, columns = FULL_COLUMNS) {
-  let sortCol = 'points';
+function renderSortableTable(container, stats, onPlayerClick, columns = FULL_COLUMNS, defaultSort = 'points') {
+  let sortCol = defaultSort;
   let sortDir = 'desc';
 
   function sortedData() {
@@ -213,6 +225,13 @@ function renderSortableTable(container, stats, onPlayerClick, columns = FULL_COL
           td.textContent = row[col.key].toFixed(1) + '%';
         } else if (col.key === 'average') {
           td.textContent = typeof row[col.key] === 'number' ? row[col.key].toFixed(1) : row[col.key];
+        } else if (col.key === 'elo') {
+          td.textContent = Math.round(row[col.key] ?? 0);
+        } else if (col.key === 'eloChange') {
+          const val = row[col.key] ?? 0;
+          const rounded = Math.round(val * 10) / 10;
+          td.textContent = (rounded > 0 ? '+' : '') + rounded.toFixed(1);
+          td.style.color = rounded > 0 ? 'var(--color-success, #22c55e)' : rounded < 0 ? 'var(--color-danger, #ef4444)' : '';
         } else {
           td.textContent = row[col.key] ?? '';
         }
@@ -233,10 +252,11 @@ function renderSortableTable(container, stats, onPlayerClick, columns = FULL_COL
 
 // ─── Player Profile Dialog ───
 
-function showPlayerProfile(playerName, matches) {
-  const summary = generatePlayerSummary(playerName, matches);
-  const opponents = calculateOpponentStats(playerName, matches);
-  const partners = calculatePartnershipStats(playerName, matches);
+function showPlayerProfile(playerName) {
+  const allProfileMatches = Store.getMatches();
+  const summary = generatePlayerSummary(playerName, allProfileMatches);
+  const opponents = calculateOpponentStats(playerName, allProfileMatches);
+  const partners = calculatePartnershipStats(playerName, allProfileMatches);
 
   const overlay = document.createElement('div');
   overlay.className = 'dialog-overlay active';
@@ -292,16 +312,19 @@ function showPlayerProfile(playerName, matches) {
     if (!s) { el.innerHTML = '<p class="text-secondary">No data</p>'; return; }
     const grid = document.createElement('div');
     grid.className = 'home-quick-stats';
+    const totalGames = s.totalWins + s.totalLosses;
+    const winRate = totalGames > 0 ? s.totalWins / totalGames : 0;
+    const avgPoints = totalGames > 0 ? s.totalPoints / totalGames : 0;
     const stats = [
-      { label: 'Tournaments', value: s.tournaments ?? 0 },
-      { label: 'Total Games', value: s.totalGames ?? 0 },
-      { label: 'Wins', value: s.wins ?? 0 },
-      { label: 'Losses', value: s.losses ?? 0 },
-      { label: 'Win Rate', value: ((s.winRate ?? 0) * 100).toFixed(1) + '%' },
-      { label: 'Avg Points', value: (s.avgPoints ?? 0).toFixed(1) },
+      { label: 'Tournaments', value: s.totalTournaments },
+      { label: 'Total Games', value: totalGames },
+      { label: 'Wins', value: s.totalWins },
+      { label: 'Losses', value: s.totalLosses },
+      { label: 'Win Rate', value: (winRate * 100).toFixed(1) + '%' },
+      { label: 'Avg Points', value: avgPoints.toFixed(1) },
       { label: 'Tight Wins', value: s.tightWins ?? 0 },
       { label: 'Solid Wins', value: s.solidWins ?? 0 },
-      { label: 'Dominant Wins', value: s.dominantWins ?? 0 },
+      { label: 'Dominant Wins', value: s.dominatingWins ?? 0 },
       { label: 'Total Points', value: s.totalPoints ?? 0 },
     ];
     stats.forEach(({ label, value }) => {
@@ -326,11 +349,11 @@ function showPlayerProfile(playerName, matches) {
     opps.forEach(o => {
       const tr = document.createElement('tr');
       tr.innerHTML = `
-        <td class="name-cell">${o.opponent}</td>
-        <td class="num-cell">${o.games}</td>
+        <td class="name-cell">${o.opponentName}</td>
+        <td class="num-cell">${o.gamesPlayed}</td>
         <td class="num-cell">${o.wins}</td>
         <td class="num-cell">${o.losses}</td>
-        <td class="num-cell">${((o.winRate ?? 0) * 100).toFixed(1)}%</td>`;
+        <td class="num-cell">${(o.winRate ?? 0).toFixed(1)}%</td>`;
       tb.appendChild(tr);
     });
     t.appendChild(tb);
@@ -351,11 +374,11 @@ function showPlayerProfile(playerName, matches) {
     parts.forEach(p => {
       const tr = document.createElement('tr');
       tr.innerHTML = `
-        <td class="name-cell">${p.partner}</td>
-        <td class="num-cell">${p.games}</td>
+        <td class="name-cell">${p.partnerName}</td>
+        <td class="num-cell">${p.gamesPlayed}</td>
         <td class="num-cell">${p.wins}</td>
         <td class="num-cell">${p.losses}</td>
-        <td class="num-cell">${(p.avgPoints ?? 0).toFixed(1)}</td>`;
+        <td class="num-cell">${(p.averagePointsPerGame ?? 0).toFixed(1)}</td>`;
       tb.appendChild(tr);
     });
     t.appendChild(tb);
@@ -408,7 +431,7 @@ export function renderStatistics(container, params = {}) {
   const dates = tournamentDates;
   const latestDate = dates.length > 0 ? dates[dates.length - 1] : null;
 
-  let activeFilter = 'all';
+  let activeFilter = 'latest';
 
   // Filter bar
   const filterBar = document.createElement('div');
@@ -497,7 +520,7 @@ export function renderStatistics(container, params = {}) {
           tableContainer.innerHTML = '<p class="text-secondary text-center mt-lg">No data for this filter</p>';
           return;
         }
-        renderSortableTable(tableContainer, stats, name => showPlayerProfile(name, allMatches));
+        renderSortableTable(tableContainer, stats, name => showPlayerProfile(name));
       }
       return;
     }
@@ -522,10 +545,12 @@ export function renderStatistics(container, params = {}) {
       return;
     }
 
+    const isLatest = activeFilter === 'latest';
+
     // Check locally cached matches first
     let dayMatches = allMatches.filter(m => m.date === targetDate);
     if (dayMatches.length > 0) {
-      renderDayStats(dayMatches);
+      renderDayStats(dayMatches, { withElo: isLatest });
       return;
     }
 
@@ -536,7 +561,7 @@ export function renderStatistics(container, params = {}) {
         ensureDayMatchesLoaded(targetDate)
       ).then(matches => {
         if (matches.length > 0) {
-          renderDayStats(matches);
+          renderDayStats(matches, { withElo: isLatest });
         } else {
           tableContainer.innerHTML = '<p class="text-secondary text-center mt-lg">No data for this date</p>';
         }
@@ -548,14 +573,27 @@ export function renderStatistics(container, params = {}) {
     }
   }
 
-  function renderDayStats(matches) {
+  function renderDayStats(matches, { withElo = false } = {}) {
     const stats = calculatePlayerStatistics(matches);
     tableContainer.innerHTML = '';
     if (!stats.length) {
       tableContainer.innerHTML = '<p class="text-secondary text-center mt-lg">No data for this filter</p>';
       return;
     }
-    renderSortableTable(tableContainer, stats, name => showPlayerProfile(name, matches));
+    if (withElo) {
+      const freshMatches = Store.getMatches();
+      const { rankings } = calculateAllEloRankings(freshMatches.length > 0 ? freshMatches : matches);
+      const eloMap = {};
+      rankings.forEach(r => { eloMap[r.name] = r; });
+      for (const stat of stats) {
+        const eloData = eloMap[stat.name];
+        stat.elo = eloData ? eloData.elo : 1000;
+        stat.eloChange = eloData ? eloData.change : 0;
+      }
+      renderSortableTable(tableContainer, stats, name => showPlayerProfile(name), LATEST_COLUMNS, 'elo');
+    } else {
+      renderSortableTable(tableContainer, stats, name => showPlayerProfile(name));
+    }
   }
 
   renderFilterBar();

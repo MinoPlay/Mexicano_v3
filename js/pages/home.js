@@ -25,6 +25,23 @@ function getUniquePlayersFromMatches(matches) {
   return players;
 }
 
+/**
+ * Build a map of player name → ELO from the second-to-last monthly overview.
+ * Used to compute ELO change when only summary data is available.
+ */
+function buildPreviousEloMap() {
+  const months = Store.getMonthlyOverviewMonths(); // sorted ascending
+  if (months.length < 2) return {};
+  // If the latest month's overview exists, use the one before it
+  const prevMonth = months[months.length - 2];
+  const overview = Store.getMonthlyOverview(prevMonth);
+  const map = {};
+  for (const p of overview) {
+    map[p.name] = p.elo;
+  }
+  return map;
+}
+
 export function renderHome(container, params) {
   const playersSummary = Store.getPlayersSummary();
   const tournamentDates = getAllTournamentDates();
@@ -34,13 +51,14 @@ export function renderHome(container, params) {
   let allPlayersCount;
 
   if (playersSummary.length > 0) {
-    // Use pre-computed ELO data (avoids loading all match files)
-    rankings = playersSummary.map((p, idx) => ({
-      place: idx + 1,
-      name: p.name,
-      elo: p.elo,
-      change: 0,
-    }));
+    // Use pre-computed ELO data (avoids loading all match files).
+    // Compute change by comparing current ELO with the previous month's overview.
+    const prevEloMap = buildPreviousEloMap();
+    rankings = playersSummary.map((p, idx) => {
+      const prevElo = prevEloMap[p.name];
+      const change = prevElo !== undefined ? Math.round((p.elo - prevElo) * 100) / 100 : 0;
+      return { place: idx + 1, name: p.name, elo: p.elo, change };
+    });
     allPlayersCount = playersSummary.length;
   } else {
     // Fall back to computing from locally cached matches
@@ -54,11 +72,43 @@ export function renderHome(container, params) {
     ? formatDate(tournamentDates[0])
     : '—';
 
+  // Determine which players played in the latest month
+  let latestMonthPlayerSet = null;
+  const months = Store.getMonthlyOverviewMonths();
+  if (months.length > 0) {
+    const latestMonth = months[months.length - 1];
+    const overview = Store.getMonthlyOverview(latestMonth);
+    if (overview.length > 0) {
+      latestMonthPlayerSet = new Set(overview.map(p => p.name.toLowerCase()));
+    }
+  }
+  if (!latestMonthPlayerSet) {
+    const allMatches = Store.getMatches();
+    const matchDates = allMatches.map(m => m.date).filter(Boolean);
+    if (matchDates.length > 0) {
+      const latestMonth = [...new Set(matchDates.map(d => d.substring(0, 7)))].sort().pop();
+      const monthMatches = allMatches.filter(m => m.date?.startsWith(latestMonth));
+      const players = new Set();
+      for (const m of monthMatches) {
+        [m.team1Player1Name, m.team1Player2Name, m.team2Player1Name, m.team2Player2Name]
+          .filter(Boolean).forEach(n => players.add(n.toLowerCase()));
+      }
+      if (players.size > 0) {
+        latestMonthPlayerSet = players;
+      }
+    }
+  }
+
   const members = getMembers();
   const memberSet = new Set(members.map(m => m.toLowerCase()));
-  const filteredRankings = memberSet.size > 0
+  let filteredRankings = memberSet.size > 0
     ? rankings.filter(p => memberSet.has(p.name.toLowerCase()))
     : rankings;
+
+  if (latestMonthPlayerSet) {
+    filteredRankings = filteredRankings.filter(p => latestMonthPlayerSet.has(p.name.toLowerCase()));
+  }
+
   const top10 = filteredRankings.slice(0, 10);
 
   container.innerHTML = `

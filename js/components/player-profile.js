@@ -41,8 +41,8 @@ export function openPlayerProfile(playerName) {
           <div class="card-title">Win Categories</div>
           <div class="flex flex-col gap-xs mt-sm">
             <div class="flex justify-between"><span class="text-sm">Tight Wins (13-12)</span><span class="text-bold">${summary.tightWins}</span></div>
-            <div class="flex justify-between"><span class="text-sm">Solid Wins (15-20)</span><span class="text-bold">${summary.solidWins}</span></div>
-            <div class="flex justify-between"><span class="text-sm">Dominating (20+)</span><span class="text-bold">${summary.dominatingWins}</span></div>
+            <div class="flex justify-between"><span class="text-sm">Solid Wins (14-18)</span><span class="text-bold">${summary.solidWins}</span></div>
+            <div class="flex justify-between"><span class="text-sm">Dominating (19+)</span><span class="text-bold">${summary.dominatingWins}</span></div>
           </div>
         </div>
         <div class="card mt-md">
@@ -71,7 +71,7 @@ export function openPlayerProfile(playerName) {
                     <td class="num-cell">${o.gamesPlayed}</td>
                     <td class="num-cell">${o.wins}</td>
                     <td class="num-cell">${o.losses}</td>
-                    <td class="num-cell">${(o.winRate * 100).toFixed(0)}%</td>
+                    <td class="num-cell">${(o.winRate).toFixed(0)}%</td>
                   </tr>
                 `).join('')}
               </tbody>

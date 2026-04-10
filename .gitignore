@@ -9,3 +9,6 @@ Thumbs.db
 .vscode/
 *.swp
 *.swo
+
+# Local config (contains machine-specific paths)
+local-config.json

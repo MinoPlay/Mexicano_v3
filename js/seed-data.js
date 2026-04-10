@@ -1,10 +1,23 @@
 // Seed data module — populates localStorage with demo data on first load.
-// Skip seeding if localStorage has data OR if a test flag is set.
+// Skip seeding if localStorage has data, a test flag is set, or local data API is available.
 
 const isTestMode = localStorage.getItem('mexicano_test_mode') === 'true';
 
+// Check if local data server is available (sync XHR, dev only)
+let hasLocalData = false;
+try {
+  const xhr = new XMLHttpRequest();
+  xhr.open('GET', '/api/local-data/status', false);
+  xhr.send();
+  if (xhr.status === 200) {
+    hasLocalData = JSON.parse(xhr.responseText).available === true;
+  }
+} catch { /* not available */ }
+
 if (isTestMode) {
   // Tests control their own data — don't seed
+} else if (hasLocalData) {
+  console.log('[Seed] Local data API available, skipping seed');
 } else if (localStorage.getItem('mexicano_members')) {
   console.log('[Seed] Existing data found, skipping seed');
 } else {
