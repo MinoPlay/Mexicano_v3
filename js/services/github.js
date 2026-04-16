@@ -81,6 +81,7 @@ export function keyToPath(key) {
   if (['github_config', 'theme', 'current_user', 'matches', 'members'].includes(key)) return null;
   // Pre-computed summary data — never synced back
   if (key === 'players_summary' || key === 'tournament_dates' || key === 'matches_fully_loaded') return null;
+  if (key === 'stats-summary') return null;
   if (key.startsWith('monthly_')) return null;
   // Doodle files live next to that month's tournament data: YYYY/YYYY-MM/doodle_YYYY-MM.json
   const doodleMatch = key.match(/^doodle_(\d{4})-(\d{2})$/);
@@ -133,6 +134,7 @@ async function listContents(path) {
 
 /**
  * Write (create or update) a single file in the repo.
+ * Automatically retries once on 409 Conflict by re-reading the current SHA.
  * @param {string} path  - repo-relative file path, e.g. "data/members.json"
  * @param {*}      data  - value to serialise as JSON
  * @param {string} [sha] - current file SHA (required when updating an existing file)
@@ -142,17 +144,27 @@ export async function writeFile(path, data, sha) {
   if (!cfg?.owner || !cfg?.repo || !cfg?.pat) throw new Error('GitHub not configured');
 
   const url = `${API_BASE}/repos/${encodeURIComponent(cfg.owner)}/${encodeURIComponent(cfg.repo)}/contents/${path}`;
-  const body = {
-    message: `mexicano: update ${path}`,
-    content: btoa(unescape(encodeURIComponent(JSON.stringify(data, null, 2)))),
-    ...(sha ? { sha } : {}),
-  };
 
-  const res = await fetch(url, {
-    method: 'PUT',
-    headers: authHeaders(cfg.pat),
-    body: JSON.stringify(body),
-  });
+  async function attempt(currentSha) {
+    const body = {
+      message: `mexicano: update ${path}`,
+      content: btoa(unescape(encodeURIComponent(JSON.stringify(data, null, 2)))),
+      ...(currentSha ? { sha: currentSha } : {}),
+    };
+    return fetch(url, {
+      method: 'PUT',
+      headers: authHeaders(cfg.pat),
+      body: JSON.stringify(body),
+    });
+  }
+
+  let res = await attempt(sha);
+
+  // Retry once on 409 Conflict — re-read the current SHA and try again
+  if (res.status === 409) {
+    const fresh = await readFile(path);
+    res = await attempt(fresh?.sha);
+  }
 
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
@@ -449,11 +461,13 @@ export async function ensureAllMatchesLoaded(onProgress) {
   return pullAllMatches(onProgress);
 }
 
-// ─── Auto-sync (debounced) ───────────────────────────────────────────────────
+// ─── Auto-sync (debounced + serialised) ──────────────────────────────────────
 
 let _syncTimer = null;
 let _syncStatus = 'idle'; // idle | syncing | success | error
 let _isPulling = false;   // suppresses auto-push during pullAll
+let _pushInProgress = false;
+let _pushPending = false;
 const _listeners = new Set();
 
 export function onSyncStatus(fn) {
@@ -470,6 +484,30 @@ export function getSyncStatus() {
   return _syncStatus;
 }
 
+/** Execute a single push, serialising concurrent requests. */
+async function executePush() {
+  if (_pushInProgress) {
+    _pushPending = true;
+    return;
+  }
+  _pushInProgress = true;
+  setSyncStatus('syncing');
+  try {
+    await pushAll();
+    setSyncStatus('success');
+    setTimeout(() => setSyncStatus('idle'), 3000);
+  } catch (e) {
+    console.error('GitHub auto-sync failed:', e);
+    setSyncStatus('error');
+  } finally {
+    _pushInProgress = false;
+    if (_pushPending) {
+      _pushPending = false;
+      executePush();
+    }
+  }
+}
+
 /**
  * Schedule a debounced auto-push.
  * Called by Store.set() when GitHub is configured.
@@ -482,15 +520,16 @@ export function schedulePush(key) {
   if (keyToPath(key) === null && key !== 'matches') return;
 
   clearTimeout(_syncTimer);
-  _syncTimer = setTimeout(async () => {
-    setSyncStatus('syncing');
-    try {
-      await pushAll();
-      setSyncStatus('success');
-      setTimeout(() => setSyncStatus('idle'), 3000);
-    } catch (e) {
-      console.error('GitHub auto-sync failed:', e);
-      setSyncStatus('error');
-    }
-  }, 1500);
+  _syncTimer = setTimeout(() => executePush(), 1500);
+}
+
+/**
+ * Immediately flush any pending sync (bypasses debounce timer).
+ * Use for critical operations like tournament creation / completion.
+ */
+export function flushPush() {
+  if (_isPulling) return;
+  if (!getConfig()?.pat) return;
+  clearTimeout(_syncTimer);
+  executePush();
 }

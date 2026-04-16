@@ -121,6 +121,10 @@ export function createTournament(date, playerNames) {
 
   Store.setActiveTournament(tournament);
   State.emit('tournament-changed', tournament);
+
+  // Immediately sync to GitHub for reliable backup
+  import('./github.js').then(({ flushPush }) => flushPush()).catch(() => {});
+
   return tournament;
 }
 
@@ -250,6 +254,14 @@ export function startNextRound(tournament) {
 }
 
 export function completeTournament(tournament) {
+  // Safety check: all matches must be scored
+  const hasUnscoredMatches = tournament.rounds.some(r =>
+    r.matches.some(m => !isMatchComplete(m))
+  );
+  if (hasUnscoredMatches) {
+    throw new Error('Cannot end tournament: some matches have no scores set');
+  }
+
   tournament.isCompleted = true;
   tournament.completedAt = Date.now();
 
@@ -292,6 +304,10 @@ export function completeTournament(tournament) {
   Store.setMatches(allMatches);
   Store.clearActiveTournament();
   State.emit('tournament-changed', tournament);
+
+  // Immediately sync completed tournament to GitHub
+  import('./github.js').then(({ flushPush }) => flushPush()).catch(() => {});
+
   return tournament;
 }
 

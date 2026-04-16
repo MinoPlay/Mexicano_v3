@@ -242,11 +242,16 @@ export function renderTournament(container, params) {
 
     // Action buttons
     if (isLatestRound && !tournament.isCompleted) {
+      const allScored = tournament.rounds.every(r => isRoundComplete(r));
+
       html += '<div class="mt-lg flex flex-col gap-sm">';
       if (roundComplete) {
         html += `<button class="btn btn-primary btn-block" id="next-round-btn">Next Round</button>`;
       }
-      html += `<button class="btn btn-danger btn-block" id="end-tournament-btn">End Tournament</button>`;
+      html += `<button class="btn btn-danger btn-block" id="end-tournament-btn" ${allScored ? '' : 'disabled'}>End Tournament</button>`;
+      if (!allScored) {
+        html += `<p class="text-sm text-secondary text-center">All match scores must be set before ending</p>`;
+      }
       html += '</div>';
     }
 

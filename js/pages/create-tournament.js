@@ -54,8 +54,21 @@ export function renderCreateTournament(container) {
   const startBtn = container.querySelector('#start-btn');
   const datalist = container.querySelector('#member-suggestions');
 
-  // Populate member suggestions
+  // Populate member suggestions, filtering out already-selected names
   const members = getRecentMembers();
+
+  function updateSuggestions() {
+    const taken = new Set(
+      playerInputs
+        .map(inp => inp.value.trim().toLowerCase())
+        .filter(Boolean)
+    );
+    datalist.innerHTML = members
+      .filter(m => !taken.has(m.toLowerCase()))
+      .map(m => `<option value="${m}">`)
+      .join('');
+  }
+
   datalist.innerHTML = members.map(m => `<option value="${m}">`).join('');
 
   // Player count selection
@@ -84,6 +97,8 @@ export function renderCreateTournament(container) {
                maxlength="50" autocomplete="off">
       `;
       const input = slot.querySelector('input');
+      input.addEventListener('focus', updateSuggestions);
+      input.addEventListener('input', updateSuggestions);
       playerInputs.push(input);
       slotsContainer.appendChild(slot);
     }
