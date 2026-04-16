@@ -82,6 +82,15 @@ export function keyToPath(key) {
   // Pre-computed summary data — never synced back
   if (key === 'players_summary' || key === 'tournament_dates' || key === 'matches_fully_loaded') return null;
   if (key.startsWith('monthly_')) return null;
+  // Doodle files live next to that month's tournament data: YYYY/YYYY-MM/doodle_YYYY-MM.json
+  const doodleMatch = key.match(/^doodle_(\d{4})-(\d{2})$/);
+  if (doodleMatch) {
+    const year = doodleMatch[1];
+    const yearMonth = `${year}-${doodleMatch[2]}`;
+    const base = getConfig()?.basePath?.trim().replace(/\/$/, '') || '';
+    const prefix = base ? `${base}/` : '';
+    return `${prefix}${year}/${yearMonth}/${key}.json`;
+  }
   return `data/${key}.json`;
 }
 
@@ -235,7 +244,8 @@ export async function pushAll(onProgress) {
  * discovers tournament dates from the directory structure — WITHOUT reading
  * every individual day file.
  *
- * Other data (doodle, changelog, active_tournament) is read from data/.
+ * Doodle files are read from YYYY/YYYY-MM/doodle_YYYY-MM.json alongside
+ * tournament data. Other data (changelog, active_tournament) is read from data/.
  *
  * @param {function} [onProgress] - called with (label, total, index)
  */
@@ -289,7 +299,7 @@ export async function pullAll(onProgress) {
     allDates.sort();
     localStorage.setItem('mexicano_tournament_dates', JSON.stringify(allDates));
 
-    // ── 3. Read monthly overview files ──────────────────────────────────────
+    // ── 3. Read monthly overview + doodle files ───────────────────────────
     const total = monthDirs.length;
     for (let i = 0; i < monthDirs.length; i++) {
       const monthDir = monthDirs[i];
@@ -308,18 +318,28 @@ export async function pullAll(onProgress) {
           localStorage.setItem(`mexicano_monthly_${monthDir.name}`, JSON.stringify(camelOverview));
         }
       } catch { /* overview may not exist for every month */ }
+      // Pull doodle file from month directory
+      const doodlePath = `${monthDir.path}/doodle_${monthDir.name}.json`;
+      try {
+        const doodleResult = await readFile(doodlePath);
+        if (doodleResult?.content) {
+          localStorage.setItem(`mexicano_doodle_${monthDir.name}`, JSON.stringify(doodleResult.content));
+        }
+      } catch { /* doodle may not exist for every month */ }
       onProgress?.(monthDir.name, total, i + 1);
     }
 
     // Clear the fully-loaded flag since we didn't load individual matches
     localStorage.removeItem('mexicano_matches_fully_loaded');
 
-    // ── 4. Pull data/ files (doodle, changelog, active_tournament) ─────────
+    // ── 4. Pull data/ files (changelog, active_tournament, …) ──────────────
     const dataFiles = await listContents('data');
     const jsonFiles = dataFiles.filter(f => f.type === 'file' && f.name.endsWith('.json'));
     for (const file of jsonFiles) {
       const key = file.name.replace(/\.json$/, '');
       if (keyToPath(key) === null) continue;
+      // Doodle files are pulled from month directories (step 3)
+      if (key.startsWith('doodle_')) continue;
       const result = await readFile(`data/${file.name}`);
       if (result !== null) {
         localStorage.setItem(`mexicano_${key}`, JSON.stringify(result.content));

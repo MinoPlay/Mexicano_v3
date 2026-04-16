@@ -232,7 +232,9 @@ export function renderTournament(container, params) {
                 <span class="match-score-separator">–</span>
                 <span class="match-score-value">${match.team2Score}</span>
               </div>`
-            : `<div class="text-center text-sm text-secondary mt-sm">Tap to score</div>`
+            : tournament.isCompleted
+              ? ''
+              : `<div class="text-center text-sm text-secondary mt-sm">Tap to score</div>`
           }
         </div>
       `;
@@ -260,13 +262,15 @@ export function renderTournament(container, params) {
       render();
     });
 
-    // Event: click match to score
-    content.querySelectorAll('.match-card').forEach(card => {
-      card.addEventListener('click', () => {
-        const matchIdx = parseInt(card.dataset.matchIdx, 10);
-        openScoreSheet(roundIdx, matchIdx);
+    // Event: click match to score (disabled for completed tournaments)
+    if (!tournament.isCompleted) {
+      content.querySelectorAll('.match-card').forEach(card => {
+        card.addEventListener('click', () => {
+          const matchIdx = parseInt(card.dataset.matchIdx, 10);
+          openScoreSheet(roundIdx, matchIdx);
+        });
       });
-    });
+    }
 
     // Event: next round
     content.querySelector('#next-round-btn')?.addEventListener('click', () => {
