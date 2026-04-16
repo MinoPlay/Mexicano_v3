@@ -281,12 +281,15 @@ export async function pullAll(onProgress) {
     const allDates = [];
     const monthDirs = [];
 
+    const monthFileIndex = new Map();
+
     for (const yearDir of yearDirs) {
       const monthContents = await listContents(yearDir.path);
       const months = monthContents.filter(f => f.type === 'dir' && /^\d{4}-\d{2}$/.test(f.name));
       for (const monthDir of months) {
         monthDirs.push(monthDir);
         const dayContents = await listContents(monthDir.path);
+        monthFileIndex.set(monthDir.name, new Set(dayContents.filter(f => f.type === 'file').map(f => f.name)));
         const dayFiles = dayContents.filter(
           f => f.type === 'file' && /^\d{4}-\d{2}-\d{2}\.json$/.test(f.name)
         );
@@ -303,29 +306,37 @@ export async function pullAll(onProgress) {
     const total = monthDirs.length;
     for (let i = 0; i < monthDirs.length; i++) {
       const monthDir = monthDirs[i];
-      const overviewPath = `${monthDir.path}/players_overview.json`;
-      try {
-        const result = await readFile(overviewPath);
-        if (result?.content && Array.isArray(result.content)) {
-          const camelOverview = result.content.map(p => ({
-            name: p.Name,
-            totalPoints: p.Total_Points,
-            wins: p.Wins,
-            losses: p.Losses,
-            average: p.Average,
-            elo: p.ELO,
-          }));
-          localStorage.setItem(`mexicano_monthly_${monthDir.name}`, JSON.stringify(camelOverview));
-        }
-      } catch { /* overview may not exist for every month */ }
-      // Pull doodle file from month directory
-      const doodlePath = `${monthDir.path}/doodle_${monthDir.name}.json`;
-      try {
-        const doodleResult = await readFile(doodlePath);
-        if (doodleResult?.content) {
-          localStorage.setItem(`mexicano_doodle_${monthDir.name}`, JSON.stringify(doodleResult.content));
-        }
-      } catch { /* doodle may not exist for every month */ }
+      const files = monthFileIndex.get(monthDir.name) || new Set();
+
+      if (files.has('players_overview.json')) {
+        const overviewPath = `${monthDir.path}/players_overview.json`;
+        try {
+          const result = await readFile(overviewPath);
+          if (result?.content && Array.isArray(result.content)) {
+            const camelOverview = result.content.map(p => ({
+              name: p.Name,
+              totalPoints: p.Total_Points,
+              wins: p.Wins,
+              losses: p.Losses,
+              average: p.Average,
+              elo: p.ELO,
+            }));
+            localStorage.setItem(`mexicano_monthly_${monthDir.name}`, JSON.stringify(camelOverview));
+          }
+        } catch { /* overview read failed */ }
+      }
+
+      const doodleFileName = `doodle_${monthDir.name}.json`;
+      if (files.has(doodleFileName)) {
+        const doodlePath = `${monthDir.path}/${doodleFileName}`;
+        try {
+          const doodleResult = await readFile(doodlePath);
+          if (doodleResult?.content) {
+            localStorage.setItem(`mexicano_doodle_${monthDir.name}`, JSON.stringify(doodleResult.content));
+          }
+        } catch { /* doodle read failed */ }
+      }
+
       onProgress?.(monthDir.name, total, i + 1);
     }
 
