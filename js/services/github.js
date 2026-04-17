@@ -17,6 +17,61 @@ import { Store } from '../store.js';
 
 const API_BASE = 'https://api.github.com';
 
+// ─── Logging ─────────────────────────────────────────────────────────────────
+
+const GH_LOG_KEY = 'mexicano_github_log';
+const GH_LOG_MAX = 200;
+
+function ghLog(action, path, detail) {
+  const entry = {
+    ts: new Date().toISOString(),
+    action,
+    path,
+    ...(detail ? { detail } : {}),
+  };
+  console.log(`[GitHub ${action}] ${path}`, detail || '');
+  try {
+    const log = JSON.parse(localStorage.getItem(GH_LOG_KEY) || '[]');
+    log.unshift(entry);
+    localStorage.setItem(GH_LOG_KEY, JSON.stringify(log.slice(0, GH_LOG_MAX)));
+  } catch { /* storage full or unavailable */ }
+}
+
+/** Return the stored GitHub operation log (most recent first). */
+export function getGitHubLog() {
+  try { return JSON.parse(localStorage.getItem(GH_LOG_KEY) || '[]'); } catch { return []; }
+}
+
+// ─── Path guard ──────────────────────────────────────────────────────────────
+
+/**
+ * Normalise a repo-relative path and ensure it stays within the configured
+ * basePath.  Throws if the resolved path escapes the base folder (e.g. via
+ * ".." segments) or if basePath is not configured.
+ */
+function guardPath(rawPath) {
+  const base = getConfig()?.basePath?.trim().replace(/\/$/, '');
+  if (!base) throw new Error('basePath is not configured — cannot access GitHub repo');
+
+  // Normalise: collapse slashes, resolve ".." / "."
+  const segments = rawPath.split('/').filter(Boolean);
+  const resolved = [];
+  for (const seg of segments) {
+    if (seg === '.') continue;
+    if (seg === '..') {
+      resolved.pop();
+    } else {
+      resolved.push(seg);
+    }
+  }
+  const normalised = resolved.join('/');
+
+  if (!normalised.startsWith(base + '/') && normalised !== base) {
+    throw new Error(`Path "${rawPath}" resolves outside the allowed base "${base}"`);
+  }
+  return normalised;
+}
+
 // ─── Field converters (camelCase ↔ backup PascalCase) ────────────────────────
 
 function toBackupMatch(m) {
@@ -107,11 +162,14 @@ export async function readFile(path) {
   const cfg = getConfig();
   if (!cfg?.owner || !cfg?.repo || !cfg?.pat) return null;
 
-  const url = `${API_BASE}/repos/${encodeURIComponent(cfg.owner)}/${encodeURIComponent(cfg.repo)}/contents/${path}`;
+  const safePath = guardPath(path);
+  ghLog('READ', safePath);
+
+  const url = `${API_BASE}/repos/${encodeURIComponent(cfg.owner)}/${encodeURIComponent(cfg.repo)}/contents/${safePath}`;
   const res = await fetch(url, { headers: authHeaders(cfg.pat) });
 
-  if (res.status === 404) return null;
-  if (!res.ok) throw new Error(`GitHub read failed (${res.status}): ${path}`);
+  if (res.status === 404) { ghLog('READ_404', safePath); return null; }
+  if (!res.ok) throw new Error(`GitHub read failed (${res.status}): ${safePath}`);
 
   const json = await res.json();
   const bytes = Uint8Array.from(atob(json.content.replace(/\n/g, '')), c => c.charCodeAt(0));
@@ -127,11 +185,14 @@ async function listContents(path) {
   const cfg = getConfig();
   if (!cfg?.owner || !cfg?.repo || !cfg?.pat) return [];
 
-  const url = `${API_BASE}/repos/${encodeURIComponent(cfg.owner)}/${encodeURIComponent(cfg.repo)}/contents/${path}`;
+  const safePath = guardPath(path);
+  ghLog('LIST', safePath);
+
+  const url = `${API_BASE}/repos/${encodeURIComponent(cfg.owner)}/${encodeURIComponent(cfg.repo)}/contents/${safePath}`;
   const res = await fetch(url, { headers: authHeaders(cfg.pat) });
 
   if (res.status === 404) return [];
-  if (!res.ok) throw new Error(`GitHub list failed (${res.status}): ${path}`);
+  if (!res.ok) throw new Error(`GitHub list failed (${res.status}): ${safePath}`);
 
   return res.json();
 }
@@ -145,9 +206,12 @@ export async function deleteFile(path, sha) {
   const cfg = getConfig();
   if (!cfg?.owner || !cfg?.repo || !cfg?.pat) throw new Error('GitHub not configured');
 
-  const url = `${API_BASE}/repos/${encodeURIComponent(cfg.owner)}/${encodeURIComponent(cfg.repo)}/contents/${path}`;
+  const safePath = guardPath(path);
+  ghLog('DELETE', safePath);
+
+  const url = `${API_BASE}/repos/${encodeURIComponent(cfg.owner)}/${encodeURIComponent(cfg.repo)}/contents/${safePath}`;
   const body = {
-    message: `mexicano: delete ${path}`,
+    message: `mexicano: delete ${safePath}`,
     sha,
   };
   const res = await fetch(url, {
@@ -158,8 +222,10 @@ export async function deleteFile(path, sha) {
 
   if (!res.ok && res.status !== 404) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(`GitHub delete failed (${res.status}): ${err.message || path}`);
+    ghLog('DELETE_FAIL', safePath, err.message);
+    throw new Error(`GitHub delete failed (${res.status}): ${err.message || safePath}`);
   }
+  ghLog('DELETE_OK', safePath);
 }
 
 /**
@@ -173,11 +239,14 @@ export async function writeFile(path, data, sha) {
   const cfg = getConfig();
   if (!cfg?.owner || !cfg?.repo || !cfg?.pat) throw new Error('GitHub not configured');
 
-  const url = `${API_BASE}/repos/${encodeURIComponent(cfg.owner)}/${encodeURIComponent(cfg.repo)}/contents/${path}`;
+  const safePath = guardPath(path);
+  ghLog('WRITE', safePath, sha ? 'update' : 'create');
+
+  const url = `${API_BASE}/repos/${encodeURIComponent(cfg.owner)}/${encodeURIComponent(cfg.repo)}/contents/${safePath}`;
 
   async function attempt(currentSha) {
     const body = {
-      message: `mexicano: update ${path}`,
+      message: `mexicano: update ${safePath}`,
       content: btoa(unescape(encodeURIComponent(JSON.stringify(data, null, 2)))),
       ...(currentSha ? { sha: currentSha } : {}),
     };
@@ -192,14 +261,17 @@ export async function writeFile(path, data, sha) {
 
   // Retry once on 409 Conflict — re-read the current SHA and try again
   if (res.status === 409) {
+    ghLog('WRITE_CONFLICT', safePath, 'retrying');
     const fresh = await readFile(path);
     res = await attempt(fresh?.sha);
   }
 
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(`GitHub write failed (${res.status}): ${err.message || path}`);
+    ghLog('WRITE_FAIL', safePath, err.message);
+    throw new Error(`GitHub write failed (${res.status}): ${err.message || safePath}`);
   }
+  ghLog('WRITE_OK', safePath);
   return res.json();
 }
 
@@ -245,6 +317,8 @@ export async function pushAll(onProgress, { allMatchDates = false } = {}) {
 
   // 1. Push non-matches data (doodle, changelog, active_tournament, …)
   const entries = Object.entries(data).filter(([k]) => keyToPath(k));
+  ghLog('PUSH_START', '-', `${entries.length} data keys, allMatchDates=${allMatchDates}`);
+
   let total = entries.length;
   let i = 0;
   for (const [key, value] of entries) {
@@ -282,6 +356,7 @@ export async function pushAll(onProgress, { allMatchDates = false } = {}) {
     onProgress?.(date, dateEntries.length, ++i);
   }
 
+  ghLog('PUSH_DONE', '-', `${entries.length} data + ${dateEntries.length} match files`);
   _dirtyMatchDates.clear();
 }
 
@@ -301,6 +376,7 @@ export async function pullAll(onProgress) {
   const cfg = getConfig();
   if (!cfg?.owner || !cfg?.repo || !cfg?.pat) throw new Error('GitHub not configured');
 
+  ghLog('PULL_START', '-');
   _isPulling = true;
   try {
     const base = matchesBase();
@@ -407,6 +483,7 @@ export async function pullAll(onProgress) {
     }
   } finally {
     _isPulling = false;
+    ghLog('PULL_DONE', '-');
   }
 }
 
@@ -531,16 +608,19 @@ export function getSyncStatus() {
 async function executePush() {
   if (_pushInProgress) {
     _pushPending = true;
+    ghLog('AUTO_SYNC', '-', 'queued (push already in progress)');
     return;
   }
   _pushInProgress = true;
   setSyncStatus('syncing');
+  ghLog('AUTO_SYNC', '-', 'starting');
   try {
     await pushAll();
     setSyncStatus('success');
     setTimeout(() => setSyncStatus('idle'), 3000);
   } catch (e) {
     console.error('GitHub auto-sync failed:', e);
+    ghLog('AUTO_SYNC_FAIL', '-', e.message);
     setSyncStatus('error');
   } finally {
     _pushInProgress = false;
@@ -562,6 +642,7 @@ export function schedulePush(key) {
   // Allow matches through even though keyToPath returns null for it
   if (keyToPath(key) === null && key !== 'matches') return;
 
+  ghLog('SCHEDULE_PUSH', '-', `triggered by key: ${key}`);
   clearTimeout(_syncTimer);
   _syncTimer = setTimeout(() => executePush(), 1500);
 }
