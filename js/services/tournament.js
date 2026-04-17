@@ -305,8 +305,19 @@ export function completeTournament(tournament) {
   Store.clearActiveTournament();
   State.emit('tournament-changed', tournament);
 
-  // Immediately sync completed tournament to GitHub
-  import('./github.js').then(({ flushPush }) => flushPush()).catch(() => {});
+  // Immediately sync completed tournament to GitHub:
+  // mark the date dirty, delete the active_tournament file, then flush
+  import('./github.js').then(({ flushPush, markMatchDateDirty, keyToPath, readFile, deleteFile }) => {
+    markMatchDateDirty(tournament.tournamentDate);
+    // Delete active_tournament.json from GitHub since the tournament is done
+    const atPath = keyToPath('active_tournament');
+    if (atPath) {
+      readFile(atPath)
+        .then(existing => { if (existing?.sha) return deleteFile(atPath, existing.sha); })
+        .catch(() => {});
+    }
+    flushPush();
+  }).catch(() => {});
 
   return tournament;
 }
@@ -433,4 +444,9 @@ export function saveTournamentState(tournament) {
 
   Store.setMatches(otherMatches);
   State.emit('tournament-changed', tournament);
+
+  // Mark this date dirty so only its match file is pushed
+  import('./github.js').then(({ markMatchDateDirty }) => {
+    markMatchDateDirty(tournament.tournamentDate);
+  }).catch(() => {});
 }

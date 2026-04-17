@@ -3,12 +3,12 @@
  * Reads and writes app data as JSON files in a user-configured GitHub repository.
  *
  * Matches are stored in per-tournament-day files using the backup format:
- *   YYYY/YYYY-MM/YYYY-MM-DD.json  (PascalCase fields, metadata wrapper)
+ *   <basePath>/YYYY/YYYY-MM/YYYY-MM-DD.json  (PascalCase fields, metadata wrapper)
  *
- * Other data lives in the data/ folder:
- *   active_tournament  → data/active_tournament.json
- *   changelog          → data/changelog.json
- *   doodle_YYYY-MM     → data/doodle_YYYY-MM.json
+ * Other data lives in the data/ folder under the base path:
+ *   active_tournament  → <basePath>/data/active_tournament.json
+ *   changelog          → <basePath>/data/changelog.json
+ *   doodle_YYYY-MM     → <basePath>/YYYY/YYYY-MM/doodle_YYYY-MM.json
  *
  * Members and theme are local-only and are never synced to GitHub.
  */
@@ -83,16 +83,18 @@ export function keyToPath(key) {
   if (key === 'players_summary' || key === 'tournament_dates' || key === 'matches_fully_loaded') return null;
   if (key === 'stats-summary') return null;
   if (key.startsWith('monthly_')) return null;
+
+  const base = getConfig()?.basePath?.trim().replace(/\/$/, '') || '';
+  const prefix = base ? `${base}/` : '';
+
   // Doodle files live next to that month's tournament data: YYYY/YYYY-MM/doodle_YYYY-MM.json
   const doodleMatch = key.match(/^doodle_(\d{4})-(\d{2})$/);
   if (doodleMatch) {
     const year = doodleMatch[1];
     const yearMonth = `${year}-${doodleMatch[2]}`;
-    const base = getConfig()?.basePath?.trim().replace(/\/$/, '') || '';
-    const prefix = base ? `${base}/` : '';
     return `${prefix}${year}/${yearMonth}/${key}.json`;
   }
-  return `data/${key}.json`;
+  return `${prefix}data/${key}.json`;
 }
 
 /**
@@ -130,6 +132,32 @@ async function listContents(path) {
   if (!res.ok) throw new Error(`GitHub list failed (${res.status}): ${path}`);
 
   return res.json();
+}
+
+/**
+ * Delete a file from the repo.
+ * @param {string} path - repo-relative file path
+ * @param {string} sha  - current file SHA (required)
+ */
+export async function deleteFile(path, sha) {
+  const cfg = getConfig();
+  if (!cfg?.owner || !cfg?.repo || !cfg?.pat) throw new Error('GitHub not configured');
+
+  const url = `${API_BASE}/repos/${encodeURIComponent(cfg.owner)}/${encodeURIComponent(cfg.repo)}/contents/${path}`;
+  const body = {
+    message: `mexicano: delete ${path}`,
+    sha,
+  };
+  const res = await fetch(url, {
+    method: 'DELETE',
+    headers: authHeaders(cfg.pat),
+    body: JSON.stringify(body),
+  });
+
+  if (!res.ok && res.status !== 404) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(`GitHub delete failed (${res.status}): ${err.message || path}`);
+  }
 }
 
 /**
@@ -206,8 +234,11 @@ export async function testConnection() {
  * Other synced keys (doodle, changelog, active_tournament) are written to data/.
  *
  * @param {function} [onProgress] - called with (label, total, index) for each file written
+ * @param {object}   [opts]
+ * @param {boolean}  [opts.allMatchDates=false] - when true, push every match date (manual sync);
+ *                   when false (auto-sync), only push dates marked dirty via markMatchDateDirty().
  */
-export async function pushAll(onProgress) {
+export async function pushAll(onProgress, { allMatchDates = false } = {}) {
   const data = Store.exportAll();
 
   // 1. Push non-matches data (doodle, changelog, active_tournament, …)
@@ -222,11 +253,12 @@ export async function pushAll(onProgress) {
     onProgress?.(key, total, ++i);
   }
 
-  // 2. Push matches as per-date files
+  // 2. Push matches as per-date files (only dirty dates unless allMatchDates)
   const matches = data.matches || [];
   const byDate = {};
   for (const m of matches) {
     if (!m.date) continue;
+    if (!allMatchDates && !_dirtyMatchDates.has(m.date)) continue;
     if (!byDate[m.date]) byDate[m.date] = [];
     byDate[m.date].push(m);
   }
@@ -247,6 +279,8 @@ export async function pushAll(onProgress) {
     await writeFile(path, backupData, sha);
     onProgress?.(date, dateEntries.length, ++i);
   }
+
+  _dirtyMatchDates.clear();
 }
 
 /**
@@ -356,14 +390,15 @@ export async function pullAll(onProgress) {
     localStorage.removeItem('mexicano_matches_fully_loaded');
 
     // ── 4. Pull data/ files (changelog, active_tournament, …) ──────────────
-    const dataFiles = await listContents('data');
+    const dataPath = base ? `${base}/data` : 'data';
+    const dataFiles = await listContents(dataPath);
     const jsonFiles = dataFiles.filter(f => f.type === 'file' && f.name.endsWith('.json'));
     for (const file of jsonFiles) {
       const key = file.name.replace(/\.json$/, '');
       if (keyToPath(key) === null) continue;
       // Doodle files are pulled from month directories (step 3)
       if (key.startsWith('doodle_')) continue;
-      const result = await readFile(`data/${file.name}`);
+      const result = await readFile(`${dataPath}/${file.name}`);
       if (result !== null) {
         localStorage.setItem(`mexicano_${key}`, JSON.stringify(result.content));
       }
@@ -469,6 +504,12 @@ let _isPulling = false;   // suppresses auto-push during pullAll
 let _pushInProgress = false;
 let _pushPending = false;
 const _listeners = new Set();
+const _dirtyMatchDates = new Set();
+
+/** Mark a tournament date as needing a push to GitHub. */
+export function markMatchDateDirty(date) {
+  if (date) _dirtyMatchDates.add(date);
+}
 
 export function onSyncStatus(fn) {
   _listeners.add(fn);

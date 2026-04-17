@@ -289,7 +289,7 @@ export function renderSettings(container, params) {
     updateSyncIcon('syncing');
     setGhStatusMsg('Pushing to GitHub…');
     try {
-      await pushAll((key, total, i) => setGhStatusMsg(`Pushing ${key}… (${i}/${total})`));
+      await pushAll((key, total, i) => setGhStatusMsg(`Pushing ${key}… (${i}/${total})`), { allMatchDates: true });
       updateSyncIcon('success');
       setGhStatusMsg('All data pushed successfully.');
       showToast('Pushed to GitHub ✅');

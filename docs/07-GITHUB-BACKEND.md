@@ -58,15 +58,14 @@ The sync icon in the **GitHub Backend** section title shows the current state at
 
 ## Data File Mapping
 
-All data is stored under a `data/` folder in the configured repository. Each data type maps to one JSON file:
+All data is stored under the configured **base path** (e.g. `mexicano_v3/`) in the repository. Each data type maps to one JSON file:
 
 | App data | GitHub file |
 |----------|-------------|
-| Members roster | `data/members.json` |
-| Match results | `data/matches.json` |
-| Active tournament | `data/active_tournament.json` |
-| Changelog | `data/changelog.json` |
-| Doodle entries (per month) | `data/doodle_YYYY-MM.json` |
+| Match results | `<basePath>/YYYY/YYYY-MM/YYYY-MM-DD.json` |
+| Active tournament | `<basePath>/data/active_tournament.json` |
+| Changelog | `<basePath>/data/changelog.json` |
+| Doodle entries (per month) | `<basePath>/YYYY/YYYY-MM/doodle_YYYY-MM.json` |
 
 Config keys (`github_config`, `theme`, `current_user`) are **not** synced to GitHub.
 
