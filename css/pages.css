@@ -394,6 +394,15 @@
   background: var(--bg-secondary);
 }
 
+.doodle-total-clickable {
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.doodle-total-clickable:hover {
+  background: var(--color-primary-light, rgba(99, 102, 241, 0.15)) !important;
+  text-decoration: underline;
+}
+
 .doodle-best {
   background: var(--color-success-light) !important;
 }

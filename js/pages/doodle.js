@@ -2,6 +2,7 @@ import { getDoodle, saveDoodle, deleteDoodle, getChangelog, getAllDatesInMonth }
 import { Store } from '../store.js';
 import { showToast } from '../components/toast.js';
 import { getRecentMembers } from '../services/members.js';
+import { calculateAllEloRankings } from '../services/elo.js';
 
 // ─── Helpers ───
 
@@ -211,11 +212,32 @@ export function renderDoodle(container, params = {}) {
     allDates.forEach(dateStr => {
       const td = document.createElement('td');
       const isPast = dateStr < todayStr;
-      td.textContent = totals[dateStr] || 0;
+      const count = totals[dateStr] || 0;
+      td.textContent = count;
       if (isPast) td.classList.add('doodle-past');
       if (maxTotal > 0 && totals[dateStr] === maxTotal) {
         td.classList.add('doodle-best');
       }
+
+      if (count > 0 && !isPast) {
+        td.classList.add('doodle-total-clickable');
+        td.addEventListener('click', () => {
+          const availablePlayers = players.filter(p => selections[p].has(dateStr));
+
+          // Sort by ELO descending
+          const allMatches = Store.getMatches();
+          const { players: eloPlayers } = calculateAllEloRankings(allMatches);
+          availablePlayers.sort((a, b) => {
+            const eloA = eloPlayers[a] ? eloPlayers[a].elo : 1000;
+            const eloB = eloPlayers[b] ? eloPlayers[b].elo : 1000;
+            return eloB - eloA;
+          });
+
+          const namesParam = availablePlayers.map(n => encodeURIComponent(n)).join(',');
+          window.location.hash = `#/create-tournament?date=${dateStr}&names=${namesParam}`;
+        });
+      }
+
       totalRow.appendChild(td);
     });
     tfoot.appendChild(totalRow);

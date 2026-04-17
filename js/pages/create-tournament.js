@@ -8,7 +8,7 @@ function todayStr() {
   return new Date().toISOString().split('T')[0];
 }
 
-export function renderCreateTournament(container) {
+export function renderCreateTournament(container, params = {}) {
   let selectedCount = 0;
   let playerInputs = [];
 
@@ -103,6 +103,33 @@ export function renderCreateTournament(container) {
       slotsContainer.appendChild(slot);
     }
     startBtn.disabled = false;
+  }
+
+  // Prepopulate from params (e.g. coming from Doodle)
+  if (params.names) {
+    const preNames = params.names.split(',').map(n => decodeURIComponent(n));
+    if (preNames.length > 0) {
+      // Find the smallest valid player count that fits all names
+      const fitCount = PLAYER_COUNTS.find(c => c >= preNames.length) || PLAYER_COUNTS[PLAYER_COUNTS.length - 1];
+      selectedCount = fitCount;
+
+      // Highlight the selected count button
+      countSelector.querySelectorAll('.player-count-option').forEach(b => {
+        b.classList.toggle('selected', parseInt(b.dataset.count, 10) === fitCount);
+      });
+
+      renderPlayerSlots(fitCount);
+
+      // Fill in the names
+      const namesToFill = preNames.slice(0, fitCount);
+      namesToFill.forEach((name, i) => {
+        if (playerInputs[i]) playerInputs[i].value = name;
+      });
+    }
+  }
+
+  if (params.date) {
+    dateInput.value = params.date;
   }
 
   // Start tournament
