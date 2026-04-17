@@ -138,9 +138,13 @@ export function renderDoodle(container, params = {}) {
     cornerTh.textContent = 'Player';
     hRow.appendChild(cornerTh);
 
+    const todayStr = new Date().toISOString().slice(0, 10);
+
     allDates.forEach(dateStr => {
       const { day, weekday } = formatDay(dateStr);
+      const isPast = dateStr < todayStr;
       const th = document.createElement('th');
+      if (isPast) th.classList.add('doodle-past');
       th.innerHTML = `${day}<br><span style="font-weight:normal;font-size:0.6rem">${weekday}</span>`;
       hRow.appendChild(th);
     });
@@ -164,12 +168,16 @@ export function renderDoodle(container, params = {}) {
         const td = document.createElement('td');
         const isSelected = selections[player].has(dateStr);
         const isOwn = player === currentUser;
+        const isPast = dateStr < todayStr;
 
         const cell = document.createElement('div');
-        cell.className = 'doodle-cell' + (isSelected ? ' selected' : '') + (!isOwn ? ' readonly' : '');
+        cell.className = 'doodle-cell'
+          + (isSelected ? ' selected' : '')
+          + ((!isOwn || isPast) ? ' readonly' : '')
+          + (isPast ? ' past' : '');
         cell.textContent = isSelected ? '✓' : '';
 
-        if (isOwn) {
+        if (isOwn && !isPast) {
           cell.addEventListener('click', () => {
             if (isSelected) {
               selections[player].delete(dateStr);
@@ -202,7 +210,9 @@ export function renderDoodle(container, params = {}) {
 
     allDates.forEach(dateStr => {
       const td = document.createElement('td');
+      const isPast = dateStr < todayStr;
       td.textContent = totals[dateStr] || 0;
+      if (isPast) td.classList.add('doodle-past');
       if (maxTotal > 0 && totals[dateStr] === maxTotal) {
         td.classList.add('doodle-best');
       }

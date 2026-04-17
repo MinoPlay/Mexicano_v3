@@ -398,6 +398,15 @@
   background: var(--color-success-light) !important;
 }
 
+.doodle-past {
+  opacity: 0.4;
+}
+
+.doodle-cell.past {
+  cursor: default;
+  pointer-events: none;
+}
+
 /* ─── Attendance Calendar ─── */
 .attendance-calendar {
   display: grid;

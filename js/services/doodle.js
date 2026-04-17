@@ -9,6 +9,10 @@ export function getAllDatesInMonth(year, month) {
   const dates = [];
   const daysInMonth = new Date(year, month, 0).getDate();
   for (let d = 1; d <= daysInMonth; d++) {
+    const date = new Date(year, month - 1, d);
+    const dow = date.getDay();
+    // Only include Tuesdays (2) and Thursdays (4)
+    if (dow !== 2 && dow !== 4) continue;
     const mm = String(month).padStart(2, '0');
     const dd = String(d).padStart(2, '0');
     dates.push(`${year}-${mm}-${dd}`);
