@@ -74,15 +74,10 @@ function authHeaders(pat) {
   };
 }
 
-/** Map a Store key to a GitHub file path (returns null if the key should not be synced). */
+/** Map a Store key to a GitHub file path (returns null if the key should not be synced).
+ *  Uses an allowlist — only keys this app explicitly owns are synced. */
 export function keyToPath(key) {
   if (!key) return null;
-  // matches are written per-date; members/theme/user-prefs are local-only
-  if (['github_config', 'theme', 'current_user', 'matches', 'members'].includes(key)) return null;
-  // Pre-computed summary data — never synced back
-  if (key === 'players_summary' || key === 'tournament_dates' || key === 'matches_fully_loaded') return null;
-  if (key === 'stats-summary') return null;
-  if (key.startsWith('monthly_')) return null;
 
   const base = getConfig()?.basePath?.trim().replace(/\/$/, '') || '';
   const prefix = base ? `${base}/` : '';
@@ -94,7 +89,14 @@ export function keyToPath(key) {
     const yearMonth = `${year}-${doodleMatch[2]}`;
     return `${prefix}${year}/${yearMonth}/${key}.json`;
   }
-  return `${prefix}data/${key}.json`;
+
+  // Only these data-folder keys are synced
+  const SYNCED_DATA_KEYS = ['changelog', 'active_tournament'];
+  if (SYNCED_DATA_KEYS.includes(key)) {
+    return `${prefix}data/${key}.json`;
+  }
+
+  return null;
 }
 
 /**
