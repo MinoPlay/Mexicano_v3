@@ -101,14 +101,55 @@ def main():
     # Sort chronologically by date then round number
     valid.sort(key=build_sort_key)
 
-    # Replay ELO
+    # Replay ELO while tracking per-player snapshots at end of each date
     players = {}  # name -> elo
+    # date_snapshots[name][date] = elo at end of that date
+    date_snapshots = {}
+
+    current_date = None
     for match in valid:
+        if match["Date"] != current_date:
+            # Snapshot the previous date's final ELOs for all players who played
+            if current_date is not None:
+                for name, elo in players.items():
+                    date_snapshots.setdefault(name, {})[current_date] = elo
+            current_date = match["Date"]
         process_match_elo(match, players)
+
+    # Snapshot the last date
+    if current_date is not None:
+        for name, elo in players.items():
+            date_snapshots.setdefault(name, {})[current_date] = elo
+
+    # For each player, find their second-to-last tournament date (dates they played in)
+    # A player "played in" a date if their ELO changed on that date vs the previous snapshot
+    def get_previous_elo(name):
+        if name not in date_snapshots:
+            return INITIAL_ELO
+        snapshots = date_snapshots[name]
+        dates = sorted(snapshots.keys())
+        # Find dates where this player actually participated (ELO changed)
+        played_dates = []
+        prev_elo = INITIAL_ELO
+        for d in dates:
+            if snapshots[d] != prev_elo:
+                played_dates.append(d)
+            prev_elo = snapshots[d]
+        if len(played_dates) <= 1:
+            return INITIAL_ELO
+        second_to_last = played_dates[-2]
+        return snapshots[second_to_last]
 
     # Build output sorted by ELO descending
     result = sorted(
-        [{"Name": name, "ELO": elo} for name, elo in players.items()],
+        [
+            {
+                "Name": name,
+                "ELO": elo,
+                "PreviousELO": get_previous_elo(name),
+            }
+            for name, elo in players.items()
+        ],
         key=lambda p: p["ELO"],
         reverse=True,
     )

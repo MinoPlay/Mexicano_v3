@@ -389,6 +389,7 @@ export async function pullAll(onProgress) {
         const camelPlayers = playersResult.content.map(p => ({
           name: p.Name,
           elo: p.ELO,
+          previousElo: p.PreviousELO ?? p.ELO,
         }));
         localStorage.setItem('mexicano_players_summary', JSON.stringify(camelPlayers));
         // Update members list from the authoritative players.json

@@ -172,3 +172,76 @@ export function calculateEloChange(player) {
 
   return Math.round((player.elo - previousElo) * 100) / 100;
 }
+
+/**
+ * Build per-player ELO snapshots at the end of each tournament date.
+ * Returns { snapshots: { playerName: { date: elo } }, players }
+ */
+export function getEloSnapshots(allMatches) {
+  const validMatches = allMatches.filter(m => !(m.scoreTeam1 === 0 && m.scoreTeam2 === 0));
+  const sorted = [...validMatches].sort((a, b) => buildSortKey(a).localeCompare(buildSortKey(b)));
+
+  const players = {};
+  for (const match of sorted) {
+    processMatchElo(match, players);
+  }
+
+  const snapshots = {};
+  for (const [name, player] of Object.entries(players)) {
+    snapshots[name] = {};
+    const dates = [...new Set(player.history.map(h => h.date))].sort();
+    for (const date of dates) {
+      const entries = player.history.filter(h => h.date === date);
+      if (entries.length > 0) {
+        snapshots[name][date] = entries[entries.length - 1].elo;
+      }
+    }
+  }
+
+  return { snapshots, players };
+}
+
+/**
+ * Get ELO and ±ELO for each player at a specific tournament date.
+ * ±ELO = change vs. the previous tournament date for that player.
+ */
+export function getEloForDate(snapshots, targetDate) {
+  const result = {};
+  for (const [name, dateMap] of Object.entries(snapshots)) {
+    if (!(targetDate in dateMap)) continue;
+    const dates = Object.keys(dateMap).sort();
+    const idx = dates.indexOf(targetDate);
+    const prevElo = idx > 0 ? dateMap[dates[idx - 1]] : INITIAL_ELO;
+    result[name] = {
+      elo: dateMap[targetDate],
+      eloChange: Math.round((dateMap[targetDate] - prevElo) * 100) / 100,
+    };
+  }
+  return result;
+}
+
+/**
+ * Get ELO and ±ELO for each player at the end of a month (YYYY-MM).
+ * ±ELO = change vs. end of the previous month.
+ */
+export function getEloForMonth(snapshots, yearMonth) {
+  const result = {};
+  for (const [name, dateMap] of Object.entries(snapshots)) {
+    const dates = Object.keys(dateMap).sort();
+    // Find the last date within this month
+    const monthDates = dates.filter(d => d.startsWith(yearMonth));
+    if (monthDates.length === 0) continue;
+    const lastDateInMonth = monthDates[monthDates.length - 1];
+    const elo = dateMap[lastDateInMonth];
+
+    // Find the last date before this month for previous ELO
+    const priorDates = dates.filter(d => d < yearMonth);
+    const prevElo = priorDates.length > 0 ? dateMap[priorDates[priorDates.length - 1]] : INITIAL_ELO;
+
+    result[name] = {
+      elo,
+      eloChange: Math.round((elo - prevElo) * 100) / 100,
+    };
+  }
+  return result;
+}

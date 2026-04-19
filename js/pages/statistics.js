@@ -1,5 +1,5 @@
 import { calculatePlayerStatistics, calculateOpponentStats, calculatePartnershipStats, generatePlayerSummary } from '../services/statistics.js';
-import { calculateAllEloRankings } from '../services/elo.js';
+import { calculateAllEloRankings, getEloSnapshots, getEloForDate, getEloForMonth } from '../services/elo.js';
 import { Store } from '../store.js';
 
 // ─── Helpers ───
@@ -35,30 +35,7 @@ function formatMonth(yearMonth) {
 
 // ─── Column definitions ───
 
-const FULL_COLUMNS = [
-  { key: 'rank', label: '#', cls: 'rank-cell' },
-  { key: 'name', label: 'Name', cls: 'name-cell' },
-  { key: 'wins', label: 'W', cls: 'num-cell' },
-  { key: 'losses', label: 'L', cls: 'num-cell' },
-  { key: 'points', label: 'Pts', cls: 'num-cell' },
-  { key: 'average', label: 'Avg', cls: 'num-cell' },
-  { key: 'winRate', label: 'Win%', cls: 'num-cell' },
-  { key: 'tightWins', label: 'TW', cls: 'num-cell' },
-  { key: 'solidWins', label: 'SW', cls: 'num-cell' },
-  { key: 'dominatingWins', label: 'DW', cls: 'num-cell' },
-];
-
-const OVERVIEW_COLUMNS = [
-  { key: 'rank', label: '#', cls: 'rank-cell' },
-  { key: 'name', label: 'Name', cls: 'name-cell' },
-  { key: 'wins', label: 'W', cls: 'num-cell' },
-  { key: 'losses', label: 'L', cls: 'num-cell' },
-  { key: 'points', label: 'Pts', cls: 'num-cell' },
-  { key: 'average', label: 'Avg', cls: 'num-cell' },
-  { key: 'winRate', label: 'Win%', cls: 'num-cell' },
-];
-
-const LATEST_COLUMNS = [
+const STAT_COLUMNS = [
   { key: 'rank', label: '#', cls: 'rank-cell' },
   { key: 'name', label: 'Name', cls: 'name-cell' },
   { key: 'wins', label: 'W', cls: 'num-cell' },
@@ -162,7 +139,7 @@ function overviewToStats(overview) {
 
 // ─── Sortable Table Renderer ───
 
-function renderSortableTable(container, stats, onPlayerClick, columns = FULL_COLUMNS, defaultSort = 'points') {
+function renderSortableTable(container, stats, onPlayerClick, columns = STAT_COLUMNS, defaultSort = 'elo') {
   let sortCol = defaultSort;
   let sortDir = 'desc';
 
@@ -226,12 +203,20 @@ function renderSortableTable(container, stats, onPlayerClick, columns = FULL_COL
         } else if (col.key === 'average') {
           td.textContent = typeof row[col.key] === 'number' ? row[col.key].toFixed(1) : row[col.key];
         } else if (col.key === 'elo') {
-          td.textContent = Math.round(row[col.key] ?? 0);
+          if (row[col.key] == null) {
+            td.textContent = '—';
+          } else {
+            td.textContent = Math.round(row[col.key]);
+          }
         } else if (col.key === 'eloChange') {
-          const val = row[col.key] ?? 0;
-          const rounded = Math.round(val * 10) / 10;
-          td.textContent = (rounded > 0 ? '+' : '') + rounded.toFixed(1);
-          td.style.color = rounded > 0 ? 'var(--color-success, #22c55e)' : rounded < 0 ? 'var(--color-danger, #ef4444)' : '';
+          if (row[col.key] == null) {
+            td.textContent = '—';
+          } else {
+            const val = row[col.key];
+            const rounded = Math.round(val * 10) / 10;
+            td.textContent = (rounded > 0 ? '+' : '') + rounded.toFixed(1);
+            td.style.color = rounded > 0 ? 'var(--color-success, #22c55e)' : rounded < 0 ? 'var(--color-danger, #ef4444)' : '';
+          }
         } else {
           td.textContent = row[col.key] ?? '';
         }
@@ -502,6 +487,36 @@ export function renderStatistics(container, params = {}) {
     }
   }
 
+  function attachEloFromSummary(stats, mode) {
+    const summary = Store.getPlayersSummary();
+    if (summary.length === 0) return;
+    const summaryMap = {};
+    for (const p of summary) summaryMap[p.name] = p;
+    for (const stat of stats) {
+      const p = summaryMap[stat.name];
+      if (!p) continue;
+      stat.elo = p.elo;
+      if (mode === 'alltime') {
+        stat.eloChange = Math.round((p.elo - 1000) * 100) / 100;
+      } else {
+        stat.eloChange = Math.round(((p.elo ?? 1000) - (p.previousElo ?? 1000)) * 100) / 100;
+      }
+    }
+  }
+
+  function attachEloFromSnapshots(stats, eloMap) {
+    for (const stat of stats) {
+      const data = eloMap[stat.name];
+      if (data) {
+        stat.elo = data.elo;
+        stat.eloChange = data.eloChange;
+      } else {
+        stat.elo = null;
+        stat.eloChange = null;
+      }
+    }
+  }
+
   function renderTable() {
     // "All Time" — prefer aggregated overviews
     if (activeFilter === 'all') {
@@ -512,7 +527,8 @@ export function renderStatistics(container, params = {}) {
           tableContainer.innerHTML = '<p class="text-secondary text-center mt-lg">No data for this filter</p>';
           return;
         }
-        renderSortableTable(tableContainer, stats, null, OVERVIEW_COLUMNS);
+        attachEloFromSummary(stats, 'alltime');
+        renderSortableTable(tableContainer, stats, null);
       } else {
         const stats = calculatePlayerStatistics(allMatches);
         tableContainer.innerHTML = '';
@@ -520,6 +536,12 @@ export function renderStatistics(container, params = {}) {
           tableContainer.innerHTML = '<p class="text-secondary text-center mt-lg">No data for this filter</p>';
           return;
         }
+        const { rankings } = calculateAllEloRankings(allMatches);
+        const eloMap = {};
+        rankings.forEach(r => {
+          eloMap[r.name] = { elo: r.elo, eloChange: Math.round((r.elo - 1000) * 100) / 100 };
+        });
+        attachEloFromSnapshots(stats, eloMap);
         renderSortableTable(tableContainer, stats, name => showPlayerProfile(name));
       }
       return;
@@ -534,7 +556,14 @@ export function renderStatistics(container, params = {}) {
         tableContainer.innerHTML = '<p class="text-secondary text-center mt-lg">No data for this month</p>';
         return;
       }
-      renderSortableTable(tableContainer, stats, null, OVERVIEW_COLUMNS);
+      // Compute ELO snapshots from available matches
+      const availableMatches = Store.getMatches();
+      if (availableMatches.length > 0) {
+        const { snapshots } = getEloSnapshots(availableMatches);
+        const eloMap = getEloForMonth(snapshots, activeFilter);
+        attachEloFromSnapshots(stats, eloMap);
+      }
+      renderSortableTable(tableContainer, stats, null);
       return;
     }
 
@@ -550,7 +579,7 @@ export function renderStatistics(container, params = {}) {
     // Check locally cached matches first
     let dayMatches = allMatches.filter(m => m.date === targetDate);
     if (dayMatches.length > 0) {
-      renderDayStats(dayMatches, { withElo: isLatest });
+      renderDayStats(dayMatches, targetDate, isLatest);
       return;
     }
 
@@ -561,7 +590,7 @@ export function renderStatistics(container, params = {}) {
         ensureDayMatchesLoaded(targetDate)
       ).then(matches => {
         if (matches.length > 0) {
-          renderDayStats(matches, { withElo: isLatest });
+          renderDayStats(matches, targetDate, isLatest);
         } else {
           tableContainer.innerHTML = '<p class="text-secondary text-center mt-lg">No data for this date</p>';
         }
@@ -573,27 +602,31 @@ export function renderStatistics(container, params = {}) {
     }
   }
 
-  function renderDayStats(matches, { withElo = false } = {}) {
+  function renderDayStats(matches, targetDate, isLatest) {
     const stats = calculatePlayerStatistics(matches);
     tableContainer.innerHTML = '';
     if (!stats.length) {
       tableContainer.innerHTML = '<p class="text-secondary text-center mt-lg">No data for this filter</p>';
       return;
     }
-    if (withElo) {
-      const freshMatches = Store.getMatches();
-      const { rankings } = calculateAllEloRankings(freshMatches.length > 0 ? freshMatches : matches);
-      const eloMap = {};
-      rankings.forEach(r => { eloMap[r.name] = r; });
-      for (const stat of stats) {
-        const eloData = eloMap[stat.name];
-        stat.elo = eloData ? eloData.elo : 1000;
-        stat.eloChange = eloData ? eloData.change : 0;
-      }
-      renderSortableTable(tableContainer, stats, name => showPlayerProfile(name), LATEST_COLUMNS, 'elo');
-    } else {
-      renderSortableTable(tableContainer, stats, name => showPlayerProfile(name));
+
+    if (isLatest) {
+      // Use stored ELO/previousElo from players_summary
+      attachEloFromSummary(stats, 'latest');
     }
+
+    // For non-latest dates (or if summary didn't have data), compute from matches
+    const needsElo = stats.some(s => s.elo == null);
+    if (needsElo) {
+      const freshMatches = Store.getMatches();
+      if (freshMatches.length > 0) {
+        const { snapshots } = getEloSnapshots(freshMatches);
+        const eloMap = getEloForDate(snapshots, targetDate);
+        attachEloFromSnapshots(stats, eloMap);
+      }
+    }
+
+    renderSortableTable(tableContainer, stats, name => showPlayerProfile(name));
   }
 
   renderFilterBar();
