@@ -4,6 +4,21 @@ import { showToast } from '../components/toast.js';
 import { getRecentMembers } from '../services/members.js';
 import { calculateAllEloRankings } from '../services/elo.js';
 
+/** Build a name→ELO map, preferring pre-computed players_summary. */
+function buildEloMap() {
+  const summary = Store.getPlayersSummary();
+  if (summary.length > 0) {
+    const map = {};
+    for (const p of summary) map[p.name] = p.elo;
+    return map;
+  }
+  // Fallback: compute from locally cached matches
+  const { players } = calculateAllEloRankings(Store.getMatches());
+  const map = {};
+  for (const [name, data] of Object.entries(players)) map[name] = data.elo;
+  return map;
+}
+
 // ─── Helpers ───
 
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June',
@@ -224,12 +239,11 @@ export function renderDoodle(container, params = {}) {
         td.addEventListener('click', () => {
           const availablePlayers = players.filter(p => selections[p].has(dateStr));
 
-          // Sort by ELO descending
-          const allMatches = Store.getMatches();
-          const { players: eloPlayers } = calculateAllEloRankings(allMatches);
+          // Sort by ELO descending (prefer pre-computed summary)
+          const eloMap = buildEloMap();
           availablePlayers.sort((a, b) => {
-            const eloA = eloPlayers[a] ? eloPlayers[a].elo : 1000;
-            const eloB = eloPlayers[b] ? eloPlayers[b].elo : 1000;
+            const eloA = eloMap[a] ?? 1000;
+            const eloB = eloMap[b] ?? 1000;
             return eloB - eloA;
           });
 
