@@ -72,17 +72,44 @@ export function renderHome(container, params) {
     ? formatDate(tournamentDates[0])
     : '—';
 
-  // Determine which players played in the latest month
-  let latestMonthPlayerSet = null;
-  const months = Store.getMonthlyOverviewMonths();
-  if (months.length > 0) {
-    const latestMonth = months[months.length - 1];
-    const overview = Store.getMonthlyOverview(latestMonth);
-    if (overview.length > 0) {
-      latestMonthPlayerSet = new Set(overview.map(p => p.name.toLowerCase()));
+  // Determine which players played in the current calendar month.
+  // Fall back to the latest month with data if the current month has none.
+  const now = new Date();
+  const currentYearMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+
+  let activeMonthPlayerSet = null;
+
+  // Try current month from monthly overview
+  const currentOverview = Store.getMonthlyOverview(currentYearMonth);
+  if (currentOverview.length > 0) {
+    activeMonthPlayerSet = new Set(currentOverview.map(p => p.name.toLowerCase()));
+  }
+
+  // Try current month from raw matches
+  if (!activeMonthPlayerSet) {
+    const allMatchesForMonth = Store.getMatches().filter(m => m.date?.startsWith(currentYearMonth));
+    if (allMatchesForMonth.length > 0) {
+      const players = new Set();
+      for (const m of allMatchesForMonth) {
+        [m.team1Player1Name, m.team1Player2Name, m.team2Player1Name, m.team2Player2Name]
+          .filter(Boolean).forEach(n => players.add(n.toLowerCase()));
+      }
+      if (players.size > 0) activeMonthPlayerSet = players;
     }
   }
-  if (!latestMonthPlayerSet) {
+
+  // Fall back to latest month with data
+  if (!activeMonthPlayerSet) {
+    const months = Store.getMonthlyOverviewMonths();
+    if (months.length > 0) {
+      const latestMonth = months[months.length - 1];
+      const overview = Store.getMonthlyOverview(latestMonth);
+      if (overview.length > 0) {
+        activeMonthPlayerSet = new Set(overview.map(p => p.name.toLowerCase()));
+      }
+    }
+  }
+  if (!activeMonthPlayerSet) {
     const allMatches = Store.getMatches();
     const matchDates = allMatches.map(m => m.date).filter(Boolean);
     if (matchDates.length > 0) {
@@ -93,9 +120,7 @@ export function renderHome(container, params) {
         [m.team1Player1Name, m.team1Player2Name, m.team2Player1Name, m.team2Player2Name]
           .filter(Boolean).forEach(n => players.add(n.toLowerCase()));
       }
-      if (players.size > 0) {
-        latestMonthPlayerSet = players;
-      }
+      if (players.size > 0) activeMonthPlayerSet = players;
     }
   }
 
@@ -105,8 +130,8 @@ export function renderHome(container, params) {
     ? rankings.filter(p => memberSet.has(p.name.toLowerCase()))
     : rankings;
 
-  if (latestMonthPlayerSet) {
-    filteredRankings = filteredRankings.filter(p => latestMonthPlayerSet.has(p.name.toLowerCase()));
+  if (activeMonthPlayerSet) {
+    filteredRankings = filteredRankings.filter(p => activeMonthPlayerSet.has(p.name.toLowerCase()));
   }
 
   const top10 = filteredRankings.slice(0, 10);
