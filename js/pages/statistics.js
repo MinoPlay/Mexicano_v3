@@ -404,6 +404,12 @@ export function renderStatistics(container, params = {}) {
     ? [...Store.getTournamentDates()].sort()
     : getUniqueDates(allMatches);
 
+  // Derive months from local match dates when no overview months synced
+  const localMonths = !hasSummaryData
+    ? [...new Set(allMatches.map(m => m.date?.slice(0, 7)).filter(Boolean))].sort()
+    : [];
+  const availableMonths = overviewMonths.length > 0 ? overviewMonths : localMonths;
+
   if (!allMatches.length && !hasSummaryData) {
     content.innerHTML = `<div class="empty-state">
       <div class="empty-state-icon">📊</div>
@@ -444,8 +450,8 @@ export function renderStatistics(container, params = {}) {
       filterBar.appendChild(chip);
     });
 
-    // Month picker (from overviews)
-    if (overviewMonths.length > 1) {
+    // Month picker (from overviews or local match dates)
+    if (availableMonths.length > 1) {
       const monthSelect = document.createElement('select');
       monthSelect.style.cssText = 'width:auto;min-width:120px;padding:var(--space-xs) var(--space-sm);font-size:var(--font-size-sm);border-radius:var(--radius-full);';
       const defaultOpt = document.createElement('option');
@@ -454,7 +460,7 @@ export function renderStatistics(container, params = {}) {
       defaultOpt.disabled = true;
       defaultOpt.selected = !/^\d{4}-\d{2}$/.test(activeFilter);
       monthSelect.appendChild(defaultOpt);
-      [...overviewMonths].reverse().forEach(ym => {
+      [...availableMonths].reverse().forEach(ym => {
         const opt = document.createElement('option');
         opt.value = ym;
         opt.textContent = formatMonth(ym);
@@ -550,7 +556,14 @@ export function renderStatistics(container, params = {}) {
     // Monthly overview
     if (/^\d{4}-\d{2}$/.test(activeFilter)) {
       const overview = Store.getMonthlyOverview(activeFilter);
-      const stats = overviewToStats(overview);
+      let stats;
+      if (overview.length > 0) {
+        stats = overviewToStats(overview);
+      } else {
+        // Fall back to computing stats from local matches for this month
+        const monthMatches = allMatches.filter(m => m.date?.startsWith(activeFilter));
+        stats = calculatePlayerStatistics(monthMatches);
+      }
       tableContainer.innerHTML = '';
       if (!stats.length) {
         tableContainer.innerHTML = '<p class="text-secondary text-center mt-lg">No data for this month</p>';
