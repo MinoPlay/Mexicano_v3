@@ -3,7 +3,7 @@ import { Store } from '../store.js';
 import { State } from '../state.js';
 import { showToast } from '../components/toast.js';
 import { calculateAllEloRankings } from '../services/elo.js';
-import { pushDoodleNow } from '../services/github.js';
+import { pushDoodleNow, cancelPendingSync } from '../services/github.js';
 
 /** Build a name→ELO map, preferring pre-computed players_summary. */
 function buildEloMap() {
@@ -214,6 +214,7 @@ export function renderDoodle(container, params = {}) {
             showToast('Saving…');
             try {
               await pushDoodleNow(yearMonth);
+              cancelPendingSync();
               showToast('Saved ✓');
             } catch (e) {
               console.error('Doodle push failed:', e);

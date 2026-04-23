@@ -1,7 +1,12 @@
 // Seed data module — populates localStorage with demo data on first load.
-// Skip seeding if localStorage has data, a test flag is set, or local data API is available.
+// Skip seeding if localStorage has data, a test flag is set, or local data API is available,
+// or if a GitHub backend is configured (real data will be pulled from there instead).
 
 const isTestMode = localStorage.getItem('mexicano_test_mode') === 'true';
+
+// Skip seeding entirely when GitHub is configured — pull will supply the real data
+const _ghCfg = (() => { try { return JSON.parse(localStorage.getItem('mexicano_github_config')); } catch { return null; } })();
+const hasGitHubConfig = !!((_ghCfg?.pat) && (_ghCfg?.owner) && (_ghCfg?.repo));
 
 // Check if local data server is available (sync XHR, dev only)
 let hasLocalData = false;
@@ -16,6 +21,8 @@ try {
 
 if (isTestMode) {
   // Tests control their own data — don't seed
+} else if (hasGitHubConfig) {
+  console.log('[Seed] GitHub configured, skipping seed — real data will be pulled');
 } else if (hasLocalData) {
   console.log('[Seed] Local data API available, skipping seed');
 } else if (localStorage.getItem('mexicano_members')) {

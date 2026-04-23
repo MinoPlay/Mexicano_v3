@@ -73,10 +73,10 @@ export function renderSettings(container, params) {
           Store app data in a GitHub repository. A Personal Access Token (PAT) with <strong>repo</strong> scope is required.
         </p>
         <div class="flex flex-col gap-sm">
-          <input type="text"  id="github-owner"     placeholder="GitHub owner (user or org)" maxlength="100" />
-          <input type="text"  id="github-repo"      placeholder="Repository name"             maxlength="100" />
+          <input type="text"  id="github-owner"     value="MinoPlay"                   disabled style="opacity:0.6;cursor:not-allowed;" />
+          <input type="text"  id="github-repo"      value="DataHub"                    disabled style="opacity:0.6;cursor:not-allowed;" />
           <input type="password" id="github-pat"    placeholder="Personal Access Token (PAT)" maxlength="255" autocomplete="off" />
-          <input type="text"  id="github-base-path" placeholder="Base path for tournament files (e.g. backup-data)" maxlength="200" />
+          <input type="text"  id="github-base-path" value="mexicano_v3/backup-data"    disabled style="opacity:0.6;cursor:not-allowed;" />
         </div>
         <div class="flex gap-sm mt-sm">
           <button id="github-save-btn"  class="btn btn-primary"    style="flex:1;">Save</button>
@@ -155,20 +155,14 @@ export function renderSettings(container, params) {
 
   // ─── GitHub Backend ───────────────────────────────────────────────────────
 
-  const ghOwner    = container.querySelector('#github-owner');
-  const ghRepo     = container.querySelector('#github-repo');
   const ghPat      = container.querySelector('#github-pat');
-  const ghBasePath = container.querySelector('#github-base-path');
   const ghStatus   = container.querySelector('#github-status-msg');
   const ghSyncIcon = container.querySelector('#github-sync-icon');
 
-  // Pre-fill saved config
+  // Pre-fill saved PAT (owner/repo/basePath are hardcoded)
   const savedCfg = Store.getGitHubConfig();
   if (savedCfg) {
-    ghOwner.value    = savedCfg.owner    || '';
-    ghRepo.value     = savedCfg.repo     || '';
-    ghPat.value      = savedCfg.pat      || '';
-    ghBasePath.value = savedCfg.basePath || '';
+    ghPat.value = savedCfg.pat || '';
   }
 
   // Live sync icon updates
@@ -189,31 +183,25 @@ export function renderSettings(container, params) {
 
   // Save
   container.querySelector('#github-save-btn').addEventListener('click', () => {
-    const owner    = ghOwner.value.trim();
-    const repo     = ghRepo.value.trim();
-    const pat      = ghPat.value.trim();
-    const basePath = ghBasePath.value.trim().replace(/^\/|\/$/g, ''); // strip leading/trailing slashes
-    if (!owner || !repo || !pat || !basePath) {
-      setGhStatusMsg('All fields including base path are required.', true);
+    const pat = ghPat.value.trim();
+    if (!pat) {
+      setGhStatusMsg('Personal Access Token is required.', true);
       return;
     }
-    Store.setGitHubConfig({ owner, repo, pat, basePath });
+    Store.setGitHubConfig({ owner: 'MinoPlay', repo: 'DataHub', pat, basePath: 'mexicano_v3/backup-data' });
     setGhStatusMsg('Configuration saved.');
     showToast('GitHub config saved');
   });
 
   // Test
   container.querySelector('#github-test-btn').addEventListener('click', async () => {
-    const owner    = ghOwner.value.trim();
-    const repo     = ghRepo.value.trim();
-    const pat      = ghPat.value.trim();
-    const basePath = ghBasePath.value.trim().replace(/^\/|\/$/g, '');
-    if (!owner || !repo || !pat || !basePath) {
-      setGhStatusMsg('Fill in all fields including base path before testing.', true);
+    const pat = ghPat.value.trim();
+    if (!pat) {
+      setGhStatusMsg('Enter a Personal Access Token before testing.', true);
       return;
     }
     // Temporarily save to let testConnection() read from Store
-    Store.setGitHubConfig({ owner, repo, pat, basePath });
+    Store.setGitHubConfig({ owner: 'MinoPlay', repo: 'DataHub', pat, basePath: 'mexicano_v3/backup-data' });
     setGhStatusMsg('Testing connection…');
     updateSyncIcon('syncing');
     const result = await testConnection();
@@ -224,10 +212,7 @@ export function renderSettings(container, params) {
   // Clear
   container.querySelector('#github-clear-btn').addEventListener('click', () => {
     Store.clearGitHubConfig();
-    ghOwner.value    = '';
-    ghRepo.value     = '';
-    ghPat.value      = '';
-    ghBasePath.value = '';
+    ghPat.value = '';
     setGhStatusMsg('Configuration cleared.');
     updateSyncIcon('idle');
     showToast('GitHub config cleared');

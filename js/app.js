@@ -103,15 +103,10 @@ if (Store.getGitHubConfig()?.pat) {
   mountSyncIndicator(async () => {
     setSyncBusy(true);
     try {
-      const { updated } = await pullAll();
-      if (updated) {
-        sessionStorage.setItem('mexicano_github_just_pulled', 'true');
-        sessionStorage.setItem('mexicano_sync_result', 'updated');
-        location.reload();
-      } else {
-        showToast('✓ Up to date');
-        setSyncBusy(false);
-      }
+      await pullAll();
+      sessionStorage.setItem('mexicano_github_just_pulled', 'true');
+      sessionStorage.setItem('mexicano_sync_result', 'updated');
+      location.reload();
     } catch (e) {
       showToast(`⚠️ Sync failed: ${e.message}`);
       setSyncBusy(false);

@@ -7,10 +7,9 @@
  *
  * Other data lives in the data/ folder under the base path:
  *   active_tournament  → <basePath>/data/active_tournament.json
- *   changelog          → <basePath>/data/changelog.json
  *   doodle_YYYY-MM     → <basePath>/YYYY/YYYY-MM/doodle_YYYY-MM.json
  *
- * Members and theme are local-only and are never synced to GitHub.
+ * Members, theme, and changelog are local-only and are never synced to GitHub.
  */
 
 import { Store } from '../store.js';
@@ -145,8 +144,8 @@ export function keyToPath(key) {
     return `${prefix}${year}/${yearMonth}/${key}.json`;
   }
 
-  // Only these data-folder keys are synced
-  const SYNCED_DATA_KEYS = ['changelog', 'active_tournament'];
+  // Only these data-folder keys are synced (changelog is local-only UI state)
+  const SYNCED_DATA_KEYS = ['active_tournament'];
   if (SYNCED_DATA_KEYS.includes(key)) {
     return `${prefix}data/${key}.json`;
   }
@@ -305,7 +304,7 @@ export async function testConnection() {
  * Matches are written as per-tournament-day files: YYYY/YYYY-MM/YYYY-MM-DD.json
  * (PascalCase fields, backup metadata wrapper).
  *
- * Other synced keys (doodle, changelog, active_tournament) are written to data/.
+ * Other synced keys (doodle, active_tournament) are written to data/.
  *
  * @param {function} [onProgress] - called with (label, total, index) for each file written
  * @param {object}   [opts]
@@ -315,7 +314,7 @@ export async function testConnection() {
 export async function pushAll(onProgress, { allMatchDates = false } = {}) {
   const data = Store.exportAll();
 
-  // 1. Push non-matches data (doodle, changelog, active_tournament, …)
+  // 1. Push non-matches data (doodle, active_tournament, …)
   const entries = Object.entries(data).filter(([k]) => keyToPath(k));
   ghLog('PUSH_START', '-', `${entries.length} data keys, allMatchDates=${allMatchDates}`);
 
@@ -379,12 +378,28 @@ export async function pullAll(onProgress) {
   ghLog('PULL_START', '-');
   _isPulling = true;
 
-  const _snapshot = {};
+  // Keys to preserve across pull (config, audit log, user preferences, dev flags)
+  const PRESERVE = new Set([
+    GH_LOG_KEY,
+    'mexicano_github_config',
+    'mexicano_theme',
+    'mexicano_current_user',
+    'mexicano_local_data_loaded', // dev-server flag — must survive pull or loadLocalData loops
+  ]);
+
+  // Snapshot all app data for failure recovery, then clear it so pull starts clean
+  const snapshot = {};
+  const toClear = [];
   for (let i = 0; i < localStorage.length; i++) {
     const k = localStorage.key(i);
-    if (k?.startsWith('mexicano_') && k !== GH_LOG_KEY) _snapshot[k] = localStorage.getItem(k);
+    if (k?.startsWith('mexicano_') && !PRESERVE.has(k)) {
+      snapshot[k] = localStorage.getItem(k);
+      toClear.push(k);
+    }
   }
+  toClear.forEach(k => localStorage.removeItem(k));
 
+  let pullSucceeded = false;
   try {
     const base = matchesBase();
 
@@ -486,29 +501,19 @@ export async function pullAll(onProgress) {
         localStorage.setItem(`mexicano_${key}`, JSON.stringify(result.content));
       }
     }
+
+    pullSucceeded = true;
   } finally {
     _isPulling = false;
     ghLog('PULL_DONE', '-');
-  }
-
-  // Pull succeeded — clear stale/seed match data so GitHub data fully replaces it.
-  // Matches are re-fetched lazily via ensureDayMatchesLoaded() when needed.
-  localStorage.removeItem('mexicano_matches');
-  localStorage.removeItem('mexicano_matches_fully_loaded');
-
-  let updated = false;
-  outer: for (let i = 0; i < localStorage.length; i++) {
-    const k = localStorage.key(i);
-    if (k?.startsWith('mexicano_') && k !== GH_LOG_KEY) {
-      if (_snapshot[k] !== localStorage.getItem(k)) { updated = true; break outer; }
+    if (!pullSucceeded) {
+      // Restore snapshot so data is intact after a network/API failure
+      toClear.forEach(k => localStorage.removeItem(k));
+      Object.entries(snapshot).forEach(([k, v]) => localStorage.setItem(k, v));
     }
   }
-  if (!updated) {
-    for (const k of Object.keys(_snapshot)) {
-      if (localStorage.getItem(k) === null) { updated = true; break; }
-    }
-  }
-  return { updated };
+
+  return { updated: true };
 }
 
 /**
@@ -665,10 +670,18 @@ export function schedulePush(key) {
   if (!getConfig()?.pat) return;
   // Allow matches through even though keyToPath returns null for it
   if (keyToPath(key) === null && key !== 'matches') return;
+  // Doodle is pushed explicitly via pushDoodleNow — skip auto-sync to avoid race conditions
+  if (key.startsWith('doodle_')) return;
 
   ghLog('SCHEDULE_PUSH', '-', `triggered by key: ${key}`);
   clearTimeout(_syncTimer);
   _syncTimer = setTimeout(() => executePush(), 1500);
+}
+
+/** Cancel any pending debounced auto-push without executing it. */
+export function cancelPendingSync() {
+  clearTimeout(_syncTimer);
+  _syncTimer = null;
 }
 
 /**
