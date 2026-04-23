@@ -94,7 +94,7 @@ export const Store = {
   },
 
   getTheme() {
-    return this.get('theme') || 'light';
+    return this.get('theme') || 'dark';
   },
 
   setTheme(theme) {

@@ -7,12 +7,12 @@ export function renderThemeToggle() {
   btn.id = 'theme-toggle';
 
   function update() {
-    const theme = document.documentElement.getAttribute('data-theme') || 'light';
+    const theme = document.documentElement.getAttribute('data-theme') || 'dark';
     btn.textContent = theme === 'dark' ? '☀️' : '🌙';
   }
 
   btn.addEventListener('click', () => {
-    const current = document.documentElement.getAttribute('data-theme') || 'light';
+    const current = document.documentElement.getAttribute('data-theme') || 'dark';
     const next = current === 'dark' ? 'light' : 'dark';
     document.documentElement.setAttribute('data-theme', next);
     Store.setTheme(next);
