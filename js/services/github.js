@@ -658,3 +658,20 @@ export function flushPush() {
   clearTimeout(_syncTimer);
   executePush();
 }
+
+/**
+ * Push a single doodle file to GitHub immediately (bypasses debounce).
+ * Returns a Promise that resolves when the write completes.
+ * No-op if GitHub is not configured.
+ */
+export async function pushDoodleNow(yearMonth) {
+  const cfg = getConfig();
+  if (!cfg?.pat) return;
+  const key = `doodle_${yearMonth}`;
+  const filePath = keyToPath(key);
+  if (!filePath) return;
+  const entries = Store.getDoodle(yearMonth);
+  let sha;
+  try { const existing = await readFile(filePath); sha = existing?.sha; } catch { sha = undefined; }
+  await writeFile(filePath, entries, sha);
+}

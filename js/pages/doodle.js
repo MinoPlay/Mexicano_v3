@@ -1,8 +1,10 @@
 import { getDoodle, saveDoodle, deleteDoodle, getChangelog, getAllDatesInMonth } from '../services/doodle.js';
 import { Store } from '../store.js';
+import { State } from '../state.js';
 import { showToast } from '../components/toast.js';
 import { getRecentMembers } from '../services/members.js';
 import { calculateAllEloRankings } from '../services/elo.js';
+import { pushDoodleNow } from '../services/github.js';
 
 /** Build a name→ELO map, preferring pre-computed players_summary. */
 function buildEloMap() {
@@ -194,7 +196,7 @@ export function renderDoodle(container, params = {}) {
         cell.textContent = isSelected ? '✓' : '';
 
         if (isOwn && !isPast) {
-          cell.addEventListener('click', () => {
+          cell.addEventListener('click', async () => {
             if (isSelected) {
               selections[player].delete(dateStr);
             } else {
@@ -202,9 +204,17 @@ export function renderDoodle(container, params = {}) {
             }
             const updatedDates = [...selections[player]].sort();
             saveDoodle(player, currentYear, currentMonth, updatedDates);
-            showToast('Availability updated');
-            renderMatrix();
-            renderChangelog();
+            const yearMonth = `${currentYear}-${String(currentMonth).padStart(2, '0')}`;
+            try {
+              showToast('Saving…');
+              await pushDoodleNow(yearMonth);
+              location.reload();
+            } catch (e) {
+              console.error('Doodle push failed:', e);
+              showToast('Saved locally (GitHub sync failed)');
+              renderMatrix();
+              renderChangelog();
+            }
           });
         }
 
@@ -301,5 +311,14 @@ export function renderDoodle(container, params = {}) {
     renderChangelog();
   }
 
+  // Re-render when doodle data arrives asynchronously (e.g. from local file load)
+  const unsubDoodle = State.on('doodle-changed', ({ year, month } = {}) => {
+    if (!year || (year === currentYear && month === currentMonth)) {
+      renderMatrix();
+      renderChangelog();
+    }
+  });
+
   renderAll();
+  return unsubDoodle;
 }

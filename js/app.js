@@ -1,5 +1,6 @@
 import { Router } from './router.js';
 import { Store } from './store.js';
+import { State } from './state.js';
 import { renderNav } from './components/nav.js';
 import { initTheme } from './components/theme-toggle.js';
 import { pullAll } from './services/github.js';
@@ -23,7 +24,28 @@ async function loadLocalData() {
   try {
     const status = await fetch('/api/local-data/status').then(r => r.json());
     if (!status.available) return;
-    // Skip if we already loaded local data this session
+
+    // ─── Doodle: always reload from local file (current + next month) ───
+    const now = new Date();
+    const doodleMonths = [0, 1].map(offset => {
+      const d = new Date(now.getFullYear(), now.getMonth() + offset, 1);
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    });
+    const doodleResults = await Promise.all(
+      doodleMonths.map(ym =>
+        fetch(`/api/local-data/doodle?yearMonth=${ym}`).then(r => r.ok ? r.json() : null).catch(() => null)
+      )
+    );
+    doodleMonths.forEach((ym, i) => {
+      if (Array.isArray(doodleResults[i]) && doodleResults[i].length > 0) {
+        Store.setDoodle(ym, doodleResults[i]);
+        const [y, m] = ym.split('-').map(Number);
+        State.emit('doodle-changed', { year: y, month: m });
+        console.log(`Loaded doodle for ${ym} (${doodleResults[i].length} entries)`);
+      }
+    });
+
+    // ─── Matches + players: only on first load ───
     if (localStorage.getItem('mexicano_local_data_loaded') === 'true') return;
     console.log('Loading local test data…');
     const [matches, players] = await Promise.all([
@@ -33,7 +55,6 @@ async function loadLocalData() {
     if (matches.length > 0) {
       Store.setMatches(matches);
       localStorage.setItem('mexicano_matches_fully_loaded', JSON.stringify(true));
-      // Load members from players.json
       if (Array.isArray(players)) {
         const names = players.map(p => p.Name).sort();
         Store.setMembers(names);

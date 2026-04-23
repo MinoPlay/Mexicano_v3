@@ -128,6 +128,18 @@ const server = http.createServer((req, res) => {
     serveLocalFile(res, path.join(LOCAL_DATA_PATH, 'players.json'));
     return;
   }
+  if (url.pathname === '/api/local-data/doodle' && LOCAL_DATA_PATH) {
+    const yearMonth = url.searchParams.get('yearMonth'); // e.g. "2026-04"
+    if (!yearMonth || !/^\d{4}-\d{2}$/.test(yearMonth)) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Invalid yearMonth' }));
+      return;
+    }
+    const year = yearMonth.slice(0, 4);
+    const filePath = path.join(LOCAL_DATA_PATH, year, yearMonth, `doodle_${yearMonth}.json`);
+    serveLocalFile(res, filePath);
+    return;
+  }
   if (url.pathname === '/api/local-data/status') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ available: !!LOCAL_DATA_PATH }));
