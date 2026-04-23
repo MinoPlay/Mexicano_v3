@@ -2,7 +2,6 @@ import { getDoodle, saveDoodle, deleteDoodle, getChangelog, getAllDatesInMonth }
 import { Store } from '../store.js';
 import { State } from '../state.js';
 import { showToast } from '../components/toast.js';
-import { getRecentMembers } from '../services/members.js';
 import { calculateAllEloRankings } from '../services/elo.js';
 import { pushDoodleNow } from '../services/github.js';
 
@@ -106,23 +105,27 @@ export function renderDoodle(container, params = {}) {
   function renderMatrix() {
     matrixContainer.innerHTML = '';
 
+    const todayStr = new Date().toISOString().slice(0, 10);
     const doodleData = getDoodle(currentYear, currentMonth);
     const allDates = getAllDatesInMonth(currentYear, currentMonth);
+    const visibleDates = allDates.filter(d => d >= todayStr);
 
-    if (!allDates || allDates.length === 0) {
-      matrixContainer.innerHTML = '<p class="text-secondary text-center">No dates for this month</p>';
+    if (!visibleDates.length) {
+      matrixContainer.innerHTML = '<p class="text-secondary text-center">No upcoming dates this month</p>';
       return;
     }
 
-    // Collect players: use Members list as source of truth
-    const members = getRecentMembers();
-    const playerSet = new Set(members.length > 0 ? members : []);
-    if (currentUser && !playerSet.has(currentUser)) playerSet.add(currentUser);
-    const players = [...playerSet].sort((a, b) => a.localeCompare(b));
+    // Collect players: from doodle JSON + current user
+    const allPlayerSet = new Set();
+    if (currentUser) allPlayerSet.add(currentUser);
+    if (doodleData) {
+      doodleData.forEach(entry => { if (entry.name) allPlayerSet.add(entry.name); });
+    }
+    const allPlayers = [...allPlayerSet];
 
     // Build lookup: player → Set of selected dates
     const selections = {};
-    players.forEach(p => { selections[p] = new Set(); });
+    allPlayers.forEach(p => { selections[p] = new Set(); });
     if (doodleData) {
       doodleData.forEach(entry => {
         if (selections[entry.name] && entry.selected) {
@@ -133,9 +136,14 @@ export function renderDoodle(container, params = {}) {
       });
     }
 
+    // Show only players with a selection on a visible (future) date, plus current user
+    const players = allPlayers
+      .filter(p => p === currentUser || visibleDates.some(d => selections[p].has(d)))
+      .sort((a, b) => a.localeCompare(b));
+
     // Totals
     const totals = {};
-    allDates.forEach(d => { totals[d] = 0; });
+    visibleDates.forEach(d => { totals[d] = 0; });
     players.forEach(p => {
       selections[p].forEach(d => { if (totals[d] !== undefined) totals[d]++; });
     });
@@ -156,9 +164,7 @@ export function renderDoodle(container, params = {}) {
     cornerTh.textContent = 'Player';
     hRow.appendChild(cornerTh);
 
-    const todayStr = new Date().toISOString().slice(0, 10);
-
-    allDates.forEach(dateStr => {
+    visibleDates.forEach(dateStr => {
       const { day, weekday } = formatDay(dateStr);
       const isPast = dateStr < todayStr;
       const th = document.createElement('th');
@@ -182,7 +188,7 @@ export function renderDoodle(container, params = {}) {
       }
       tr.appendChild(nameTd);
 
-      allDates.forEach(dateStr => {
+      visibleDates.forEach(dateStr => {
         const td = document.createElement('td');
         const isSelected = selections[player].has(dateStr);
         const isOwn = player === currentUser;
@@ -234,7 +240,7 @@ export function renderDoodle(container, params = {}) {
     totalLabel.textContent = 'Total';
     totalRow.appendChild(totalLabel);
 
-    allDates.forEach(dateStr => {
+    visibleDates.forEach(dateStr => {
       const td = document.createElement('td');
       const isPast = dateStr < todayStr;
       const count = totals[dateStr] || 0;
