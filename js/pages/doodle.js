@@ -211,15 +211,13 @@ export function renderDoodle(container, params = {}) {
             const updatedDates = [...selections[player]].sort();
             saveDoodle(player, currentYear, currentMonth, updatedDates);
             const yearMonth = `${currentYear}-${String(currentMonth).padStart(2, '0')}`;
+            showToast('Saving…');
             try {
-              showToast('Saving…');
               await pushDoodleNow(yearMonth);
-              location.reload();
+              showToast('Saved ✓');
             } catch (e) {
               console.error('Doodle push failed:', e);
               showToast('Saved locally (GitHub sync failed)');
-              renderMatrix();
-              renderChangelog();
             }
           });
         }
