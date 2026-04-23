@@ -2,6 +2,7 @@ import { Router } from './router.js';
 import { Store } from './store.js';
 import { renderNav } from './components/nav.js';
 import { initTheme } from './components/theme-toggle.js';
+import { pullAll } from './services/github.js';
 
 // Pages
 import { renderHome } from './pages/home.js';
@@ -44,6 +45,24 @@ async function loadLocalData() {
   } catch { /* not running on dev server, or no local data */ }
 }
 loadLocalData();
+
+// Auto-pull from GitHub on every page open/refresh if configured.
+// Uses a flag to distinguish our own reload (skip) from a user-initiated refresh (pull).
+async function loadFromGitHub() {
+  if (!Store.getGitHubConfig()?.pat) return;
+  if (sessionStorage.getItem('mexicano_github_just_pulled') === 'true') {
+    sessionStorage.removeItem('mexicano_github_just_pulled');
+    return;
+  }
+  try {
+    await pullAll();
+    sessionStorage.setItem('mexicano_github_just_pulled', 'true');
+    location.reload();
+  } catch (e) {
+    console.warn('GitHub auto-pull failed:', e);
+  }
+}
+loadFromGitHub();
 
 // Mount bottom nav
 const app = document.getElementById('app');

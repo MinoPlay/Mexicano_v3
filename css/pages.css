@@ -610,6 +610,33 @@
   font-weight: var(--font-weight-medium);
 }
 
+.members-collapsible {
+  list-style: none;
+}
+
+.members-summary {
+  cursor: pointer;
+  user-select: none;
+  list-style: none;
+  margin-bottom: 0;
+}
+
+.members-summary::after {
+  content: ' ▸';
+  font-size: 0.75em;
+  opacity: 0.6;
+  transition: transform var(--transition-fast);
+  display: inline-block;
+}
+
+details[open] > .members-summary::after {
+  transform: rotate(90deg);
+}
+
+details[open] > .members-summary {
+  margin-bottom: var(--space-md);
+}
+
 /* ─── FAB (Floating Action Button) ─── */
 .fab {
   position: fixed;
