@@ -379,11 +379,6 @@ export async function pullAll(onProgress) {
   ghLog('PULL_START', '-');
   _isPulling = true;
 
-  // Clear stale/seed match data before pulling so GitHub data fully replaces it.
-  // Individual match files are re-fetched lazily via ensureDayMatchesLoaded() when needed.
-  localStorage.removeItem('mexicano_matches');
-  localStorage.removeItem('mexicano_matches_fully_loaded');
-
   const _snapshot = {};
   for (let i = 0; i < localStorage.length; i++) {
     const k = localStorage.key(i);
@@ -495,6 +490,11 @@ export async function pullAll(onProgress) {
     _isPulling = false;
     ghLog('PULL_DONE', '-');
   }
+
+  // Pull succeeded — clear stale/seed match data so GitHub data fully replaces it.
+  // Matches are re-fetched lazily via ensureDayMatchesLoaded() when needed.
+  localStorage.removeItem('mexicano_matches');
+  localStorage.removeItem('mexicano_matches_fully_loaded');
 
   let updated = false;
   outer: for (let i = 0; i < localStorage.length; i++) {
