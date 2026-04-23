@@ -576,7 +576,7 @@ export function renderStatistics(container, params = {}) {
         const eloMap = getEloForMonth(snapshots, activeFilter);
         attachEloFromSnapshots(stats, eloMap);
       }
-      renderSortableTable(tableContainer, stats, null);
+      renderSortableTable(tableContainer, stats, name => showPlayerProfile(name));
       return;
     }
 

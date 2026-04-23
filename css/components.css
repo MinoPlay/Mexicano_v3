@@ -297,7 +297,7 @@
   background: var(--bg-overlay);
   z-index: 200;
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   justify-content: center;
   opacity: 0;
   visibility: hidden;
@@ -314,14 +314,14 @@
   max-width: var(--max-width);
   max-height: 90dvh;
   background: var(--bg-card);
-  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  border-radius: var(--radius-lg);
   overflow-y: auto;
-  transform: translateY(100%);
+  transform: scale(0.95);
   transition: transform var(--transition-normal);
 }
 
 .dialog-overlay.active .dialog {
-  transform: translateY(0);
+  transform: scale(1);
 }
 
 .dialog-header {
