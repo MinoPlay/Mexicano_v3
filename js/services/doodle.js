@@ -4,6 +4,7 @@
  */
 import { Store } from '../store.js';
 import { State } from '../state.js';
+import { writeDoodle } from './local.js';
 
 export function getAllDatesInMonth(year, month) {
   const dates = [];
@@ -61,6 +62,7 @@ export function saveDoodle(playerName, year, month, selectedDates) {
   }
 
   Store.setDoodle(yearMonth, entries);
+  writeDoodle(year, month, entries).catch(e => console.warn('[local] doodle write failed:', e));
   logDoodleChange(playerName, year, month, selectedDates);
   State.emit('doodle-changed', { year, month });
 }
@@ -88,4 +90,24 @@ export function logDoodleChange(playerName, year, month, selectedDates) {
 
 export function getChangelog() {
   return Store.getChangelog().slice(0, 20);
+}
+
+/**
+ * Load doodle data for a given month from the local dev server (if available)
+ * and update Store + emit doodle-changed so the UI re-renders.
+ * No-op when not running on the local dev server.
+ */
+export async function syncDoodleFromLocal(year, month) {
+  const ym = `${year}-${String(month).padStart(2, '0')}`;
+  try {
+    const r = await fetch(`/api/local-data/doodle?yearMonth=${ym}`);
+    if (!r.ok) return;
+    const data = await r.json();
+    if (!Array.isArray(data)) return;
+    const current = Store.getDoodle(ym);
+    if (JSON.stringify(current) !== JSON.stringify(data)) {
+      Store.setDoodle(ym, data);
+      State.emit('doodle-changed', { year, month });
+    }
+  } catch { /* not on local dev server */ }
 }

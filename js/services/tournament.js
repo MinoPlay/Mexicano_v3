@@ -305,8 +305,14 @@ export function completeTournament(tournament) {
   Store.clearActiveTournament();
   State.emit('tournament-changed', tournament);
 
-  // Immediately sync completed tournament to GitHub:
-  // mark the date dirty, delete the active_tournament file, then flush
+  // Write completed tournament day to local dev server
+  import('./local.js').then(({ writeTournamentDay }) => {
+    const dateMatches = allMatches.filter(m => m.date === tournament.tournamentDate);
+    writeTournamentDay(tournament.tournamentDate, dateMatches)
+      .catch(e => console.warn('[local] tournament write failed:', e));
+  }).catch(() => {});
+
+  // Immediately sync completed tournament to GitHub + local dev server
   import('./github.js').then(({ flushPush, markMatchDateDirty, keyToPath, readFile, deleteFile }) => {
     markMatchDateDirty(tournament.tournamentDate);
     // Delete active_tournament.json from GitHub since the tournament is done

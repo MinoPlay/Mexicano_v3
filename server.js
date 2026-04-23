@@ -146,6 +146,72 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  // CORS preflight for write endpoint
+  if (req.method === 'OPTIONS' && url.pathname === '/api/local-data/write') {
+    res.writeHead(204, {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'POST',
+      'Access-Control-Allow-Headers': 'Content-Type',
+    });
+    res.end();
+    return;
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/local-data/write' && LOCAL_DATA_PATH) {
+    const ALLOWED_PATTERNS = [
+      /^\d{4}\/\d{4}-\d{2}\/doodle_\d{4}-\d{2}\.json$/,     // doodle
+      /^\d{4}\/\d{4}-\d{2}\/\d{4}-\d{2}-\d{2}\.json$/,       // tournament day
+      /^data\/active_tournament\.json$/,                         // active tournament
+    ];
+    const MAX_BODY = 512 * 1024; // 512 KB
+
+    let body = '';
+    let bodySize = 0;
+    req.on('data', chunk => {
+      bodySize += chunk.length;
+      if (bodySize > MAX_BODY) {
+        req.destroy();
+        res.writeHead(413, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Payload too large' }));
+        return;
+      }
+      body += chunk;
+    });
+    req.on('end', () => {
+      try {
+        const { path: relPath, data } = JSON.parse(body);
+
+        if (typeof relPath !== 'string' || !ALLOWED_PATTERNS.some(p => p.test(relPath))) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'Path not allowed' }));
+          return;
+        }
+
+        const target = path.resolve(LOCAL_DATA_PATH, relPath);
+        const rel = path.relative(LOCAL_DATA_PATH, target);
+        if (rel.startsWith('..') || path.isAbsolute(rel)) {
+          res.writeHead(403, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'Forbidden' }));
+          return;
+        }
+
+        fs.mkdirSync(path.dirname(target), { recursive: true });
+        fs.writeFileSync(target, JSON.stringify(data, null, 2), 'utf8');
+        console.log(`WRITE ${relPath}`);
+
+        res.writeHead(200, {
+          'Content-Type': 'application/json',
+          'Access-Control-Allow-Origin': '*',
+        });
+        res.end(JSON.stringify({ ok: true }));
+      } catch (e) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: e.message }));
+      }
+    });
+    return;
+  }
+
   const sanitized = path.normalize(url.pathname).replace(/^(\.\.[/\\])+/, '');
   const filePath = path.join(ROOT, sanitized);
 

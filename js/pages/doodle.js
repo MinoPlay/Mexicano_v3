@@ -1,4 +1,4 @@
-import { getDoodle, saveDoodle, deleteDoodle, getChangelog, getAllDatesInMonth } from '../services/doodle.js';
+import { getDoodle, saveDoodle, deleteDoodle, getChangelog, getAllDatesInMonth, syncDoodleFromLocal } from '../services/doodle.js';
 import { Store } from '../store.js';
 import { State } from '../state.js';
 import { showToast } from '../components/toast.js';
@@ -313,6 +313,8 @@ export function renderDoodle(container, params = {}) {
     renderNav();
     renderMatrix();
     renderChangelog();
+    // Sync from local dev server file if available (any month, fire-and-forget)
+    syncDoodleFromLocal(currentYear, currentMonth).catch(() => {});
   }
 
   // Re-render when doodle data arrives asynchronously (e.g. from local file load)
