@@ -3,6 +3,8 @@ import { Store } from './store.js';
 import { State } from './state.js';
 import { renderNav } from './components/nav.js';
 import { initTheme } from './components/theme-toggle.js';
+import { mountSyncIndicator, setSyncBusy } from './components/sync-indicator.js';
+import { showToast } from './components/toast.js';
 import { pullAll } from './services/github.js';
 
 // Pages
@@ -73,21 +75,50 @@ async function loadFromGitHub() {
   if (!Store.getGitHubConfig()?.pat) return;
   if (sessionStorage.getItem('mexicano_github_just_pulled') === 'true') {
     sessionStorage.removeItem('mexicano_github_just_pulled');
+    const result = sessionStorage.getItem('mexicano_sync_result');
+    sessionStorage.removeItem('mexicano_sync_result');
+    if (result === 'updated') showToast('✅ Data updated');
+    else if (result === 'uptodate') showToast('✓ Up to date');
     return;
   }
+  setSyncBusy(true);
   try {
-    await pullAll();
+    const { updated } = await pullAll();
     sessionStorage.setItem('mexicano_github_just_pulled', 'true');
+    sessionStorage.setItem('mexicano_sync_result', updated ? 'updated' : 'uptodate');
     location.reload();
   } catch (e) {
+    setSyncBusy(false);
     console.warn('GitHub auto-pull failed:', e);
   }
 }
-loadFromGitHub();
 
 // Mount bottom nav
 const app = document.getElementById('app');
 app.appendChild(renderNav());
+
+// Mount sync indicator (only when GitHub configured)
+if (Store.getGitHubConfig()?.pat) {
+  mountSyncIndicator(async () => {
+    setSyncBusy(true);
+    try {
+      const { updated } = await pullAll();
+      if (updated) {
+        sessionStorage.setItem('mexicano_github_just_pulled', 'true');
+        sessionStorage.setItem('mexicano_sync_result', 'updated');
+        location.reload();
+      } else {
+        showToast('✓ Up to date');
+        setSyncBusy(false);
+      }
+    } catch {
+      showToast('⚠️ Sync failed');
+      setSyncBusy(false);
+    }
+  });
+}
+
+loadFromGitHub();
 
 // Page container
 const pageContainer = document.getElementById('page-container');

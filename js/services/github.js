@@ -378,6 +378,13 @@ export async function pullAll(onProgress) {
 
   ghLog('PULL_START', '-');
   _isPulling = true;
+
+  const _snapshot = {};
+  for (let i = 0; i < localStorage.length; i++) {
+    const k = localStorage.key(i);
+    if (k?.startsWith('mexicano_') && k !== GH_LOG_KEY) _snapshot[k] = localStorage.getItem(k);
+  }
+
   try {
     const base = matchesBase();
 
@@ -486,6 +493,20 @@ export async function pullAll(onProgress) {
     _isPulling = false;
     ghLog('PULL_DONE', '-');
   }
+
+  let updated = false;
+  outer: for (let i = 0; i < localStorage.length; i++) {
+    const k = localStorage.key(i);
+    if (k?.startsWith('mexicano_') && k !== GH_LOG_KEY) {
+      if (_snapshot[k] !== localStorage.getItem(k)) { updated = true; break outer; }
+    }
+  }
+  if (!updated) {
+    for (const k of Object.keys(_snapshot)) {
+      if (localStorage.getItem(k) === null) { updated = true; break; }
+    }
+  }
+  return { updated };
 }
 
 /**
