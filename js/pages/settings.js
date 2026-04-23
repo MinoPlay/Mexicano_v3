@@ -193,8 +193,8 @@ export function renderSettings(container, params) {
     const repo     = ghRepo.value.trim();
     const pat      = ghPat.value.trim();
     const basePath = ghBasePath.value.trim().replace(/^\/|\/$/g, ''); // strip leading/trailing slashes
-    if (!owner || !repo || !pat) {
-      setGhStatusMsg('All three fields are required.', true);
+    if (!owner || !repo || !pat || !basePath) {
+      setGhStatusMsg('All fields including base path are required.', true);
       return;
     }
     Store.setGitHubConfig({ owner, repo, pat, basePath });
@@ -208,8 +208,8 @@ export function renderSettings(container, params) {
     const repo     = ghRepo.value.trim();
     const pat      = ghPat.value.trim();
     const basePath = ghBasePath.value.trim().replace(/^\/|\/$/g, '');
-    if (!owner || !repo || !pat) {
-      setGhStatusMsg('Fill in all fields before testing.', true);
+    if (!owner || !repo || !pat || !basePath) {
+      setGhStatusMsg('Fill in all fields including base path before testing.', true);
       return;
     }
     // Temporarily save to let testConnection() read from Store

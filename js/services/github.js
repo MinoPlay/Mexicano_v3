@@ -379,6 +379,11 @@ export async function pullAll(onProgress) {
   ghLog('PULL_START', '-');
   _isPulling = true;
 
+  // Clear stale/seed match data before pulling so GitHub data fully replaces it.
+  // Individual match files are re-fetched lazily via ensureDayMatchesLoaded() when needed.
+  localStorage.removeItem('mexicano_matches');
+  localStorage.removeItem('mexicano_matches_fully_loaded');
+
   const _snapshot = {};
   for (let i = 0; i < localStorage.length; i++) {
     const k = localStorage.key(i);
@@ -471,9 +476,6 @@ export async function pullAll(onProgress) {
 
       onProgress?.(monthDir.name, total, i + 1);
     }
-
-    // Clear the fully-loaded flag since we didn't load individual matches
-    localStorage.removeItem('mexicano_matches_fully_loaded');
 
     // ── 4. Pull data/ files (changelog, active_tournament, …) ──────────────
     const dataPath = base ? `${base}/data` : 'data';

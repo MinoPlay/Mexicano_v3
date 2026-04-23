@@ -90,6 +90,7 @@ async function loadFromGitHub() {
   } catch (e) {
     setSyncBusy(false);
     console.warn('GitHub auto-pull failed:', e);
+    showToast(`⚠️ Sync failed: ${e.message}`);
   }
 }
 
@@ -111,8 +112,8 @@ if (Store.getGitHubConfig()?.pat) {
         showToast('✓ Up to date');
         setSyncBusy(false);
       }
-    } catch {
-      showToast('⚠️ Sync failed');
+    } catch (e) {
+      showToast(`⚠️ Sync failed: ${e.message}`);
       setSyncBusy(false);
     }
   });
