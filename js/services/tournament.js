@@ -122,9 +122,6 @@ export function createTournament(date, playerNames) {
   Store.setActiveTournament(tournament);
   State.emit('tournament-changed', tournament);
 
-  // Immediately sync to GitHub for reliable backup
-  import('./github.js').then(({ flushPush }) => flushPush()).catch(() => {});
-
   return tournament;
 }
 
@@ -143,6 +140,14 @@ export function startTournament(tournament) {
   });
 
   saveTournamentState(tournament);
+
+  // Single explicit push after everything is written — cancel any debounce timers
+  // from the Store.set calls above so they don't fire separately.
+  import('./github.js').then(({ cancelPendingSync, flushPush }) => {
+    cancelPendingSync();
+    flushPush();
+  }).catch(() => {});
+
   return tournament;
 }
 
@@ -191,6 +196,8 @@ export function setMatchScore(tournament, roundNumber, matchId, team1Score, team
   }
 
   saveTournamentState(tournament);
+  // Suppress auto-push on individual score updates — only push on round advance / end tournament
+  import('./github.js').then(({ cancelPendingSync }) => cancelPendingSync()).catch(() => {});
   return tournament;
 }
 
@@ -250,6 +257,11 @@ export function startNextRound(tournament) {
   tournament.currentRoundNumber = nextRoundNumber;
 
   saveTournamentState(tournament);
+  // Push all scores for this round in one commit
+  import('./github.js').then(({ cancelPendingSync, flushPush }) => {
+    cancelPendingSync();
+    flushPush();
+  }).catch(() => {});
   return tournament;
 }
 

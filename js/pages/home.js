@@ -16,7 +16,6 @@ function formatDate(dateStr) {
 }
 
 export function renderHome(container, params) {
-  const playersSummary = Store.getPlayersSummary();
   const tournamentDates = getAllTournamentDates();
   const activeTournament = getActiveTournament();
   const allMatches = Store.getMatches();
@@ -24,40 +23,38 @@ export function renderHome(container, params) {
   // Get latest tournament date (dates sorted newest first)
   const latestDate = tournamentDates.length > 0 ? tournamentDates[0] : null;
 
-  // Get Latest Tournament stats
-  let latestTournamentStats = [];
-  let latestEloMap = {};
-
-  if (latestDate) {
-    // Get stats for latest tournament date
-    const dayMatches = allMatches.filter(m => m.date === latestDate);
-    if (dayMatches.length > 0) {
-      latestTournamentStats = calculatePlayerStatistics(dayMatches);
-    }
-
-    // Get ELO data for that date
-    if (playersSummary.length > 0) {
+  // Helper: attach ELO ratings to a stats array for the latest date
+  function attachEloToStats(stats) {
+    const summary = Store.getPlayersSummary();
+    const matches = Store.getMatches();
+    if (summary.length > 0) {
       const summaryMap = {};
-      for (const p of playersSummary) {
-        summaryMap[p.name] = p;
-      }
-      for (const stat of latestTournamentStats) {
+      for (const p of summary) summaryMap[p.name] = p;
+      for (const stat of stats) {
         const p = summaryMap[stat.name];
         if (p) {
           stat.elo = p.elo;
           stat.eloChange = Math.round(((p.elo ?? 1000) - (p.previousElo ?? 1000)) * 100) / 100;
         }
       }
-    } else if (allMatches.length > 0) {
-      const { snapshots } = getEloSnapshots(allMatches);
-      latestEloMap = getEloForDate(snapshots, latestDate) || {};
-      for (const stat of latestTournamentStats) {
-        const eloData = latestEloMap[stat.name];
-        if (eloData) {
-          stat.elo = eloData.elo;
-          stat.eloChange = eloData.eloChange;
-        }
+    } else if (matches.length > 0) {
+      const { snapshots } = getEloSnapshots(matches);
+      const eloMap = getEloForDate(snapshots, latestDate) || {};
+      for (const stat of stats) {
+        const d = eloMap[stat.name];
+        if (d) { stat.elo = d.elo; stat.eloChange = d.eloChange; }
       }
+    }
+  }
+
+  // Get Latest Tournament stats
+  let latestTournamentStats = [];
+
+  if (latestDate) {
+    const dayMatches = allMatches.filter(m => m.date === latestDate);
+    if (dayMatches.length > 0) {
+      latestTournamentStats = calculatePlayerStatistics(dayMatches);
+      attachEloToStats(latestTournamentStats);
     }
   }
 
@@ -73,30 +70,24 @@ export function renderHome(container, params) {
     const sorted = [...latestTournamentStats];
     sorted.sort((a, b) => {
       let av, bv;
-      
+
       if (sortCol === 'name') {
         av = a.name.toLowerCase();
         bv = b.name.toLowerCase();
       } else if (sortCol === 'wl') {
-        av = a.wins;
-        bv = b.wins;
+        av = a.wins; bv = b.wins;
       } else if (sortCol === 'pts') {
-        av = a.points;
-        bv = b.points;
+        av = a.points; bv = b.points;
       } else if (sortCol === 'avg') {
-        av = a.average;
-        bv = b.average;
+        av = a.average; bv = b.average;
       } else if (sortCol === 'win') {
-        const totalA = a.wins + a.losses;
-        const totalB = b.wins + b.losses;
-        av = totalA > 0 ? a.wins / totalA : 0;
-        bv = totalB > 0 ? b.wins / totalB : 0;
+        const tA = a.wins + a.losses, tB = b.wins + b.losses;
+        av = tA > 0 ? a.wins / tA : 0;
+        bv = tB > 0 ? b.wins / tB : 0;
       } else if (sortCol === 'elo') {
-        av = a.elo ?? 0;
-        bv = b.elo ?? 0;
+        av = a.elo ?? 0; bv = b.elo ?? 0;
       } else if (sortCol === 'change') {
-        av = a.eloChange ?? 0;
-        bv = b.eloChange ?? 0;
+        av = a.eloChange ?? 0; bv = b.eloChange ?? 0;
       }
 
       if (av < bv) return sortDir === 'asc' ? -1 : 1;
@@ -104,62 +95,125 @@ export function renderHome(container, params) {
       return 0;
     });
 
-    // Render rows
-    const rowsHtml = sorted.map((stat, i) => {
+    const cols = [
+      { key: 'rank',   label: '#',    sort: null },
+      { key: 'name',   label: 'NAME', sort: 'name' },
+      { key: 'wl',     label: 'W/T',  sort: 'wl' },
+      { key: 'pts',    label: 'PTS',  sort: 'pts' },
+      { key: 'avg',    label: 'AVG',  sort: 'avg' },
+      { key: 'win',    label: 'WIN',  sort: 'win' },
+      { key: 'elo',    label: 'ELO',  sort: 'elo' },
+      { key: 'change', label: 'Δ',    sort: 'change' },
+    ];
+
+    const wrapper = document.createElement('div');
+    wrapper.className = 'data-table';
+    const table = document.createElement('table');
+
+    // thead
+    const thead = document.createElement('thead');
+    const headerRow = document.createElement('tr');
+    cols.forEach(col => {
+      const th = document.createElement('th');
+      th.textContent = col.label;
+      if (col.key !== 'rank') th.className = 'num-cell';
+      if (col.key === 'name') th.style.textAlign = 'left';
+      if (col.sort === sortCol) th.classList.add(sortDir === 'asc' ? 'sort-asc' : 'sort-desc');
+      if (col.sort) {
+        th.addEventListener('click', () => {
+          if (sortCol === col.sort) {
+            sortDir = sortDir === 'asc' ? 'desc' : 'asc';
+          } else {
+            sortCol = col.sort;
+            sortDir = col.sort === 'name' ? 'asc' : 'desc';
+          }
+          renderTable();
+        });
+      }
+      headerRow.appendChild(th);
+    });
+    thead.appendChild(headerRow);
+    table.appendChild(thead);
+
+    // tbody
+    const tbody = document.createElement('tbody');
+    sorted.forEach((stat, i) => {
       const rank = i + 1;
-      const rankClass = rank === 1 ? 'gold' : rank === 2 ? 'silver' : rank === 3 ? 'bronze' : '';
       const totalMatches = stat.wins + stat.losses;
       const winPct = totalMatches > 0 ? (stat.wins / totalMatches) * 100 : 0;
-      const winPctDisplay = winPct.toFixed(1);
-      let winClass = 'win-moderate';
-      if (winPct >= 75) winClass = 'win-excellent';
-      else if (winPct < 35) winClass = 'win-poor';
-      const elo = stat.elo !== undefined && stat.elo !== null ? Math.round(stat.elo) : '—';
+      const elo = stat.elo != null ? Math.round(stat.elo) : '—';
       const eloChange = stat.eloChange ?? 0;
-      const changeClass = eloChange > 0 ? 'positive' : eloChange < 0 ? 'negative' : 'neutral';
       const changeIcon = eloChange > 0 ? '▲' : eloChange < 0 ? '▼' : '–';
       const changeText = eloChange !== 0 ? Math.abs(Math.round(eloChange * 10) / 10).toFixed(1) : '';
-      return `
-        <div class="table-row">
-          <div class="col-rank rank-class-${rankClass}">${rank}</div>
-          <div class="col-name">${stat.name}</div>
-          <div class="col-wl">${stat.wins}/${totalMatches}</div>
-          <div class="col-pts">${Math.round(stat.points)}</div>
-          <div class="col-avg">${stat.average.toFixed(1)}</div>
-          <div class="col-winpct ${winClass}">${winPctDisplay}%</div>
-          <div class="col-elo">${elo}</div>
-          <div class="col-change ${changeClass}">${changeIcon}${changeText}</div>
-        </div>
-      `;
-    }).join('');
 
-    tableContainer.innerHTML = `
-      <div class="table-header">
-        <div class="col-rank">#</div>
-        <div class="col-name table-header-cell" data-sort="name">Name</div>
-        <div class="col-wl table-header-cell" data-sort="wl">W/T</div>
-        <div class="col-pts table-header-cell" data-sort="pts">PTS</div>
-        <div class="col-avg table-header-cell" data-sort="avg">AVG</div>
-        <div class="col-winpct table-header-cell" data-sort="win">WIN</div>
-        <div class="col-elo table-header-cell" data-sort="elo">ELO</div>
-        <div class="col-change table-header-cell" data-sort="change">Δ</div>
-      </div>
-      ${rowsHtml}
-    `;
+      const tr = document.createElement('tr');
 
-    // Add click handlers to headers
-    tableContainer.querySelectorAll('.table-header-cell').forEach(cell => {
-      cell.addEventListener('click', () => {
-        const col = cell.dataset.sort;
-        if (sortCol === col) {
-          sortDir = sortDir === 'asc' ? 'desc' : 'asc';
-        } else {
-          sortCol = col;
-          sortDir = col === 'name' ? 'asc' : 'desc';
-        }
-        renderTable();
-      });
+      // Rank
+      const tdRank = document.createElement('td');
+      tdRank.className = 'rank-cell';
+      tdRank.textContent = rank;
+      if (rank === 1) tdRank.style.color = '#f59e0b';
+      else if (rank === 2) tdRank.style.color = '#94a3b8';
+      else if (rank === 3) tdRank.style.color = '#d97706';
+      tr.appendChild(tdRank);
+
+      // Name
+      const tdName = document.createElement('td');
+      tdName.className = 'name-cell';
+      tdName.style.cursor = 'default';
+      tdName.style.color = 'var(--text-primary)';
+      tdName.textContent = stat.name;
+      tr.appendChild(tdName);
+
+      // W/T
+      const tdWl = document.createElement('td');
+      tdWl.className = 'num-cell';
+      tdWl.textContent = `${stat.wins}/${totalMatches}`;
+      tr.appendChild(tdWl);
+
+      // PTS
+      const tdPts = document.createElement('td');
+      tdPts.className = 'num-cell';
+      tdPts.textContent = Math.round(stat.points);
+      tr.appendChild(tdPts);
+
+      // AVG
+      const tdAvg = document.createElement('td');
+      tdAvg.className = 'num-cell';
+      tdAvg.textContent = stat.average.toFixed(1);
+      tr.appendChild(tdAvg);
+
+      // WIN%
+      const tdWin = document.createElement('td');
+      tdWin.className = 'num-cell';
+      tdWin.textContent = winPct.toFixed(1) + '%';
+      if (winPct >= 75) tdWin.style.color = 'var(--color-success)';
+      else if (winPct < 35) tdWin.style.color = 'var(--color-danger)';
+      else tdWin.style.color = 'var(--color-warning)';
+      tr.appendChild(tdWin);
+
+      // ELO
+      const tdElo = document.createElement('td');
+      tdElo.className = 'num-cell';
+      tdElo.style.fontWeight = 'var(--font-weight-semibold)';
+      tdElo.textContent = elo;
+      tr.appendChild(tdElo);
+
+      // Δ ELO change
+      const tdChange = document.createElement('td');
+      tdChange.className = 'num-cell';
+      tdChange.textContent = changeIcon + changeText;
+      if (eloChange > 0) tdChange.style.color = 'var(--color-success)';
+      else if (eloChange < 0) tdChange.style.color = 'var(--color-danger)';
+      else tdChange.style.color = 'var(--text-tertiary)';
+      tr.appendChild(tdChange);
+
+      tbody.appendChild(tr);
     });
+    table.appendChild(tbody);
+    wrapper.appendChild(table);
+    tableContainer.innerHTML = '';
+    tableContainer.appendChild(wrapper);
   }
 
   container.innerHTML = `
@@ -186,7 +240,7 @@ export function renderHome(container, params) {
           ${latestDate ? `<span class="text-sm text-secondary">${formatDate(latestDate)}</span>` : ''}
         </div>
         ${latestTournamentStats.length === 0 ? `
-          <div class="text-sm text-secondary text-center" style="padding:var(--space-md);">
+          <div id="latest-no-data" class="text-sm text-secondary text-center" style="padding:var(--space-md);">
             No tournament data available
           </div>
         ` : `
@@ -206,6 +260,30 @@ export function renderHome(container, params) {
   // Render table after DOM is ready
   if (latestTournamentStats.length > 0) {
     renderTable();
+  } else if (latestDate && Store.getGitHubConfig()?.pat) {
+    // Lazy-fetch latest date's matches from GitHub (same pattern as statistics.js)
+    const noDataEl = container.querySelector('#latest-no-data');
+    if (noDataEl) {
+      noDataEl.textContent = '⏳ Loading…';
+      import('../services/github.js').then(({ ensureDayMatchesLoaded }) =>
+        ensureDayMatchesLoaded(latestDate)
+      ).then(fetched => {
+        if (!noDataEl.isConnected) return;
+        if (fetched.length > 0) {
+          latestTournamentStats = calculatePlayerStatistics(fetched);
+          attachEloToStats(latestTournamentStats);
+          noDataEl.id = 'latest-tournament-table';
+          noDataEl.className = 'latest-tournament-table';
+          noDataEl.removeAttribute('style');
+          noDataEl.textContent = '';
+          renderTable();
+        } else {
+          noDataEl.textContent = 'No tournament data available';
+        }
+      }).catch(() => {
+        if (noDataEl.isConnected) noDataEl.textContent = 'No tournament data available';
+      });
+    }
   }
 
   // Append theme toggle button

@@ -744,9 +744,101 @@ export async function pullDoodleMonth(yearMonth) {
 }
 
 /**
+ * Pull only what the home page needs from GitHub.
+ * Much lighter than pullCoreData — skips the expensive directory walk when
+ * tournament_dates are already cached in localStorage.
+ *
+ * Fetches:
+ *   - players.json           (ELO summaries shown on home)
+ *   - active_tournament.json (active tournament card)
+ *   - tournament_dates       (dir walk ONLY if not already cached)
+ *   - latest date's match file (if matches not already in localStorage)
+ *
+ * No-op if already fresh in this session.
+ * @returns {Promise<boolean>} true if any data was fetched
+ */
+async function pullHomeData() {
+  const cfg = getConfig();
+  if (!cfg?.owner || !cfg?.repo || !cfg?.pat) return false;
+  if (isFreshInSession('home')) return false;
+
+  ghLog('PULL_HOME', '-', 'start');
+  const base = matchesBase();
+
+  // ── 1. players.json ──────────────────────────────────────────────────────────
+  const playersPath = base ? `${base}/players.json` : 'players.json';
+  try {
+    const result = await readFile(playersPath);
+    if (result?.content && Array.isArray(result.content)) {
+      const camelPlayers = result.content.map(p => ({
+        name: p.Name,
+        elo: p.ELO,
+        previousElo: p.PreviousELO ?? p.ELO,
+      }));
+      localStorage.setItem('mexicano_players_summary', JSON.stringify(camelPlayers));
+      localStorage.setItem('mexicano_members', JSON.stringify(camelPlayers.map(p => p.name).sort()));
+    }
+  } catch { /* players.json may not exist yet */ }
+
+  // ── 2. active_tournament.json ────────────────────────────────────────────────
+  const dataPath = base ? `${base}/data` : 'data';
+  try {
+    const atResult = await readFile(`${dataPath}/active_tournament.json`);
+    if (atResult !== null) {
+      localStorage.setItem('mexicano_active_tournament', JSON.stringify(atResult.content));
+    } else {
+      localStorage.removeItem('mexicano_active_tournament');
+    }
+  } catch { /* data/ may not exist yet */ }
+
+  // ── 3. Tournament dates — skip dir walk if already cached ────────────────────
+  const cachedDates = localStorage.getItem('mexicano_tournament_dates');
+  if (!cachedDates) {
+    // No cached dates — do the dir walk once to discover them
+    const rootContents = await listContents(base);
+    const yearDirs = rootContents.filter(f => f.type === 'dir' && /^\d{4}$/.test(f.name));
+    const allDates = [];
+    for (const yearDir of yearDirs) {
+      const monthContents = await listContents(yearDir.path);
+      const months = monthContents.filter(f => f.type === 'dir' && /^\d{4}-\d{2}$/.test(f.name));
+      for (const monthDir of months) {
+        const dayContents = await listContents(monthDir.path);
+        dayContents
+          .filter(f => f.type === 'file' && /^\d{4}-\d{2}-\d{2}\.json$/.test(f.name))
+          .forEach(f => allDates.push(f.name.replace('.json', '')));
+      }
+    }
+    allDates.sort();
+    localStorage.setItem('mexicano_tournament_dates', JSON.stringify(allDates));
+  }
+
+  // ── 4. Latest date's matches — only if not already in localStorage ───────────
+  const allDates = JSON.parse(localStorage.getItem('mexicano_tournament_dates') || '[]');
+  if (allDates.length > 0) {
+    const latestDate = allDates[allDates.length - 1];
+    const cached = JSON.parse(localStorage.getItem('mexicano_matches') || '[]');
+    const hasLatest = cached.some(m => m.date === latestDate);
+    if (!hasLatest) {
+      try {
+        const fetched = await readDayMatches(latestDate);
+        if (fetched.length > 0) {
+          const updated = [...cached, ...fetched];
+          localStorage.setItem('mexicano_matches', JSON.stringify(updated));
+        }
+      } catch { /* match file may not exist */ }
+    }
+  }
+
+  markFetched('home');
+  ghLog('PULL_HOME', '-', 'done');
+  return true;
+}
+
+/**
  * Pull only what the current route needs from GitHub.
  * Replaces pullAll() for the auto-pull on page load.
  *
+ * For /: fetches only what home page needs (players, active_tournament, latest matches).
  * For /settings: fetches only players.json (lightweight).
  * For /doodle: fetches core data + current and next month's doodle file.
  * For all other routes: fetches core data (players, dates, active_tournament, recent overviews).
@@ -760,7 +852,13 @@ export async function pullForRoute(hash) {
 
   _isPulling = true;
   try {
-    const path = (hash || '').replace(/^#/, '').split('?')[0];
+    const path = (hash || '').replace(/^#/, '').split('?')[0] || '/';
+
+    // Home page: lightweight fetch — no dir walk when dates are cached
+    if (path === '/') {
+      const updated = await pullHomeData();
+      return { updated };
+    }
 
     // Settings page: only fetch players.json
     if (path === '/settings') {

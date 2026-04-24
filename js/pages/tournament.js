@@ -45,12 +45,14 @@ export function renderTournament(container, params) {
     const active = getActiveTournament();
     if (active && active.tournamentDate === date) {
       tournament = active;
+      if (tournament.isCompleted) currentTab = 'leaderboard';
       render();
       return;
     }
 
     tournament = loadTournamentByDate(date);
     if (tournament) {
+      if (tournament.isCompleted) currentTab = 'leaderboard';
       render();
       return;
     }
@@ -63,6 +65,7 @@ export function renderTournament(container, params) {
         .then(({ ensureDayMatchesLoaded }) => ensureDayMatchesLoaded(date))
         .then(() => {
           tournament = loadTournamentByDate(date);
+          if (tournament?.isCompleted) currentTab = 'leaderboard';
           isLoading = false;
           render();
         })

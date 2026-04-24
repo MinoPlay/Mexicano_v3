@@ -91,9 +91,15 @@ async function loadFromGitHub() {
   setSyncBusy(true);
   try {
     const { updated } = await pullForRoute(window.location.hash);
-    sessionStorage.setItem('mexicano_github_just_pulled', 'true');
-    sessionStorage.setItem('mexicano_sync_result', updated ? 'updated' : 'uptodate');
-    location.reload();
+    if (updated) {
+      // Data was actually fetched — reload so the UI renders fresh state
+      sessionStorage.setItem('mexicano_github_just_pulled', 'true');
+      sessionStorage.setItem('mexicano_sync_result', 'updated');
+      location.reload();
+    } else {
+      // Already fresh within TTL — no reload needed, console logs stay intact
+      setSyncBusy(false);
+    }
   } catch (e) {
     setSyncBusy(false);
     console.warn('GitHub auto-pull failed:', e);
