@@ -85,6 +85,7 @@ export function calculatePlayerStatistics(matches) {
       wins,
       losses,
       points,
+      wl: gamesPlayed,
       average,
       winRate,
       change: 0,

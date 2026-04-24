@@ -335,6 +335,102 @@
   color: var(--text-secondary);
 }
 
+/* ─── Latest Tournament Table ─── */
+.latest-tournament-table {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.table-header {
+  display: grid;
+  grid-template-columns: 32px 1fr 38px 40px 38px 40px 40px 38px;
+  gap: 6px;
+  padding: var(--space-sm);
+  background: var(--bg-secondary);
+  border-bottom: 2px solid var(--border);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-secondary);
+}
+
+.table-header-cell {
+  cursor: pointer;
+  user-select: none;
+  transition: color var(--transition-fast);
+  padding: 2px 4px;
+  border-radius: 2px;
+}
+
+.table-header-cell:hover {
+  color: var(--text-primary);
+  background: var(--bg-input);
+}
+
+.table-row {
+  display: grid;
+  grid-template-columns: 32px 1fr 38px 40px 38px 40px 40px 38px;
+  gap: 6px;
+  padding: var(--space-sm);
+  border-bottom: 1px solid var(--border-light);
+  align-items: center;
+  font-size: var(--font-size-sm);
+}
+
+.table-row:hover {
+  background: var(--bg-secondary);
+}
+
+.col-rank {
+  text-align: center;
+  font-weight: var(--font-weight-bold);
+}
+
+.col-rank.rank-class-gold { color: #f59e0b; }
+.col-rank.rank-class-silver { color: #94a3b8; }
+.col-rank.rank-class-bronze { color: #d97706; }
+
+.col-name {
+  font-weight: var(--font-weight-medium);
+  min-width: 0;
+  word-break: break-word;
+  white-space: normal;
+  line-height: 1.3;
+}
+
+.col-wl,
+.col-pts,
+.col-avg,
+.col-winpct {
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.col-winpct {
+  font-weight: var(--font-weight-semibold);
+}
+
+.col-winpct.win-excellent { color: var(--color-success); }
+.col-winpct.win-moderate { color: var(--color-warning); }
+.col-winpct.win-poor { color: var(--color-danger); }
+
+.col-elo {
+  text-align: center;
+  font-weight: var(--font-weight-semibold);
+  font-variant-numeric: tabular-nums;
+}
+
+.col-change {
+  text-align: center;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  font-variant-numeric: tabular-nums;
+}
+
+.col-change.positive { color: var(--color-success); }
+.col-change.negative { color: var(--color-danger); }
+.col-change.neutral { color: var(--text-tertiary); }
+
 /* ─── Doodle Calendar Matrix ─── */
 .doodle-matrix {
   overflow-x: auto;

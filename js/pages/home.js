@@ -1,9 +1,10 @@
 import { Store } from '../store.js';
 import { State } from '../state.js';
 import { renderThemeToggle } from '../components/theme-toggle.js';
-import { calculateAllEloRankings } from '../services/elo.js';
+import { calculateAllEloRankings, getEloSnapshots, getEloForDate } from '../services/elo.js';
 import { getAllTournamentDates, getActiveTournament } from '../services/tournament.js';
 import { getMembers } from '../services/members.js';
+import { calculatePlayerStatistics } from '../services/statistics.js';
 
 function formatDate(dateStr) {
   try {
@@ -14,127 +15,152 @@ function formatDate(dateStr) {
   }
 }
 
-function getUniquePlayersFromMatches(matches) {
-  const players = new Set();
-  for (const m of matches) {
-    if (m.team1Player1Name) players.add(m.team1Player1Name);
-    if (m.team1Player2Name) players.add(m.team1Player2Name);
-    if (m.team2Player1Name) players.add(m.team2Player1Name);
-    if (m.team2Player2Name) players.add(m.team2Player2Name);
-  }
-  return players;
-}
-
-/**
- * Build a map of player name → ELO from the second-to-last monthly overview.
- * Used to compute ELO change when only summary data is available.
- */
-function buildPreviousEloMap() {
-  const months = Store.getMonthlyOverviewMonths(); // sorted ascending
-  if (months.length < 2) return {};
-  // If the latest month's overview exists, use the one before it
-  const prevMonth = months[months.length - 2];
-  const overview = Store.getMonthlyOverview(prevMonth);
-  const map = {};
-  for (const p of overview) {
-    map[p.name] = p.elo;
-  }
-  return map;
-}
-
 export function renderHome(container, params) {
   const playersSummary = Store.getPlayersSummary();
   const tournamentDates = getAllTournamentDates();
   const activeTournament = getActiveTournament();
+  const allMatches = Store.getMatches();
 
-  let rankings;
-  let allPlayersCount;
+  // Get latest tournament date (dates sorted newest first)
+  const latestDate = tournamentDates.length > 0 ? tournamentDates[0] : null;
 
-  if (playersSummary.length > 0) {
-    // Use pre-computed ELO data (avoids loading all match files).
-    // Compute change by comparing current ELO with the previous month's overview.
-    const prevEloMap = buildPreviousEloMap();
-    rankings = playersSummary.map((p, idx) => {
-      const prevElo = prevEloMap[p.name];
-      const change = prevElo !== undefined ? Math.round((p.elo - prevElo) * 100) / 100 : 0;
-      return { place: idx + 1, name: p.name, elo: p.elo, change };
+  // Get Latest Tournament stats
+  let latestTournamentStats = [];
+  let latestEloMap = {};
+
+  if (latestDate) {
+    // Get stats for latest tournament date
+    const dayMatches = allMatches.filter(m => m.date === latestDate);
+    if (dayMatches.length > 0) {
+      latestTournamentStats = calculatePlayerStatistics(dayMatches);
+    }
+
+    // Get ELO data for that date
+    if (playersSummary.length > 0) {
+      const summaryMap = {};
+      for (const p of playersSummary) {
+        summaryMap[p.name] = p;
+      }
+      for (const stat of latestTournamentStats) {
+        const p = summaryMap[stat.name];
+        if (p) {
+          stat.elo = p.elo;
+          stat.eloChange = Math.round(((p.elo ?? 1000) - (p.previousElo ?? 1000)) * 100) / 100;
+        }
+      }
+    } else if (allMatches.length > 0) {
+      const { snapshots } = getEloSnapshots(allMatches);
+      latestEloMap = getEloForDate(snapshots, latestDate) || {};
+      for (const stat of latestTournamentStats) {
+        const eloData = latestEloMap[stat.name];
+        if (eloData) {
+          stat.elo = eloData.elo;
+          stat.eloChange = eloData.eloChange;
+        }
+      }
+    }
+  }
+
+  // State for sorting
+  let sortCol = 'average';
+  let sortDir = 'desc';
+
+  function renderTable() {
+    const tableContainer = container.querySelector('#latest-tournament-table');
+    if (!tableContainer || latestTournamentStats.length === 0) return;
+
+    // Sort data
+    const sorted = [...latestTournamentStats];
+    sorted.sort((a, b) => {
+      let av, bv;
+      
+      if (sortCol === 'name') {
+        av = a.name.toLowerCase();
+        bv = b.name.toLowerCase();
+      } else if (sortCol === 'wl') {
+        av = a.wins;
+        bv = b.wins;
+      } else if (sortCol === 'pts') {
+        av = a.points;
+        bv = b.points;
+      } else if (sortCol === 'avg') {
+        av = a.average;
+        bv = b.average;
+      } else if (sortCol === 'win') {
+        const totalA = a.wins + a.losses;
+        const totalB = b.wins + b.losses;
+        av = totalA > 0 ? a.wins / totalA : 0;
+        bv = totalB > 0 ? b.wins / totalB : 0;
+      } else if (sortCol === 'elo') {
+        av = a.elo ?? 0;
+        bv = b.elo ?? 0;
+      } else if (sortCol === 'change') {
+        av = a.eloChange ?? 0;
+        bv = b.eloChange ?? 0;
+      }
+
+      if (av < bv) return sortDir === 'asc' ? -1 : 1;
+      if (av > bv) return sortDir === 'asc' ? 1 : -1;
+      return 0;
     });
-    allPlayersCount = playersSummary.length;
-  } else {
-    // Fall back to computing from locally cached matches
-    const matches = Store.getMatches();
-    const eloResult = calculateAllEloRankings(matches);
-    rankings = eloResult.rankings || [];
-    allPlayersCount = getUniquePlayersFromMatches(matches).size;
+
+    // Render rows
+    const rowsHtml = sorted.map((stat, i) => {
+      const rank = i + 1;
+      const rankClass = rank === 1 ? 'gold' : rank === 2 ? 'silver' : rank === 3 ? 'bronze' : '';
+      const totalMatches = stat.wins + stat.losses;
+      const winPct = totalMatches > 0 ? (stat.wins / totalMatches) * 100 : 0;
+      const winPctDisplay = winPct.toFixed(1);
+      let winClass = 'win-moderate';
+      if (winPct >= 75) winClass = 'win-excellent';
+      else if (winPct < 35) winClass = 'win-poor';
+      const elo = stat.elo !== undefined && stat.elo !== null ? Math.round(stat.elo) : '—';
+      const eloChange = stat.eloChange ?? 0;
+      const changeClass = eloChange > 0 ? 'positive' : eloChange < 0 ? 'negative' : 'neutral';
+      const changeIcon = eloChange > 0 ? '▲' : eloChange < 0 ? '▼' : '–';
+      const changeText = eloChange !== 0 ? Math.abs(Math.round(eloChange * 10) / 10).toFixed(1) : '';
+      return `
+        <div class="table-row">
+          <div class="col-rank rank-class-${rankClass}">${rank}</div>
+          <div class="col-name">${stat.name}</div>
+          <div class="col-wl">${stat.wins}/${totalMatches}</div>
+          <div class="col-pts">${Math.round(stat.points)}</div>
+          <div class="col-avg">${stat.average.toFixed(1)}</div>
+          <div class="col-winpct ${winClass}">${winPctDisplay}%</div>
+          <div class="col-elo">${elo}</div>
+          <div class="col-change ${changeClass}">${changeIcon}${changeText}</div>
+        </div>
+      `;
+    }).join('');
+
+    tableContainer.innerHTML = `
+      <div class="table-header">
+        <div class="col-rank">#</div>
+        <div class="col-name table-header-cell" data-sort="name">Name</div>
+        <div class="col-wl table-header-cell" data-sort="wl">W/T</div>
+        <div class="col-pts table-header-cell" data-sort="pts">PTS</div>
+        <div class="col-avg table-header-cell" data-sort="avg">AVG</div>
+        <div class="col-winpct table-header-cell" data-sort="win">WIN</div>
+        <div class="col-elo table-header-cell" data-sort="elo">ELO</div>
+        <div class="col-change table-header-cell" data-sort="change">Δ</div>
+      </div>
+      ${rowsHtml}
+    `;
+
+    // Add click handlers to headers
+    tableContainer.querySelectorAll('.table-header-cell').forEach(cell => {
+      cell.addEventListener('click', () => {
+        const col = cell.dataset.sort;
+        if (sortCol === col) {
+          sortDir = sortDir === 'asc' ? 'desc' : 'asc';
+        } else {
+          sortCol = col;
+          sortDir = col === 'name' ? 'asc' : 'desc';
+        }
+        renderTable();
+      });
+    });
   }
-
-  const latestDate = tournamentDates.length > 0
-    ? formatDate(tournamentDates[0])
-    : '—';
-
-  // Determine which players played in the current calendar month.
-  // Fall back to the latest month with data if the current month has none.
-  const now = new Date();
-  const currentYearMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-
-  let activeMonthPlayerSet = null;
-
-  // Try current month from monthly overview
-  const currentOverview = Store.getMonthlyOverview(currentYearMonth);
-  if (currentOverview.length > 0) {
-    activeMonthPlayerSet = new Set(currentOverview.map(p => p.name.toLowerCase()));
-  }
-
-  // Try current month from raw matches
-  if (!activeMonthPlayerSet) {
-    const allMatchesForMonth = Store.getMatches().filter(m => m.date?.startsWith(currentYearMonth));
-    if (allMatchesForMonth.length > 0) {
-      const players = new Set();
-      for (const m of allMatchesForMonth) {
-        [m.team1Player1Name, m.team1Player2Name, m.team2Player1Name, m.team2Player2Name]
-          .filter(Boolean).forEach(n => players.add(n.toLowerCase()));
-      }
-      if (players.size > 0) activeMonthPlayerSet = players;
-    }
-  }
-
-  // Fall back to latest month with data
-  if (!activeMonthPlayerSet) {
-    const months = Store.getMonthlyOverviewMonths();
-    if (months.length > 0) {
-      const latestMonth = months[months.length - 1];
-      const overview = Store.getMonthlyOverview(latestMonth);
-      if (overview.length > 0) {
-        activeMonthPlayerSet = new Set(overview.map(p => p.name.toLowerCase()));
-      }
-    }
-  }
-  if (!activeMonthPlayerSet) {
-    const allMatches = Store.getMatches();
-    const matchDates = allMatches.map(m => m.date).filter(Boolean);
-    if (matchDates.length > 0) {
-      const latestMonth = [...new Set(matchDates.map(d => d.substring(0, 7)))].sort().pop();
-      const monthMatches = allMatches.filter(m => m.date?.startsWith(latestMonth));
-      const players = new Set();
-      for (const m of monthMatches) {
-        [m.team1Player1Name, m.team1Player2Name, m.team2Player1Name, m.team2Player2Name]
-          .filter(Boolean).forEach(n => players.add(n.toLowerCase()));
-      }
-      if (players.size > 0) activeMonthPlayerSet = players;
-    }
-  }
-
-  const members = getMembers();
-  const memberSet = new Set(members.map(m => m.toLowerCase()));
-  let filteredRankings = memberSet.size > 0
-    ? rankings.filter(p => memberSet.has(p.name.toLowerCase()))
-    : rankings;
-
-  if (activeMonthPlayerSet) {
-    filteredRankings = filteredRankings.filter(p => activeMonthPlayerSet.has(p.name.toLowerCase()));
-  }
-
-  const top10 = filteredRankings.slice(0, 10);
 
   container.innerHTML = `
     <header class="page-header">
@@ -142,25 +168,6 @@ export function renderHome(container, params) {
       <div class="flex items-center gap-sm" id="home-header-right"></div>
     </header>
     <div class="page-content">
-      <div class="home-quick-stats">
-        <div class="quick-stat-card">
-          <div class="stat-value">${tournamentDates.length}</div>
-          <div class="stat-label">Tournaments</div>
-        </div>
-        <div class="quick-stat-card">
-          <div class="stat-value">${allPlayersCount}</div>
-          <div class="stat-label">Players</div>
-        </div>
-        <div class="quick-stat-card">
-          <div class="stat-value">${latestDate}</div>
-          <div class="stat-label">Latest</div>
-        </div>
-        <div class="quick-stat-card">
-          <div class="stat-value">${activeTournament ? '🟢' : '—'}</div>
-          <div class="stat-label">Active</div>
-        </div>
-      </div>
-
       ${activeTournament ? `
         <a href="#/tournament/${activeTournament.tournamentDate}" class="card" style="display:block;margin-bottom:var(--space-md);border-left:3px solid var(--color-success);text-decoration:none;color:inherit;">
           <div class="card-header">
@@ -175,28 +182,18 @@ export function renderHome(container, params) {
 
       <div class="card" style="margin-bottom:var(--space-md);">
         <div class="card-header">
-          <span class="card-title">ELO Leaderboard</span>
+          <span class="card-title">Latest Tournament</span>
+          ${latestDate ? `<span class="text-sm text-secondary">${formatDate(latestDate)}</span>` : ''}
         </div>
-        ${top10.length === 0 ? `
+        ${latestTournamentStats.length === 0 ? `
           <div class="text-sm text-secondary text-center" style="padding:var(--space-md);">
-            No matches played yet
+            No tournament data available
           </div>
-        ` : top10.map((p, i) => {
-          const rank = i + 1;
-          const rankClass = rank === 1 ? 'gold' : rank === 2 ? 'silver' : rank === 3 ? 'bronze' : '';
-          const change = p.change ?? 0;
-          const changeClass = change > 0 ? 'positive' : change < 0 ? 'negative' : 'neutral';
-          const changeIcon = change > 0 ? '▲' : change < 0 ? '▼' : '–';
-          const changeText = change !== 0 ? Math.abs(Math.round(change)) : '';
-          return `
-            <div class="leaderboard-item">
-              <span class="leaderboard-rank ${rankClass}">${rank}</span>
-              <span class="leaderboard-name">${p.name}</span>
-              <span class="leaderboard-value">${Math.round(p.elo)}</span>
-              <span class="elo-change ${changeClass}">${changeIcon}${changeText}</span>
-            </div>
-          `;
-        }).join('')}
+        ` : `
+          <div class="latest-tournament-table" id="latest-tournament-table">
+            <!-- Table rendered by renderTable() -->
+          </div>
+        `}
       </div>
 
       <div class="flex flex-col gap-sm">
@@ -205,6 +202,11 @@ export function renderHome(container, params) {
       </div>
     </div>
   `;
+
+  // Render table after DOM is ready
+  if (latestTournamentStats.length > 0) {
+    renderTable();
+  }
 
   // Append theme toggle button
   const headerRight = container.querySelector('#home-header-right');

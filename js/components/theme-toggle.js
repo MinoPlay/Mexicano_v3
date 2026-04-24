@@ -24,6 +24,6 @@ export function renderThemeToggle() {
 }
 
 export function initTheme() {
-  const saved = Store.getTheme();
+  const saved = Store.getTheme() || 'dark';
   document.documentElement.setAttribute('data-theme', saved);
 }

@@ -33,17 +33,24 @@ function formatMonth(yearMonth) {
   }
 }
 
+function truncateName(name, maxLength = 15) {
+  if (name.length > maxLength) {
+    return name.substring(0, maxLength) + '...';
+  }
+  return name;
+}
+
 // ─── Column definitions ───
 
 const STAT_COLUMNS = [
-  { key: 'rank', label: '#', cls: 'rank-cell' },
-  { key: 'name', label: 'Name', cls: 'name-cell' },
-  { key: 'wins', label: 'W', cls: 'num-cell' },
-  { key: 'losses', label: 'L', cls: 'num-cell' },
-  { key: 'average', label: 'Avg', cls: 'num-cell' },
-  { key: 'winRate', label: 'Win%', cls: 'num-cell' },
-  { key: 'elo', label: 'ELO', cls: 'num-cell' },
-  { key: 'eloChange', label: '±ELO', cls: 'num-cell' },
+  { key: 'rank', label: '#', cls: 'col-rank' },
+  { key: 'name', label: 'NAME', cls: 'col-name' },
+  { key: 'wl', label: 'W/T', cls: 'col-wl' },
+  { key: 'points', label: 'PTS', cls: 'col-pts' },
+  { key: 'average', label: 'AVG', cls: 'col-avg' },
+  { key: 'winRate', label: 'WIN', cls: 'col-winpct' },
+  { key: 'elo', label: 'ELO', cls: 'col-elo' },
+  { key: 'eloChange', label: 'WLO', cls: 'col-change' },
 ];
 
 // ─── Aggregate monthly overviews into all-time stats ───
@@ -72,6 +79,7 @@ function aggregateOverviews() {
       wins: p.wins,
       losses: p.losses,
       points: p.points,
+      wl: totalMatches,
       average: totalMatches > 0 ? Math.round((p.points / totalMatches) * 100) / 100 : 0,
       winRate: totalMatches > 0 ? Math.round((p.wins / totalMatches) * 100 * 100) / 100 : 0,
       change: 0,
@@ -110,6 +118,7 @@ function overviewToStats(overview) {
       wins: p.wins,
       losses: p.losses,
       points: p.totalPoints,
+      wl: totalMatches,
       average: p.average,
       winRate: totalMatches > 0 ? Math.round((p.wins / totalMatches) * 100 * 100) / 100 : 0,
       change: 0,
@@ -198,10 +207,32 @@ function renderSortableTable(container, stats, onPlayerClick, columns = STAT_COL
       columns.forEach(col => {
         const td = document.createElement('td');
         td.className = col.cls || '';
-        if (col.key === 'winRate') {
-          td.textContent = row[col.key].toFixed(1) + '%';
+        
+        if (col.key === 'rank') {
+          const rank = row[col.key];
+          td.textContent = rank;
+          if (rank === 1) td.classList.add('rank-class-gold');
+          else if (rank === 2) td.classList.add('rank-class-silver');
+          else if (rank === 3) td.classList.add('rank-class-bronze');
+        } else if (col.key === 'name') {
+          td.textContent = truncateName(row[col.key], 15);
+          if (onPlayerClick) {
+            td.style.cursor = 'pointer';
+            td.addEventListener('click', () => onPlayerClick(row.name));
+          }
+        } else if (col.key === 'wl') {
+          td.textContent = `${row.wins}/${row[col.key]}`;
+        } else if (col.key === 'points') {
+          td.textContent = Math.round(row[col.key]);
         } else if (col.key === 'average') {
           td.textContent = typeof row[col.key] === 'number' ? row[col.key].toFixed(1) : row[col.key];
+        } else if (col.key === 'winRate') {
+          const winRate = row[col.key];
+          const winPctDisplay = winRate.toFixed(1);
+          td.textContent = winPctDisplay + '%';
+          if (winRate >= 75) td.classList.add('win-excellent');
+          else if (winRate < 35) td.classList.add('win-poor');
+          else td.classList.add('win-moderate');
         } else if (col.key === 'elo') {
           if (row[col.key] == null) {
             td.textContent = '—';
@@ -214,15 +245,16 @@ function renderSortableTable(container, stats, onPlayerClick, columns = STAT_COL
           } else {
             const val = row[col.key];
             const rounded = Math.round(val * 10) / 10;
-            td.textContent = (rounded > 0 ? '+' : '') + rounded.toFixed(1);
-            td.style.color = rounded > 0 ? 'var(--color-success, #22c55e)' : rounded < 0 ? 'var(--color-danger, #ef4444)' : '';
+            const changeIcon = rounded > 0 ? '▲' : rounded < 0 ? '▼' : '–';
+            const changeText = rounded !== 0 ? Math.abs(rounded).toFixed(1) : '';
+            td.textContent = changeIcon + changeText;
+            if (rounded > 0) td.style.color = 'var(--color-success, #22c55e)';
+            else if (rounded < 0) td.style.color = 'var(--color-danger, #ef4444)';
           }
         } else {
           td.textContent = row[col.key] ?? '';
         }
-        if (col.key === 'name' && onPlayerClick) {
-          td.addEventListener('click', () => onPlayerClick(row.name));
-        }
+        
         tr.appendChild(td);
       });
       tbody.appendChild(tr);

@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="light">
+<html lang="en" data-theme="dark">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
@@ -9,6 +9,11 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <title>Mexicano</title>
+  <script>
+    // Set theme immediately before rendering to prevent flash
+    const saved = localStorage.getItem('mexicano_theme') || 'dark';
+    document.documentElement.setAttribute('data-theme', saved);
+  </script>
   <link rel="manifest" href="manifest.json">
   <link rel="icon" href="assets/favicon.ico" type="image/x-icon">
   <link rel="apple-touch-icon" href="assets/icons/icon-192.png">
