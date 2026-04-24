@@ -16,7 +16,7 @@ import os
 import re
 import glob
 
-DATA_ROOT = r"C:\Private\DataHub\mexicano_v3\backup-data"
+DATA_ROOT = os.path.join(os.path.dirname(__file__), '..', '..', 'DataHub', 'mexicano_v3', 'backup-data')
 
 K = 32
 INITIAL_ELO = 1000
@@ -140,6 +140,28 @@ def main():
         second_to_last = played_dates[-2]
         return snapshots[second_to_last]
 
+    # All-time stats aggregation
+    alltime = {}
+    for m in valid:
+        t1names = [m["Team1Player1Name"], m["Team1Player2Name"]]
+        t2names = [m["Team2Player1Name"], m["Team2Player2Name"]]
+        team1_won = m["ScoreTeam1"] > m["ScoreTeam2"]
+        date = m["Date"]
+        for name in t1names:
+            if name not in alltime:
+                alltime[name] = {"pts": 0, "wins": 0, "losses": 0, "games": 0, "dates": set()}
+            alltime[name]["pts"] += m["ScoreTeam1"]
+            alltime[name]["games"] += 1
+            alltime[name]["dates"].add(date)
+            alltime[name]["wins" if team1_won else "losses"] += 1
+        for name in t2names:
+            if name not in alltime:
+                alltime[name] = {"pts": 0, "wins": 0, "losses": 0, "games": 0, "dates": set()}
+            alltime[name]["pts"] += m["ScoreTeam2"]
+            alltime[name]["games"] += 1
+            alltime[name]["dates"].add(date)
+            alltime[name]["wins" if not team1_won else "losses"] += 1
+
     # Build output sorted by ELO descending
     result = sorted(
         [
@@ -147,6 +169,11 @@ def main():
                 "Name": name,
                 "ELO": elo,
                 "PreviousELO": get_previous_elo(name),
+                "Wins": alltime.get(name, {}).get("wins", 0),
+                "Losses": alltime.get(name, {}).get("losses", 0),
+                "TotalPoints": alltime.get(name, {}).get("pts", 0),
+                "Average": round(alltime.get(name, {}).get("pts", 0) / max(alltime.get(name, {}).get("games", 1), 1) * 100) / 100,
+                "Tournaments": len(alltime.get(name, {}).get("dates", set())),
             }
             for name, elo in players.items()
         ],

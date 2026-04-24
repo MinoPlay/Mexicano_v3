@@ -522,6 +522,7 @@ export async function fetchTournamentsIndexPublic() {
   return fetchTournamentsIndex({ create: true });
 }
 
+/**
  *
  * Reads pre-computed summary files (players.json, monthly overviews) and
  * discovers tournament dates via tournaments.json (creating it if missing).
@@ -572,6 +573,11 @@ export async function pullAll(onProgress) {
           name: p.Name,
           elo: p.ELO,
           previousElo: p.PreviousELO ?? p.ELO,
+          wins: p.Wins ?? null,
+          losses: p.Losses ?? null,
+          points: p.TotalPoints ?? null,
+          average: p.Average ?? null,
+          tournaments: p.Tournaments ?? null,
         }));
         localStorage.setItem('mexicano_players_summary', JSON.stringify(camelPlayers));
         // Update members list from the authoritative players.json
@@ -716,6 +722,11 @@ async function pullCoreData() {
         name: p.Name,
         elo: p.ELO,
         previousElo: p.PreviousELO ?? p.ELO,
+        wins: p.Wins ?? null,
+        losses: p.Losses ?? null,
+        points: p.TotalPoints ?? null,
+        average: p.Average ?? null,
+        tournaments: p.Tournaments ?? null,
       }));
       localStorage.setItem('mexicano_players_summary', JSON.stringify(camelPlayers));
       localStorage.setItem('mexicano_members', JSON.stringify(camelPlayers.map(p => p.name).sort()));
@@ -773,6 +784,11 @@ async function pullTournamentsPage() {
         name: p.Name,
         elo: p.ELO,
         previousElo: p.PreviousELO ?? p.ELO,
+        wins: p.Wins ?? null,
+        losses: p.Losses ?? null,
+        points: p.TotalPoints ?? null,
+        average: p.Average ?? null,
+        tournaments: p.Tournaments ?? null,
       }));
       localStorage.setItem('mexicano_players_summary', JSON.stringify(camelPlayers));
       localStorage.setItem('mexicano_members', JSON.stringify(camelPlayers.map(p => p.name).sort()));
@@ -820,6 +836,11 @@ async function pullSettingsData() {
         name: p.Name,
         elo: p.ELO,
         previousElo: p.PreviousELO ?? p.ELO,
+        wins: p.Wins ?? null,
+        losses: p.Losses ?? null,
+        points: p.TotalPoints ?? null,
+        average: p.Average ?? null,
+        tournaments: p.Tournaments ?? null,
       }));
       localStorage.setItem('mexicano_players_summary', JSON.stringify(camelPlayers));
       localStorage.setItem('mexicano_members', JSON.stringify(camelPlayers.map(p => p.name).sort()));
@@ -929,6 +950,11 @@ async function pullHomeData() {
         name: p.Name,
         elo: p.ELO,
         previousElo: p.PreviousELO ?? p.ELO,
+        wins: p.Wins ?? null,
+        losses: p.Losses ?? null,
+        points: p.TotalPoints ?? null,
+        average: p.Average ?? null,
+        tournaments: p.Tournaments ?? null,
       }));
       localStorage.setItem('mexicano_players_summary', JSON.stringify(camelPlayers));
       localStorage.setItem('mexicano_members', JSON.stringify(camelPlayers.map(p => p.name).sort()));

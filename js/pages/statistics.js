@@ -2,6 +2,15 @@ import { calculatePlayerStatistics, calculateOpponentStats, calculatePartnership
 import { calculateAllEloRankings, getEloSnapshots, getEloForDate, getEloForMonth } from '../services/elo.js';
 import { Store } from '../store.js';
 
+// ─── Text measurement helper for column auto-fit ───
+let _measureCanvas;
+function measureTextWidth(text, font) {
+  if (!_measureCanvas) _measureCanvas = document.createElement('canvas');
+  const ctx = _measureCanvas.getContext('2d');
+  ctx.font = font;
+  return ctx.measureText(String(text ?? '')).width;
+}
+
 // ─── Helpers ───
 
 function getUniqueDates(matches) {
@@ -174,13 +183,23 @@ function renderSortableTable(container, stats, onPlayerClick, columns = STAT_COL
     wrapper.className = 'data-table';
     const table = document.createElement('table');
 
+    // colgroup for resize
+    const colgroup = document.createElement('colgroup');
+    const colEls = columns.map(() => {
+      const col = document.createElement('col');
+      colgroup.appendChild(col);
+      return col;
+    });
+    table.appendChild(colgroup);
+
     // thead
     const thead = document.createElement('thead');
     const headerRow = document.createElement('tr');
-    columns.forEach(col => {
+    columns.forEach((col, colIdx) => {
       const th = document.createElement('th');
       th.textContent = col.label;
       th.className = col.cls || '';
+      th.style.position = 'relative';
       if (col.key === sortCol) {
         th.classList.add(sortDir === 'asc' ? 'sort-asc' : 'sort-desc');
       }
@@ -195,6 +214,46 @@ function renderSortableTable(container, stats, onPlayerClick, columns = STAT_COL
           render();
         });
       }
+
+      // Resize handle
+      const handle = document.createElement('div');
+      handle.className = 'col-resize-handle';
+      handle.addEventListener('dblclick', (e) => {
+        e.stopPropagation();
+        // Auto-fit: measure all cells in this column
+        const thStyle = getComputedStyle(th);
+        const thFont = `${thStyle.fontWeight} ${thStyle.fontSize} ${thStyle.fontFamily}`;
+        const firstTd = tbody.querySelector('tr td:nth-child(' + (colIdx + 1) + ')');
+        const tdFont = firstTd ? (() => { const s = getComputedStyle(firstTd); return `${s.fontWeight} ${s.fontSize} ${s.fontFamily}`; })() : thFont;
+
+        let maxW = measureTextWidth(th.childNodes[0]?.textContent || col.label, thFont) + 14;
+        tbody.querySelectorAll('tr').forEach(tr => {
+          const td = tr.children[colIdx];
+          if (td) {
+            const w = measureTextWidth(td.textContent, tdFont) + 10;
+            if (w > maxW) maxW = w;
+          }
+        });
+        colEls[colIdx].style.width = Math.ceil(maxW) + 'px';
+      });
+      handle.addEventListener('mousedown', (e) => {
+        e.stopPropagation();
+        e.preventDefault();
+        const startX = e.clientX;
+        const startW = colEls[colIdx].offsetWidth || th.offsetWidth;
+        function onMove(e) {
+          const newW = Math.max(18, startW + e.clientX - startX);
+          colEls[colIdx].style.width = newW + 'px';
+        }
+        function onUp() {
+          document.removeEventListener('mousemove', onMove);
+          document.removeEventListener('mouseup', onUp);
+        }
+        document.addEventListener('mousemove', onMove);
+        document.addEventListener('mouseup', onUp);
+      });
+      th.appendChild(handle);
+
       headerRow.appendChild(th);
     });
     thead.appendChild(headerRow);
@@ -228,17 +287,12 @@ function renderSortableTable(container, stats, onPlayerClick, columns = STAT_COL
           td.textContent = typeof row[col.key] === 'number' ? row[col.key].toFixed(1) : row[col.key];
         } else if (col.key === 'winRate') {
           const winRate = row[col.key];
-          const winPctDisplay = winRate.toFixed(1);
-          td.textContent = winPctDisplay + '%';
+          td.textContent = winRate.toFixed(1) + '%';
           if (winRate >= 75) td.classList.add('win-excellent');
           else if (winRate < 35) td.classList.add('win-poor');
           else td.classList.add('win-moderate');
         } else if (col.key === 'elo') {
-          if (row[col.key] == null) {
-            td.textContent = '—';
-          } else {
-            td.textContent = Math.round(row[col.key]);
-          }
+          td.textContent = row[col.key] == null ? '—' : Math.round(row[col.key]);
         } else if (col.key === 'eloChange') {
           if (row[col.key] == null) {
             td.textContent = '—';
@@ -427,6 +481,8 @@ export function renderStatistics(container, params = {}) {
 
   const content = document.createElement('div');
   content.className = 'page-content';
+  content.style.paddingLeft = '0';
+  content.style.paddingRight = '0';
   container.appendChild(content);
 
   const allMatches = Store.getMatches();
@@ -463,11 +519,13 @@ export function renderStatistics(container, params = {}) {
   // Filter bar
   const filterBar = document.createElement('div');
   filterBar.className = 'stats-filter-bar';
+  filterBar.style.padding = '0 var(--space-md) var(--space-xs)';
   content.appendChild(filterBar);
 
   // Table container
   const tableContainer = document.createElement('div');
   tableContainer.className = 'mt-md';
+  tableContainer.style.padding = '0 2px';
   content.appendChild(tableContainer);
 
   function renderFilterBar() {
@@ -489,7 +547,7 @@ export function renderStatistics(container, params = {}) {
     // Month picker (from overviews or local match dates)
     if (availableMonths.length > 1) {
       const monthSelect = document.createElement('select');
-      monthSelect.style.cssText = 'width:auto;min-width:120px;padding:var(--space-xs) var(--space-sm);font-size:var(--font-size-sm);border-radius:var(--radius-full);';
+      monthSelect.style.cssText = 'flex:1;min-width:0;padding:var(--space-xs) var(--space-sm);font-size:var(--font-size-xs);border-radius:var(--radius-full);';
       const defaultOpt = document.createElement('option');
       defaultOpt.value = '';
       defaultOpt.textContent = 'Pick month…';
@@ -510,7 +568,7 @@ export function renderStatistics(container, params = {}) {
     // Per-tournament date selector
     if (dates.length > 1) {
       const select = document.createElement('select');
-      select.style.cssText = 'width:auto;min-width:120px;padding:var(--space-xs) var(--space-sm);font-size:var(--font-size-sm);border-radius:var(--radius-full);';
+      select.style.cssText = 'flex:1;min-width:0;padding:var(--space-xs) var(--space-sm);font-size:var(--font-size-xs);border-radius:var(--radius-full);';
       const defaultOpt = document.createElement('option');
       defaultOpt.value = '';
       defaultOpt.textContent = 'Pick date…';
@@ -560,15 +618,38 @@ export function renderStatistics(container, params = {}) {
   }
 
   async function renderTable() {
-    // "All Time" — prefer aggregated overviews, lazy-fetch if needed
+    // "All Time" — use players_summary (players.json) if it has win/loss data
     if (activeFilter === 'all') {
-      if (Store.getGitHubConfig()?.pat) {
-        tableContainer.innerHTML = '<p class="text-center mt-lg">⏳ Loading…</p>';
-        try {
-          const { pullAllOverviews } = await import('../services/github.js');
-          await pullAllOverviews();
-        } catch { /* continue with cached data */ }
+      const summary = Store.getPlayersSummary();
+      if (summary.length > 0 && summary[0].wins != null) {
+        const stats = summary.map((p, i) => {
+          const totalMatches = (p.wins || 0) + (p.losses || 0);
+          return {
+            rank: i + 1,
+            name: p.name,
+            wins: p.wins || 0,
+            losses: p.losses || 0,
+            points: p.points || 0,
+            wl: totalMatches,
+            average: p.average || 0,
+            winRate: totalMatches > 0 ? Math.round((p.wins / totalMatches) * 100 * 100) / 100 : 0,
+            elo: p.elo,
+            eloChange: Math.round(((p.elo ?? 1000) - 1000) * 100) / 100,
+            change: 0,
+            tightWins: 0,
+            solidWins: 0,
+            dominatingWins: 0,
+          };
+        });
+        tableContainer.innerHTML = '';
+        if (!stats.length) {
+          tableContainer.innerHTML = '<p class="text-secondary text-center mt-lg">No data for this filter</p>';
+          return;
+        }
+        renderSortableTable(tableContainer, stats, name => showPlayerProfile(name));
+        return;
       }
+      // Fall back to aggregated monthly overviews (already cached locally, no fetch)
       const freshOverviewMonths = Store.getMonthlyOverviewMonths();
       if (freshOverviewMonths.length > 0) {
         const stats = aggregateOverviews();

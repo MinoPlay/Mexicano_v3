@@ -231,26 +231,32 @@
 .data-table {
   width: 100%;
   overflow-x: auto;
-  -webkit-overflow-scrolling: touch;
 }
 
 .data-table table {
-  min-width: 100%;
+  width: 100%;
+  table-layout: auto;
 }
 
 .data-table th {
-  padding: var(--space-sm);
-  font-size: var(--font-size-xs);
+  padding: 4px 3px;
+  font-size: 0.65rem;
   font-weight: var(--font-weight-semibold);
   color: var(--text-secondary);
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.03em;
   text-align: left;
   border-bottom: 2px solid var(--border);
   white-space: nowrap;
   cursor: pointer;
   user-select: none;
 }
+
+.data-table th:first-child,
+.data-table td:first-child { padding-left: 1px; }
+
+.data-table th:last-child,
+.data-table td:last-child { padding-right: 1px; }
 
 .data-table th:hover {
   color: var(--text-primary);
@@ -260,9 +266,11 @@
 .data-table th.sort-desc::after { content: ' ↓'; }
 
 .data-table td {
-  padding: var(--space-sm);
-  font-size: var(--font-size-sm);
+  padding: 4px 3px;
+  font-size: 0.7rem;
   border-bottom: 1px solid var(--border-light);
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
@@ -273,21 +281,44 @@
 .data-table .rank-cell {
   font-weight: var(--font-weight-bold);
   color: var(--text-secondary);
-  width: 36px;
+  text-align: center;
+  white-space: nowrap;
 }
 
 .data-table .name-cell {
   font-weight: var(--font-weight-medium);
   color: var(--color-primary);
   cursor: pointer;
-  max-width: 120px;
+  max-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
+  width: 100%;
 }
 
 .data-table .num-cell {
   text-align: right;
   font-variant-numeric: tabular-nums;
+}
+
+/* ─── Column resize handle ─── */
+.col-resize-handle {
+  position: absolute;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: 5px;
+  cursor: col-resize;
+  background: transparent;
+  z-index: 2;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.col-resize-handle:hover,
+.col-resize-handle:active {
+  background: var(--color-primary);
+  opacity: 0.5;
 }
 
 /* ─── Dialog / Modal ─── */

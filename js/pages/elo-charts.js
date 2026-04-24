@@ -164,7 +164,8 @@ function setupTooltip(canvas) {
       ds.data.forEach(pt => {
         const xPos = meta.pad.left + (meta.xCount <= 1 ? meta.plotW / 2 : (pt.x / Math.max(meta.xCount - 1, 1)) * meta.plotW);
         const yPos = meta.pad.top + meta.plotH - ((pt.y - meta.yMin) / meta.yRange) * meta.plotH;
-        const dist = Math.sqrt((mx - xPos) ** 2 + (my - yPos) ** 2);
+        const dx = mx - xPos, dy = my - yPos;
+        const dist = Math.sqrt(dx * dx + dy * dy);
         if (dist < minDist) {
           minDist = dist;
           closest = { label: ds.label, value: pt.y, x: xPos, y: yPos, color: ds.color };

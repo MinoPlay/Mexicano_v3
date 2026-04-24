@@ -117,6 +117,7 @@ export function renderHome(container, params) {
       const th = document.createElement('th');
       th.textContent = col.label;
       if (col.key !== 'rank') th.className = 'num-cell';
+      if (col.key === 'rank') th.className = 'rank-cell';
       if (col.key === 'name') th.style.textAlign = 'left';
       if (col.sort === sortCol) th.classList.add(sortDir === 'asc' ? 'sort-asc' : 'sort-desc');
       if (col.sort) {
@@ -221,9 +222,9 @@ export function renderHome(container, params) {
       <h1>🎾 Mexicano</h1>
       <div class="flex items-center gap-sm" id="home-header-right"></div>
     </header>
-    <div class="page-content">
+    <div class="page-content" style="padding-left:0;padding-right:0;">
       ${activeTournament ? `
-        <a href="#/tournament/${activeTournament.tournamentDate}" class="card" style="display:block;margin-bottom:var(--space-md);border-left:3px solid var(--color-success);text-decoration:none;color:inherit;">
+        <a href="#/tournament/${activeTournament.tournamentDate}" class="card" style="display:block;margin:0 0 var(--space-md);border-radius:0;border-left:3px solid var(--color-success);border-right:none;text-decoration:none;color:inherit;">
           <div class="card-header">
             <span class="card-title">Active Tournament</span>
             <span class="badge badge-success">Live</span>
@@ -234,8 +235,8 @@ export function renderHome(container, params) {
         </a>
       ` : ''}
 
-      <div class="card" style="margin-bottom:var(--space-md);">
-        <div class="card-header">
+      <div class="card" style="margin:0 0 var(--space-md);border-radius:0;padding:0;overflow:hidden;border-left:none;border-right:none;">
+        <div class="card-header" style="padding:var(--space-md);">
           <span class="card-title">Latest Tournament</span>
           ${latestDate ? `<span class="text-sm text-secondary">${formatDate(latestDate)}</span>` : ''}
         </div>
@@ -250,7 +251,7 @@ export function renderHome(container, params) {
         `}
       </div>
 
-      <div class="flex flex-col gap-sm">
+      <div class="flex flex-col gap-sm" style="padding:0 var(--space-md);">
         <a href="#/statistics" class="btn btn-secondary btn-block">📊 View All Statistics</a>
         <a href="#/elo-charts" class="btn btn-secondary btn-block">📈 ELO Charts</a>
       </div>

@@ -337,9 +337,8 @@
 
 /* ─── Latest Tournament Table ─── */
 .latest-tournament-table {
-  display: flex;
-  flex-direction: column;
-  gap: 0;
+  display: block;
+  overflow: hidden;
 }
 
 .table-header {
@@ -384,6 +383,8 @@
 .col-rank {
   text-align: center;
   font-weight: var(--font-weight-bold);
+  width: auto;
+  white-space: nowrap;
 }
 
 .col-rank.rank-class-gold { color: #f59e0b; }
@@ -548,10 +549,11 @@
 /* ─── Statistics Page ─── */
 .stats-filter-bar {
   display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
   gap: var(--space-sm);
   margin-bottom: var(--space-md);
-  overflow-x: auto;
-  padding-bottom: var(--space-xs);
+  overflow: hidden;
 }
 
 /* ─── ELO Charts ─── */
