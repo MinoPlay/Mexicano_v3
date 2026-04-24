@@ -24,7 +24,10 @@ initTheme();
 // Load local test data if available (dev server with local-config.json)
 async function loadLocalData() {
   try {
-    const status = await fetch('/api/local-data/status').then(r => r.json());
+    const status = await fetch('/api/local-data/status').then(r => {
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      return r.json();
+    });
     if (!status.available) return;
 
     // ─── Doodle: always reload from local file (current + next month) ───
