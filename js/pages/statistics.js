@@ -118,9 +118,18 @@ function aggregateOverviews() {
 
 // ─── Convert monthly overview to stats rows ───
 
-function overviewToStats(overview) {
+function overviewToStats(overview, prevOverview = []) {
+  // Build a map of previous month's ELO per player
+  const prevEloMap = {};
+  prevOverview.forEach(p => { prevEloMap[p.name] = p.elo; });
+
   const stats = overview.map(p => {
     const totalMatches = p.wins + p.losses;
+    const elo = p.elo ?? null;
+    const prevElo = prevEloMap[p.name] ?? null;
+    const eloChange = elo != null && prevElo != null
+      ? Math.round((elo - prevElo) * 100) / 100
+      : null;
     return {
       rank: 0,
       name: p.name,
@@ -130,6 +139,8 @@ function overviewToStats(overview) {
       wl: totalMatches,
       average: p.average,
       winRate: totalMatches > 0 ? Math.round((p.wins / totalMatches) * 100 * 100) / 100 : 0,
+      elo,
+      eloChange,
       change: 0,
       tightWins: 0,
       solidWins: 0,
@@ -274,7 +285,7 @@ function renderSortableTable(container, stats, onPlayerClick, columns = STAT_COL
           else if (rank === 2) td.classList.add('rank-class-silver');
           else if (rank === 3) td.classList.add('rank-class-bronze');
         } else if (col.key === 'name') {
-          td.textContent = truncateName(row[col.key], 15);
+          td.textContent = row[col.key];
           if (onPlayerClick) {
             td.style.cursor = 'pointer';
             td.addEventListener('click', () => onPlayerClick(row.name));
@@ -690,23 +701,29 @@ export function renderStatistics(container, params = {}) {
       const overview = Store.getMonthlyOverview(activeFilter);
       let stats;
       if (overview.length > 0) {
-        stats = overviewToStats(overview);
+        // Derive previous month string for ELO delta
+        const [y, mo] = activeFilter.split('-').map(Number);
+        const prevMonth = mo === 1
+          ? `${y - 1}-12`
+          : `${y}-${String(mo - 1).padStart(2, '0')}`;
+        const prevOverview = Store.getMonthlyOverview(prevMonth);
+        stats = overviewToStats(overview, prevOverview);
       } else {
         // Fall back to computing stats from local matches for this month
         const monthMatches = allMatches.filter(m => m.date?.startsWith(activeFilter));
         stats = calculatePlayerStatistics(monthMatches);
+        // Attach ELO from snapshots for the fallback path
+        const availableMatches = Store.getMatches();
+        if (availableMatches.length > 0) {
+          const { snapshots } = getEloSnapshots(availableMatches);
+          const eloMap = getEloForMonth(snapshots, activeFilter);
+          attachEloFromSnapshots(stats, eloMap);
+        }
       }
       tableContainer.innerHTML = '';
       if (!stats.length) {
         tableContainer.innerHTML = '<p class="text-secondary text-center mt-lg">No data for this month</p>';
         return;
-      }
-      // Compute ELO snapshots from available matches
-      const availableMatches = Store.getMatches();
-      if (availableMatches.length > 0) {
-        const { snapshots } = getEloSnapshots(availableMatches);
-        const eloMap = getEloForMonth(snapshots, activeFilter);
-        attachEloFromSnapshots(stats, eloMap);
       }
       renderSortableTable(tableContainer, stats, name => showPlayerProfile(name));
       return;

@@ -4,6 +4,7 @@ const NAV_ITEMS = [
   { path: '/', icon: '🏠', label: 'Home' },
   { path: '/tournaments', icon: '📋', label: 'Tournaments' },
   { path: '/statistics', icon: '📊', label: 'Stats' },
+  { path: '/elo-charts', icon: '📈', label: 'ELO' },
   { path: '/doodle', icon: '🗓️', label: 'Doodle' },
   { path: '/settings', icon: '⚙️', label: 'Settings' }
 ];

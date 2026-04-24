@@ -251,10 +251,6 @@ export function renderHome(container, params) {
         `}
       </div>
 
-      <div class="flex flex-col gap-sm" style="padding:0 var(--space-md);">
-        <a href="#/statistics" class="btn btn-secondary btn-block">📊 View All Statistics</a>
-        <a href="#/elo-charts" class="btn btn-secondary btn-block">📈 ELO Charts</a>
-      </div>
     </div>
   `;
 

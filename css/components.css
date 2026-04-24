@@ -289,11 +289,9 @@
   font-weight: var(--font-weight-medium);
   color: var(--color-primary);
   cursor: pointer;
-  max-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  width: 100%;
 }
 
 .data-table .num-cell {
