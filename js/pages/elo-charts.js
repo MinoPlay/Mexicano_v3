@@ -508,10 +508,12 @@ export function renderEloCharts(container, params = {}) {
   let allMatches = Store.getMatches();
   let _chartCleanup = null;
 
-  if (!allMatches.length) {
+  const needsFullLoad = !Store.isMatchesFullyLoaded() && Store.getGitHubConfig()?.pat;
+
+  if (!allMatches.length || needsFullLoad) {
     const hasSummaryData = Store.getPlayersSummary().length > 0;
 
-    if (hasSummaryData && Store.getGitHubConfig()?.pat) {
+    if ((hasSummaryData || allMatches.length > 0) && Store.getGitHubConfig()?.pat) {
       content.style.paddingLeft = '';
       content.style.paddingRight = '';
       content.innerHTML = `<div class="empty-state">
@@ -534,6 +536,12 @@ export function renderEloCharts(container, params = {}) {
           <div class="empty-state-text">Failed to load match history</div>
         </div>`;
       });
+      return () => { if (_chartCleanup) _chartCleanup(); };
+    }
+
+    if (allMatches.length) {
+      // Has some matches but no GitHub config — render with what we have
+      _chartCleanup = renderChartContent();
       return () => { if (_chartCleanup) _chartCleanup(); };
     }
 

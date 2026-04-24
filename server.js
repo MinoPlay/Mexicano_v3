@@ -15,6 +15,21 @@ try {
   }
 } catch { /* no local config — that's fine */ }
 
+// ─── Local dev secrets (gitignored) ───
+const DEFAULT_GH_CONFIG = {
+  owner: 'MinoPlay',
+  repo: 'DataHub',
+  basePath: 'mexicano_v3/backup-data',
+};
+let LOCAL_DEV_CONFIG = null;
+try {
+  const secrets = JSON.parse(fs.readFileSync(path.join(ROOT, 'local-secrets.json'), 'utf8'));
+  if (secrets.pat) {
+    LOCAL_DEV_CONFIG = { ...DEFAULT_GH_CONFIG, ...secrets };
+    console.log('Local secrets loaded (PAT present)');
+  }
+} catch { /* no local-secrets.json — that's fine */ }
+
 const MIME_TYPES = {
   '.html': 'text/html; charset=utf-8',
   '.css': 'text/css; charset=utf-8',
@@ -118,6 +133,13 @@ function serveLocalMatches(res) {
 
 const server = http.createServer((req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
+
+  // ─── Dev config API (serves local-secrets.json for local GitHub auth) ───
+  if (url.pathname === '/api/dev-config') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(LOCAL_DEV_CONFIG || {}));
+    return;
+  }
 
   // ─── Local data API ───
   if (url.pathname === '/api/local-data/matches' && LOCAL_DATA_PATH) {

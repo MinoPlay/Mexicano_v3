@@ -21,6 +21,19 @@ import { renderSettings } from './pages/settings.js';
 // Initialize theme
 initTheme();
 
+// ─── Dev secrets: auto-inject GitHub config on localhost ───
+async function loadDevSecrets() {
+  const isDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+  if (!isDev) return;
+  try {
+    const cfg = await fetch('/api/dev-config').then(r => r.ok ? r.json() : {});
+    if (cfg.pat) {
+      Store.setGitHubConfig({ owner: cfg.owner, repo: cfg.repo, pat: cfg.pat, basePath: cfg.basePath });
+      console.log('GitHub config loaded from local-secrets.json');
+    }
+  } catch { /* server not running or no secrets file */ }
+}
+
 // Load local test data if available (dev server with local-config.json)
 async function loadLocalData() {
   // Skip local data loading on deployed version or if GitHub is already configured
@@ -74,7 +87,30 @@ async function loadLocalData() {
     }
   } catch { /* not running on dev server, or no local data */ }
 }
-loadLocalData();
+
+async function init() {
+  await loadDevSecrets();
+
+  // Mount sync indicator (needs GitHub config to be loaded first)
+  if (Store.getGitHubConfig()?.pat) {
+    mountSyncIndicator(async () => {
+      setSyncBusy(true);
+      try {
+        await pullAll();
+        sessionStorage.setItem('mexicano_github_just_pulled', 'true');
+        sessionStorage.setItem('mexicano_sync_result', 'updated');
+        location.reload();
+      } catch (e) {
+        showToast(`⚠️ Sync failed: ${e.message}`);
+        setSyncBusy(false);
+      }
+    });
+  }
+
+  await loadLocalData();
+  loadFromGitHub();
+}
+init();
 
 // Auto-pull from GitHub on every page open/refresh if configured.
 // Uses a flag to distinguish our own reload (skip) from a user-initiated refresh (pull).
@@ -110,24 +146,6 @@ async function loadFromGitHub() {
 // Mount bottom nav
 const app = document.getElementById('app');
 app.appendChild(renderNav());
-
-// Mount sync indicator (only when GitHub configured)
-if (Store.getGitHubConfig()?.pat) {
-  mountSyncIndicator(async () => {
-    setSyncBusy(true);
-    try {
-      await pullAll();
-      sessionStorage.setItem('mexicano_github_just_pulled', 'true');
-      sessionStorage.setItem('mexicano_sync_result', 'updated');
-      location.reload();
-    } catch (e) {
-      showToast(`⚠️ Sync failed: ${e.message}`);
-      setSyncBusy(false);
-    }
-  });
-}
-
-loadFromGitHub();
 
 // Page container
 const pageContainer = document.getElementById('page-container');

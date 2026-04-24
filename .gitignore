@@ -12,3 +12,6 @@ Thumbs.db
 
 # Local config (contains machine-specific paths)
 local-config.json
+
+# Local dev secrets (contains PAT — never commit)
+local-secrets.json
