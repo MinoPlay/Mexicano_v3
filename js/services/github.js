@@ -1231,6 +1231,199 @@ export function flushPush() {
   executePush();
 }
 
+// ─── Player Summaries ────────────────────────────────────────────────────────
+
+/** Convert a player name to a safe file-system/URL slug. */
+export function sanitizePlayerName(name) {
+  return name
+    .toLowerCase()
+    .replace(/\s+/g, '_')
+    .replace(/[^a-z0-9_]/g, '');
+}
+
+/** Repo-relative path for a player summary file. */
+function playerSummaryPath(playerName) {
+  const base = matchesBase();
+  const prefix = base ? `${base}/` : '';
+  return `${prefix}players_summaries/summary_${sanitizePlayerName(playerName)}.json`;
+}
+
+/**
+ * Read a pre-generated player summary from GitHub.
+ * Returns the parsed summary object, or null if not found / GitHub not configured.
+ */
+export async function readPlayerSummary(playerName) {
+  const cfg = getConfig();
+  if (!cfg?.owner || !cfg?.repo || !cfg?.pat) return null;
+  try {
+    const result = await readFile(playerSummaryPath(playerName));
+    return result?.content ?? null;
+  } catch {
+    return null;
+  }
+}
+
+// ─── Merge helpers for incremental summary updates ───────────────────────────
+
+function mergeOpponents(existing = [], delta = []) {
+  const map = {};
+  for (const o of existing) map[o.opponentName] = { ...o };
+  for (const o of delta) {
+    if (!map[o.opponentName]) {
+      map[o.opponentName] = { ...o };
+    } else {
+      map[o.opponentName].gamesPlayed += o.gamesPlayed;
+      map[o.opponentName].wins        += o.wins;
+      map[o.opponentName].losses      += o.losses;
+      map[o.opponentName].pointsFor   += (o.pointsFor ?? 0);
+      map[o.opponentName].pointsAgainst += (o.pointsAgainst ?? 0);
+    }
+  }
+  return Object.values(map).map(o => ({
+    ...o,
+    winRate: o.gamesPlayed > 0 ? Math.round((o.wins / o.gamesPlayed) * 100 * 100) / 100 : 0,
+  }));
+}
+
+function mergePartners(existing = [], delta = []) {
+  const map = {};
+  for (const p of existing) map[p.partnerName] = { ...p };
+  for (const p of delta) {
+    if (!map[p.partnerName]) {
+      map[p.partnerName] = { ...p };
+    } else {
+      const prev = map[p.partnerName];
+      const newTotal = (prev.averagePointsPerGame ?? 0) * prev.gamesPlayed + (p.averagePointsPerGame ?? 0) * p.gamesPlayed;
+      prev.gamesPlayed += p.gamesPlayed;
+      prev.wins        += p.wins;
+      prev.losses      += p.losses;
+      prev.averagePointsPerGame = prev.gamesPlayed > 0
+        ? Math.round((newTotal / prev.gamesPlayed) * 100) / 100
+        : 0;
+      prev.winRate = prev.gamesPlayed > 0
+        ? Math.round((prev.wins / prev.gamesPlayed) * 100 * 100) / 100
+        : 0;
+    }
+  }
+  return Object.values(map);
+}
+
+function mergeSummary(existing, delta, newLastDate) {
+  return {
+    playerName:            existing.playerName,
+    generatedAt:           new Date().toISOString(),
+    lastProcessedDate:     newLastDate,
+    totalTournaments:      (existing.totalTournaments      ?? 0) + (delta.totalTournaments      ?? 0),
+    totalWins:             (existing.totalWins             ?? 0) + (delta.totalWins             ?? 0),
+    totalLosses:           (existing.totalLosses           ?? 0) + (delta.totalLosses           ?? 0),
+    totalPoints:           (existing.totalPoints           ?? 0) + (delta.totalPoints           ?? 0),
+    tightWins:             (existing.tightWins             ?? 0) + (delta.tightWins             ?? 0),
+    solidWins:             (existing.solidWins             ?? 0) + (delta.solidWins             ?? 0),
+    dominatingWins:        (existing.dominatingWins        ?? 0) + (delta.dominatingWins        ?? 0),
+    firstPlaceFinishes:    (existing.firstPlaceFinishes    ?? 0) + (delta.firstPlaceFinishes    ?? 0),
+    secondPlaceFinishes:   (existing.secondPlaceFinishes   ?? 0) + (delta.secondPlaceFinishes   ?? 0),
+    thirdPlaceFinishes:    (existing.thirdPlaceFinishes    ?? 0) + (delta.thirdPlaceFinishes    ?? 0),
+    opponents: mergeOpponents(existing.opponents, delta.opponents),
+    partners:  mergePartners(existing.partners,  delta.partners),
+  };
+}
+
+/**
+ * Generate or incrementally update the summary file for a single player.
+ *
+ * - Reads the existing summary (if any) to get `lastProcessedDate`.
+ * - Fetches only tournament dates newer than `lastProcessedDate`.
+ * - Computes delta stats and merges them into the existing summary.
+ * - Writes the updated file back to GitHub.
+ *
+ * @param {string}   playerName
+ * @param {function} [onProgress] - called with (label, total, index)
+ * @returns {Promise<{ newDates: number, upToDate: boolean }>}
+ */
+export async function generateOrUpdatePlayerSummary(playerName, onProgress) {
+  const cfg = getConfig();
+  if (!cfg?.owner || !cfg?.repo || !cfg?.pat) throw new Error('GitHub not configured');
+
+  const { generatePlayerSummary, calculateOpponentStats, calculatePartnershipStats } =
+    await import('./statistics.js');
+
+  // Read existing summary (for incremental mode + sha)
+  const path = playerSummaryPath(playerName);
+  let existingSummary = null;
+  let existingSha = null;
+  try {
+    const result = await readFile(path);
+    if (result?.content) {
+      existingSummary = result.content;
+      existingSha = result.sha;
+    }
+  } catch { /* file may not exist yet */ }
+
+  const lastProcessedDate = existingSummary?.lastProcessedDate ?? null;
+
+  // Get all known tournament dates
+  let allDates = Store.getTournamentsIndex().map(e => e.date);
+  if (allDates.length === 0) {
+    allDates = JSON.parse(localStorage.getItem('mexicano_tournament_dates') || '[]');
+  }
+  if (allDates.length === 0) {
+    const entries = await fetchTournamentsIndex({ create: true });
+    allDates = (entries || []).map(e => e.date);
+  }
+  allDates.sort();
+
+  // Only process dates not yet included
+  const newDates = lastProcessedDate
+    ? allDates.filter(d => d > lastProcessedDate)
+    : allDates;
+
+  if (newDates.length === 0) {
+    return { newDates: 0, upToDate: true };
+  }
+
+  // Fetch matches for new dates only
+  const newMatches = [];
+  for (let i = 0; i < newDates.length; i++) {
+    onProgress?.(`Fetching ${newDates[i]}`, newDates.length, i + 1);
+    const dayMatches = await readDayMatches(newDates[i]);
+    newMatches.push(...dayMatches);
+  }
+
+  // Compute delta stats from new matches only
+  const deltaSummary  = generatePlayerSummary(playerName, newMatches);
+  const deltaOpps     = calculateOpponentStats(playerName, newMatches);
+  const deltaParts    = calculatePartnershipStats(playerName, newMatches);
+  const delta = { ...deltaSummary, opponents: deltaOpps, partners: deltaParts };
+
+  const newLastDate = newDates[newDates.length - 1];
+
+  // Merge or create
+  const payload = existingSummary
+    ? mergeSummary(existingSummary, delta, newLastDate)
+    : {
+        playerName,
+        generatedAt:           new Date().toISOString(),
+        lastProcessedDate:     newLastDate,
+        totalTournaments:      deltaSummary.totalTournaments,
+        totalWins:             deltaSummary.totalWins,
+        totalLosses:           deltaSummary.totalLosses,
+        totalPoints:           deltaSummary.totalPoints,
+        tightWins:             deltaSummary.tightWins,
+        solidWins:             deltaSummary.solidWins,
+        dominatingWins:        deltaSummary.dominatingWins,
+        firstPlaceFinishes:    deltaSummary.firstPlaceFinishes,
+        secondPlaceFinishes:   deltaSummary.secondPlaceFinishes,
+        thirdPlaceFinishes:    deltaSummary.thirdPlaceFinishes,
+        opponents:             deltaOpps,
+        partners:              deltaParts,
+      };
+
+  onProgress?.(`Writing summary…`, newDates.length, newDates.length);
+  await writeFile(path, payload, existingSha ?? undefined);
+
+  return { newDates: newDates.length, upToDate: false };
+}
+
 /**
  * Push a single doodle file to GitHub immediately (bypasses debounce).
  * Returns a Promise that resolves when the write completes.

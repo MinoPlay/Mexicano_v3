@@ -86,6 +86,17 @@ export function renderSettings(container, params) {
         <div id="github-status-msg" class="text-sm mt-sm" style="min-height:1.25rem;"></div>
       </div>
 
+      <!-- Player Summaries -->
+      <div class="settings-section" id="player-summaries-section" style="display:none;">
+        <div class="settings-section-title">Player Summary</div>
+        <p class="text-sm text-secondary" style="margin-bottom:var(--space-sm);">
+          Generate or update the statistics summary for the currently selected user.
+          Required for the player profile dialog to show complete historical data.
+        </p>
+        <button id="generate-summaries-btn" class="btn btn-primary" style="width:100%;" disabled>Select a user first</button>
+        <div id="summaries-status-msg" class="text-sm mt-sm" style="min-height:1.25rem;"></div>
+      </div>
+
     </div>
   `;
 
@@ -217,4 +228,70 @@ export function renderSettings(container, params) {
     updateSyncIcon('idle');
     showToast('GitHub config cleared');
   });
+
+  // ─── Player Summaries ─────────────────────────────────────────────────────
+
+  const summariesSection  = container.querySelector('#player-summaries-section');
+  const summariesBtn      = container.querySelector('#generate-summaries-btn');
+  const summariesStatus   = container.querySelector('#summaries-status-msg');
+
+  function setSummariesMsg(msg, isError = false) {
+    summariesStatus.textContent = msg;
+    summariesStatus.style.color = isError ? 'var(--color-danger, #ef4444)' : 'var(--color-success, #22c55e)';
+  }
+
+  function refreshSummariesSection() {
+    const hasGitHub = !!Store.getGitHubConfig()?.pat;
+    summariesSection.style.display = hasGitHub ? '' : 'none';
+    if (!hasGitHub) { setSummariesMsg(''); return; }
+    updateSummariesBtn();
+  }
+
+  function updateSummariesBtn() {
+    const user = Store.getCurrentUser();
+    if (user) {
+      summariesBtn.disabled = false;
+      summariesBtn.textContent = `Generate / Update Summary for ${user}`;
+    } else {
+      summariesBtn.disabled = true;
+      summariesBtn.textContent = 'Select a user first';
+    }
+  }
+
+  refreshSummariesSection();
+
+  // Keep button label in sync when user changes
+  userSelect.addEventListener('change', updateSummariesBtn);
+
+  summariesBtn.addEventListener('click', async () => {
+    const user = Store.getCurrentUser();
+    if (!user) return;
+    summariesBtn.disabled = true;
+    setSummariesMsg(`Processing ${user}…`);
+    try {
+      const { generateOrUpdatePlayerSummary } = await import('../services/github.js');
+      const { newDates, upToDate } = await generateOrUpdatePlayerSummary(user, (label) => {
+        setSummariesMsg(label);
+      });
+      if (upToDate) {
+        setSummariesMsg(`${user}'s summary is already up to date.`);
+        showToast('Summary already up to date');
+      } else {
+        setSummariesMsg(`Done! Added ${newDates} new tournament${newDates !== 1 ? 's' : ''} for ${user}.`);
+        showToast(`Summary updated for ${user}`);
+      }
+    } catch (e) {
+      setSummariesMsg(`Error: ${e.message}`, true);
+      showToast('Failed to generate summary', 'error');
+    } finally {
+      updateSummariesBtn();
+    }
+  });
+
+  // Show/hide summaries section when GitHub config changes
+  container.querySelector('#github-save-btn').addEventListener('click', refreshSummariesSection, { capture: true });
+  container.querySelector('#github-clear-btn').addEventListener('click', () => {
+    summariesSection.style.display = 'none';
+    setSummariesMsg('');
+  }, { capture: true });
 }

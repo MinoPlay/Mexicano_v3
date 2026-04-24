@@ -1,4 +1,4 @@
-import { calculatePlayerStatistics, calculateOpponentStats, calculatePartnershipStats, generatePlayerSummary } from '../services/statistics.js';
+import { calculatePlayerStatistics } from '../services/statistics.js';
 import { calculateAllEloRankings, getEloSnapshots, getEloForDate, getEloForMonth } from '../services/elo.js';
 import { Store } from '../store.js';
 
@@ -335,11 +335,6 @@ function renderSortableTable(container, stats, onPlayerClick, columns = STAT_COL
 // ─── Player Profile Dialog ───
 
 function showPlayerProfile(playerName) {
-  const allProfileMatches = Store.getMatches();
-  const summary = generatePlayerSummary(playerName, allProfileMatches);
-  const opponents = calculateOpponentStats(playerName, allProfileMatches);
-  const partners = calculatePartnershipStats(playerName, allProfileMatches);
-
   const overlay = document.createElement('div');
   overlay.className = 'dialog-overlay active';
 
@@ -360,6 +355,7 @@ function showPlayerProfile(playerName) {
   tabsEl.className = 'tabs';
   const tabItems = ['Overview', 'Head-to-Head', 'Partners'];
   let activeTab = 'Overview';
+  let summaryData = null;
 
   function renderTabs() {
     tabsEl.innerHTML = '';
@@ -381,17 +377,17 @@ function showPlayerProfile(playerName) {
 
   function renderBody() {
     body.innerHTML = '';
+    if (!summaryData) return;
     if (activeTab === 'Overview') {
-      renderOverview(body, summary);
+      renderOverview(body, summaryData);
     } else if (activeTab === 'Head-to-Head') {
-      renderH2H(body, opponents);
+      renderH2H(body, summaryData.opponents);
     } else {
-      renderPartners(body, partners);
+      renderPartners(body, summaryData.partners);
     }
   }
 
   function renderOverview(el, s) {
-    if (!s) { el.innerHTML = '<p class="text-secondary">No data</p>'; return; }
     const grid = document.createElement('div');
     grid.className = 'home-quick-stats';
     const totalGames = s.totalWins + s.totalLosses;
@@ -408,6 +404,9 @@ function showPlayerProfile(playerName) {
       { label: 'Solid Wins', value: s.solidWins ?? 0 },
       { label: 'Dominant Wins', value: s.dominatingWins ?? 0 },
       { label: 'Total Points', value: s.totalPoints ?? 0 },
+      { label: '🥇 1st Place', value: s.firstPlaceFinishes ?? 0 },
+      { label: '🥈 2nd Place', value: s.secondPlaceFinishes ?? 0 },
+      { label: '🥉 3rd Place', value: s.thirdPlaceFinishes ?? 0 },
     ];
     stats.forEach(({ label, value }) => {
       const card = document.createElement('div');
@@ -420,6 +419,7 @@ function showPlayerProfile(playerName) {
 
   function renderH2H(el, opps) {
     if (!opps || opps.length === 0) { el.innerHTML = '<p class="text-secondary">No data</p>'; return; }
+    const sorted = [...opps].sort((a, b) => b.gamesPlayed - a.gamesPlayed);
     const wrapper = document.createElement('div');
     wrapper.className = 'data-table';
     const t = document.createElement('table');
@@ -428,7 +428,7 @@ function showPlayerProfile(playerName) {
       <th class="num-cell">L</th><th class="num-cell">Win%</th>
     </tr></thead>`;
     const tb = document.createElement('tbody');
-    opps.forEach(o => {
+    sorted.forEach(o => {
       const tr = document.createElement('tr');
       tr.innerHTML = `
         <td class="name-cell">${o.opponentName}</td>
@@ -445,6 +445,7 @@ function showPlayerProfile(playerName) {
 
   function renderPartners(el, parts) {
     if (!parts || parts.length === 0) { el.innerHTML = '<p class="text-secondary">No data</p>'; return; }
+    const sorted = [...parts].sort((a, b) => b.gamesPlayed - a.gamesPlayed);
     const wrapper = document.createElement('div');
     wrapper.className = 'data-table';
     const t = document.createElement('table');
@@ -453,7 +454,7 @@ function showPlayerProfile(playerName) {
       <th class="num-cell">L</th><th class="num-cell">Avg Pts</th>
     </tr></thead>`;
     const tb = document.createElement('tbody');
-    parts.forEach(p => {
+    sorted.forEach(p => {
       const tr = document.createElement('tr');
       tr.innerHTML = `
         <td class="name-cell">${p.partnerName}</td>
@@ -472,11 +473,34 @@ function showPlayerProfile(playerName) {
   header.querySelector('.dialog-close').addEventListener('click', () => overlay.remove());
   overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
 
+  // Show spinner immediately, then fetch summary
   renderTabs();
-  renderBody();
+  body.innerHTML = '<p class="text-center mt-lg">⏳ Loading…</p>';
 
   overlay.appendChild(dialog);
   document.body.appendChild(overlay);
+
+  import('../services/github.js').then(({ readPlayerSummary }) =>
+    readPlayerSummary(playerName)
+  ).then(data => {
+    if (data) {
+      summaryData = data;
+      renderBody();
+    } else {
+      const hasGitHub = !!Store.getGitHubConfig()?.pat;
+      body.innerHTML = `
+        <div class="empty-state">
+          <div class="empty-state-icon">📊</div>
+          <div class="empty-state-text">No summary data</div>
+          ${hasGitHub
+            ? '<p class="text-secondary text-sm">Go to <strong>Settings → Generate Summaries</strong> to build player statistics.</p>'
+            : '<p class="text-secondary text-sm">Connect a GitHub backend in Settings, then generate player summaries.</p>'
+          }
+        </div>`;
+    }
+  }).catch(() => {
+    body.innerHTML = '<p class="text-secondary text-center mt-lg">Failed to load summary.</p>';
+  });
 }
 
 // ─── Main Render ───
