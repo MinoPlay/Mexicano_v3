@@ -8,23 +8,10 @@ const isTestMode = localStorage.getItem('mexicano_test_mode') === 'true';
 const _ghCfg = (() => { try { return JSON.parse(localStorage.getItem('mexicano_github_config')); } catch { return null; } })();
 const hasGitHubConfig = !!((_ghCfg?.pat) && (_ghCfg?.owner) && (_ghCfg?.repo));
 
-// Check if local data server is available (sync XHR, dev only)
-let hasLocalData = false;
-try {
-  const xhr = new XMLHttpRequest();
-  xhr.open('GET', '/api/local-data/status', false);
-  xhr.send();
-  if (xhr.status === 200) {
-    hasLocalData = JSON.parse(xhr.responseText).available === true;
-  }
-} catch { /* not available */ }
-
 if (isTestMode) {
   // Tests control their own data — don't seed
 } else if (hasGitHubConfig) {
   console.log('[Seed] GitHub configured, skipping seed — real data will be pulled');
-} else if (hasLocalData) {
-  console.log('[Seed] Local data API available, skipping seed');
 } else if (localStorage.getItem('mexicano_members')) {
   console.log('[Seed] Existing data found, skipping seed');
 } else {

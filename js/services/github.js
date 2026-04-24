@@ -47,13 +47,18 @@ export function getGitHubLog() {
  * Normalise a repo-relative path and ensure it stays within the configured
  * basePath.  Throws if the resolved path escapes the base folder (e.g. via
  * ".." segments) or if basePath is not configured.
+ * Normalizes all paths to forward slashes for compatibility (Windows + Mac/iOS).
  */
 function guardPath(rawPath) {
-  const base = getConfig()?.basePath?.trim().replace(/\/$/, '');
+  let base = getConfig()?.basePath?.trim().replace(/\/$/, '') || '';
   if (!base) throw new Error('basePath is not configured — cannot access GitHub repo');
 
+  // Normalize all backslashes to forward slashes (cross-platform)
+  base = base.replace(/\\/g, '/');
+  const normalizedPath = rawPath.replace(/\\/g, '/');
+
   // Normalise: collapse slashes, resolve ".." / "."
-  const segments = rawPath.split('/').filter(Boolean);
+  const segments = normalizedPath.split('/').filter(Boolean);
   const resolved = [];
   for (const seg of segments) {
     if (seg === '.') continue;
