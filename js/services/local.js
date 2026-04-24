@@ -9,6 +9,11 @@ let _available = null;
 
 async function isAvailable() {
   if (_available !== null) return _available;
+  
+  // Skip local persistence on deployed version
+  const isDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+  if (!isDev) { _available = false; return false; }
+  
   try {
     const r = await fetch('/api/local-data/status');
     if (!r.ok) { _available = false; return false; }

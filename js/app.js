@@ -23,6 +23,10 @@ initTheme();
 
 // Load local test data if available (dev server with local-config.json)
 async function loadLocalData() {
+  // Skip local data loading on deployed version or if GitHub is already configured
+  const isDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+  if (!isDev || Store.getGitHubConfig()?.pat) return;
+
   try {
     const status = await fetch('/api/local-data/status').then(r => {
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
