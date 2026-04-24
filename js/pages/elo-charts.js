@@ -637,6 +637,7 @@ export function renderEloCharts(container, params = {}) {
       { id: '1m', label: '1M' },
       { id: '3m', label: '3M' },
       { id: '6m', label: '6M' },
+      { id: 'all', label: 'All' },
       { id: 'custom', label: 'Custom' },
     ];
 
@@ -755,6 +756,9 @@ export function renderEloCharts(container, params = {}) {
     function getHistoryData() {
       if (interval === 'custom') {
         return getEloHistoryForDateRange(allMatches, customFrom || null, customTo || null);
+      }
+      if (interval === 'all') {
+        return getEloHistoryForPeriod(allMatches, null);
       }
       const monthsMap = { '1m': 1, '3m': 3, '6m': 6 };
       return getEloHistoryForPeriod(allMatches, monthsMap[interval] ?? 3);
