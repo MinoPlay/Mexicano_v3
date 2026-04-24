@@ -52,14 +52,14 @@ function truncateName(name, maxLength = 15) {
 // ─── Column definitions ───
 
 const STAT_COLUMNS = [
-  { key: 'rank', label: '#', cls: 'col-rank' },
-  { key: 'name', label: 'NAME', cls: 'col-name' },
-  { key: 'wl', label: 'W/T', cls: 'col-wl' },
-  { key: 'points', label: 'PTS', cls: 'col-pts' },
-  { key: 'average', label: 'AVG', cls: 'col-avg' },
-  { key: 'winRate', label: 'WIN', cls: 'col-winpct' },
-  { key: 'elo', label: 'ELO', cls: 'col-elo' },
-  { key: 'eloChange', label: 'WLO', cls: 'col-change' },
+  { key: 'rank',      label: '#',    cls: 'rank-cell' },
+  { key: 'name',      label: 'NAME', cls: 'name-cell' },
+  { key: 'wl',        label: 'W/T',  cls: 'num-cell' },
+  { key: 'points',    label: 'PTS',  cls: 'num-cell' },
+  { key: 'average',   label: 'AVG',  cls: 'num-cell' },
+  { key: 'winRate',   label: 'WIN',  cls: 'num-cell' },
+  { key: 'elo',       label: 'ELO',  cls: 'num-cell' },
+  { key: 'eloChange', label: 'WLO',  cls: 'num-cell' },
 ];
 
 // ─── Aggregate monthly overviews into all-time stats ───

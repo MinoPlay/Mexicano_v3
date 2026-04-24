@@ -380,57 +380,14 @@
   background: var(--bg-secondary);
 }
 
-.col-rank {
-  text-align: center;
-  font-weight: var(--font-weight-bold);
-  width: auto;
-  white-space: nowrap;
-}
+/* rank/win-rate color helpers used by renderSortableTable */
+.data-table .rank-cell.rank-class-gold   { color: #f59e0b; }
+.data-table .rank-cell.rank-class-silver { color: #94a3b8; }
+.data-table .rank-cell.rank-class-bronze { color: #d97706; }
 
-.col-rank.rank-class-gold { color: #f59e0b; }
-.col-rank.rank-class-silver { color: #94a3b8; }
-.col-rank.rank-class-bronze { color: #d97706; }
-
-.col-name {
-  font-weight: var(--font-weight-medium);
-  min-width: 0;
-  word-break: break-word;
-  white-space: normal;
-  line-height: 1.3;
-}
-
-.col-wl,
-.col-pts,
-.col-avg,
-.col-winpct {
-  text-align: center;
-  font-variant-numeric: tabular-nums;
-}
-
-.col-winpct {
-  font-weight: var(--font-weight-semibold);
-}
-
-.col-winpct.win-excellent { color: var(--color-success); }
-.col-winpct.win-moderate { color: var(--color-warning); }
-.col-winpct.win-poor { color: var(--color-danger); }
-
-.col-elo {
-  text-align: center;
-  font-weight: var(--font-weight-semibold);
-  font-variant-numeric: tabular-nums;
-}
-
-.col-change {
-  text-align: center;
-  font-size: var(--font-size-sm);
-  font-weight: var(--font-weight-medium);
-  font-variant-numeric: tabular-nums;
-}
-
-.col-change.positive { color: var(--color-success); }
-.col-change.negative { color: var(--color-danger); }
-.col-change.neutral { color: var(--text-tertiary); }
+.data-table .num-cell.win-excellent { color: var(--color-success); }
+.data-table .num-cell.win-moderate  { color: var(--color-warning); }
+.data-table .num-cell.win-poor      { color: var(--color-danger); }
 
 /* ─── Doodle Calendar Matrix ─── */
 .doodle-matrix {
