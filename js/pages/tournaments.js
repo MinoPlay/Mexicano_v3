@@ -1,5 +1,4 @@
 import { Store } from '../store.js';
-import { getAllTournamentDates } from '../services/tournament.js';
 
 function formatDate(dateStr) {
   try {
@@ -10,85 +9,104 @@ function formatDate(dateStr) {
   }
 }
 
-function getTournamentInfo(matches, date) {
-  const dateMatches = matches.filter(m => m.date === date);
-  if (dateMatches.length === 0) return null;
-
-  const players = new Set();
-  const rounds = new Set();
-  let completed = 0;
-
-  for (const m of dateMatches) {
-    if (m.team1Player1Name) players.add(m.team1Player1Name);
-    if (m.team1Player2Name) players.add(m.team1Player2Name);
-    if (m.team2Player1Name) players.add(m.team2Player1Name);
-    if (m.team2Player2Name) players.add(m.team2Player2Name);
-    if (m.roundNumber != null) rounds.add(m.roundNumber);
-    if (m.scoreTeam1 + m.scoreTeam2 === 25) completed++;
-  }
-
-  return {
-    playerCount: players.size,
-    roundCount: rounds.size,
-    matchCount: dateMatches.length,
-    completedCount: completed,
-    isComplete: dateMatches.length > 0 && completed === dateMatches.length
-  };
+function statusBadge(entry) {
+  if (!entry) return '';
+  if (entry.isComplete) return '<span class="badge badge-success">Complete</span>';
+  if (entry.completedCount > 0) return `<span class="badge badge-warning">${entry.completedCount}/${entry.matchCount}</span>`;
+  return '<span class="badge badge-primary">Pending</span>';
 }
 
 export function renderTournaments(container, params) {
-  const dates = getAllTournamentDates();
-  const matches = Store.getMatches();
+  const index = Store.getTournamentsIndex();
+  const sorted = [...index].sort((a, b) => b.date.localeCompare(a.date));
 
-  const sorted = [...dates].sort((a, b) => b.localeCompare(a));
-
-  container.innerHTML = `
-    <header class="page-header">
-      <h1>Tournaments</h1>
-    </header>
-    <div class="page-content">
-      ${sorted.length === 0 ? `
+  function renderList() {
+    const list = container.querySelector('#tournament-list');
+    if (!list) return;
+    if (sorted.length === 0) {
+      list.innerHTML = `
         <div class="empty-state">
           <div class="empty-state-icon">🏆</div>
           <div class="empty-state-text">No tournaments yet</div>
           <p class="text-sm text-secondary">Create your first tournament to get started</p>
           <a href="#/create-tournament" class="btn btn-primary" style="margin-top:var(--space-md);">Create Tournament</a>
         </div>
-      ` : `
-        <div id="tournament-list">
-          ${sorted.map(date => {
-            const info = getTournamentInfo(matches, date);
-            const statusBadge = info
-              ? (info.isComplete
-                ? '<span class="badge badge-success">Complete</span>'
-                : info.completedCount > 0
-                  ? `<span class="badge badge-warning">${info.completedCount}/${info.matchCount}</span>`
-                  : '<span class="badge badge-primary">Pending</span>')
-              : '';
-
-            return `
-              <div class="tournament-list-item" data-date="${date}">
-                <div>
-                  <div class="tournament-list-date">${formatDate(date)}</div>
-                  <div class="tournament-list-meta">
-                    ${info ? `${info.playerCount} players · ${info.roundCount} round${info.roundCount !== 1 ? 's' : ''}` : ''}
-                  </div>
-                </div>
-                <div>${statusBadge}</div>
-              </div>
-            `;
-          }).join('')}
+      `;
+      return;
+    }
+    list.innerHTML = sorted.map(entry => `
+      <div class="tournament-list-item" data-date="${entry.date}">
+        <div>
+          <div class="tournament-list-date">${formatDate(entry.date)}</div>
+          <div class="tournament-list-meta">
+            ${entry.playerCount ? `${entry.playerCount} players · ${entry.roundCount} round${entry.roundCount !== 1 ? 's' : ''}` : ''}
+          </div>
         </div>
-      `}
+        <div>${statusBadge(entry)}</div>
+      </div>
+    `).join('');
+    list.querySelectorAll('.tournament-list-item').forEach(item => {
+      item.addEventListener('click', () => {
+        window.location.hash = `/tournament/${item.dataset.date}`;
+      });
+    });
+  }
+
+  container.innerHTML = `
+    <header class="page-header">
+      <h1>Tournaments</h1>
+    </header>
+    <div class="page-content">
+      <div id="tournament-list">
+        ${index.length === 0 ? `
+          <div id="tournaments-loading" class="text-sm text-secondary text-center" style="padding:var(--space-md);">
+            ${Store.getGitHubConfig()?.pat ? '⏳ Loading…' : `
+              <div class="empty-state">
+                <div class="empty-state-icon">🏆</div>
+                <div class="empty-state-text">No tournaments yet</div>
+                <p class="text-sm text-secondary">Create your first tournament to get started</p>
+                <a href="#/create-tournament" class="btn btn-primary" style="margin-top:var(--space-md);">Create Tournament</a>
+              </div>
+            `}
+          </div>
+        ` : ''}
+      </div>
     </div>
     <a href="#/create-tournament" class="fab" aria-label="Create tournament">+</a>
   `;
 
-  // Navigation on item click
-  container.querySelectorAll('.tournament-list-item').forEach(item => {
-    item.addEventListener('click', () => {
-      const date = item.dataset.date;
-      window.location.hash = `/tournament/${date}`;
-    });
-  });
+  if (index.length > 0) {
+    renderList();
+    return;
+  }
+
+  // If index is empty and GitHub is configured, lazy-fetch tournaments.json
+  if (Store.getGitHubConfig()?.pat) {
+    const loadingEl = container.querySelector('#tournaments-loading');
+    import('../services/github.js')
+      .then(({ fetchTournamentsIndexPublic }) => fetchTournamentsIndexPublic())
+      .then(() => {
+        if (!loadingEl?.isConnected) return;
+        const fresh = Store.getTournamentsIndex();
+        if (fresh.length > 0) {
+          sorted.length = 0;
+          fresh.sort((a, b) => b.date.localeCompare(a.date)).forEach(e => sorted.push(e));
+          renderList();
+        } else {
+          if (loadingEl?.isConnected) {
+            loadingEl.innerHTML = `
+              <div class="empty-state">
+                <div class="empty-state-icon">🏆</div>
+                <div class="empty-state-text">No tournaments yet</div>
+                <p class="text-sm text-secondary">Create your first tournament to get started</p>
+                <a href="#/create-tournament" class="btn btn-primary" style="margin-top:var(--space-md);">Create Tournament</a>
+              </div>
+            `;
+          }
+        }
+      })
+      .catch(() => {
+        if (loadingEl?.isConnected) loadingEl.textContent = 'Failed to load tournaments';
+      });
+  }
 }

@@ -143,9 +143,18 @@ export function startTournament(tournament) {
 
   // Single explicit push after everything is written — cancel any debounce timers
   // from the Store.set calls above so they don't fire separately.
-  import('./github.js').then(({ cancelPendingSync, flushPush }) => {
+  import('./github.js').then(({ cancelPendingSync, flushPush, updateTournamentIndexEntry }) => {
     cancelPendingSync();
     flushPush();
+    // Add new tournament to the index immediately
+    updateTournamentIndexEntry({
+      date: tournament.tournamentDate,
+      playerCount: tournament.players.length,
+      roundCount: 0,
+      matchCount: 0,
+      completedCount: 0,
+      isComplete: false,
+    }).catch(() => {});
   }).catch(() => {});
 
   return tournament;
@@ -325,7 +334,7 @@ export function completeTournament(tournament) {
   }).catch(() => {});
 
   // Immediately sync completed tournament to GitHub + local dev server
-  import('./github.js').then(({ flushPush, markMatchDateDirty, keyToPath, readFile, deleteFile }) => {
+  import('./github.js').then(({ flushPush, markMatchDateDirty, keyToPath, readFile, deleteFile, updateTournamentIndexEntry }) => {
     markMatchDateDirty(tournament.tournamentDate);
     // Delete active_tournament.json from GitHub since the tournament is done
     const atPath = keyToPath('active_tournament');
@@ -335,6 +344,31 @@ export function completeTournament(tournament) {
         .catch(() => {});
     }
     flushPush();
+
+    // Compute full metadata and update tournaments.json index
+    const players = new Set();
+    const roundNums = new Set();
+    let matchCount = 0;
+    let completedCount = 0;
+    for (const round of tournament.rounds) {
+      for (const m of round.matches) {
+        if (m.player1?.name) players.add(m.player1.name);
+        if (m.player2?.name) players.add(m.player2.name);
+        if (m.player3?.name) players.add(m.player3.name);
+        if (m.player4?.name) players.add(m.player4.name);
+        roundNums.add(round.roundNumber);
+        matchCount++;
+        if (isMatchComplete(m)) completedCount++;
+      }
+    }
+    updateTournamentIndexEntry({
+      date: tournament.tournamentDate,
+      playerCount: players.size,
+      roundCount: roundNums.size,
+      matchCount,
+      completedCount,
+      isComplete: matchCount > 0 && completedCount === matchCount,
+    }).catch(() => {});
   }).catch(() => {});
 
   return tournament;

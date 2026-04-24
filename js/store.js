@@ -149,6 +149,20 @@ export const Store = {
     return this.get('matches_fully_loaded') === true;
   },
 
+  getTournamentsIndex() {
+    return this.get('tournaments_index') || [];
+  },
+
+  /** Write tournaments index without triggering an auto-push (this file is
+   *  managed explicitly via updateTournamentIndexEntry in github.js). */
+  setTournamentsIndex(entries) {
+    try {
+      localStorage.setItem('mexicano_tournaments_index', JSON.stringify(entries));
+    } catch (e) {
+      console.error('Store.setTournamentsIndex error:', e);
+    }
+  },
+
   // ─── Import / Export ───
 
   exportAll() {

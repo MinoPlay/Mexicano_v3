@@ -364,12 +364,167 @@ export async function pushAll(onProgress, { allMatchDates = false } = {}) {
   _dirtyMatchDates.clear();
 }
 
+// ─── tournaments.json index ───────────────────────────────────────────────────
+
+/** Returns the path to tournaments.json (next to players.json). */
+function tournamentsIndexPath() {
+  const base = matchesBase();
+  return base ? `${base}/tournaments.json` : 'tournaments.json';
+}
+
 /**
- * Pull summary data from GitHub into local Store.
+ * Fetch (and optionally create) the tournaments.json index file.
+ *
+ * @param {object} [opts]
+ * @param {boolean} [opts.create=false] - When true and file is missing, traverse
+ *   the repo, read every day's match JSON, compute metadata, write tournaments.json.
+ * @returns {Promise<Array|null>} Array of tournament entries, or null when not found
+ *   and opts.create is false.
+ */
+async function fetchTournamentsIndex({ create = false } = {}) {
+  const cfg = getConfig();
+  if (!cfg?.owner || !cfg?.repo || !cfg?.pat) return null;
+
+  const path = tournamentsIndexPath();
+  const base = matchesBase();
+
+  ghLog('READ_TOURNAMENTS_INDEX', path);
+  const result = await readFile(path);
+
+  if (result !== null) {
+    const entries = Array.isArray(result.content) ? result.content : [];
+    Store.setTournamentsIndex(entries);
+    const dates = entries.map(e => e.date).sort();
+    localStorage.setItem('mexicano_tournament_dates', JSON.stringify(dates));
+    ghLog('TOURNAMENTS_INDEX_LOADED', path, `${entries.length} entries`);
+    return entries;
+  }
+
+  if (!create) return null;
+
+  // ── Bootstrap: traverse repo, read each day file, build index ─────────────
+  ghLog('TOURNAMENTS_INDEX_MISSING', path, 'traversing repo to create it');
+
+  const rootContents = await listContents(base);
+  const yearDirs = rootContents.filter(f => f.type === 'dir' && /^\d{4}$/.test(f.name));
+
+  const dayFilePaths = [];
+  for (const yearDir of yearDirs) {
+    const monthContents = await listContents(yearDir.path);
+    const months = monthContents.filter(f => f.type === 'dir' && /^\d{4}-\d{2}$/.test(f.name));
+    for (const monthDir of months) {
+      const dayContents = await listContents(monthDir.path);
+      dayContents
+        .filter(f => f.type === 'file' && /^\d{4}-\d{2}-\d{2}\.json$/.test(f.name))
+        .forEach(f => dayFilePaths.push(f.path));
+    }
+  }
+
+  const entries = [];
+  for (const filePath of dayFilePaths) {
+    const dateStr = filePath.split('/').pop().replace('.json', '');
+    try {
+      const dayResult = await readFile(filePath);
+      if (dayResult?.content?.matches && Array.isArray(dayResult.content.matches)) {
+        const matches = dayResult.content.matches;
+        const players = new Set();
+        const rounds = new Set();
+        let completed = 0;
+        for (const m of matches) {
+          if (m.Team1Player1Name) players.add(m.Team1Player1Name);
+          if (m.Team1Player2Name) players.add(m.Team1Player2Name);
+          if (m.Team2Player1Name) players.add(m.Team2Player1Name);
+          if (m.Team2Player2Name) players.add(m.Team2Player2Name);
+          if (m.RoundNumber != null) rounds.add(m.RoundNumber);
+          if ((m.ScoreTeam1 ?? 0) + (m.ScoreTeam2 ?? 0) === 25) completed++;
+        }
+        entries.push({
+          date: dateStr,
+          playerCount: players.size,
+          roundCount: rounds.size,
+          matchCount: matches.length,
+          completedCount: completed,
+          isComplete: matches.length > 0 && completed === matches.length,
+        });
+      } else {
+        entries.push({ date: dateStr, playerCount: 0, roundCount: 0, matchCount: 0, completedCount: 0, isComplete: false });
+      }
+    } catch {
+      entries.push({ date: dateStr, playerCount: 0, roundCount: 0, matchCount: 0, completedCount: 0, isComplete: false });
+    }
+  }
+
+  entries.sort((a, b) => a.date.localeCompare(b.date));
+
+  try {
+    await writeFile(path, entries, null);
+    ghLog('TOURNAMENTS_INDEX_CREATED', path, `${entries.length} entries`);
+  } catch (e) {
+    console.warn('[github] failed to write tournaments.json:', e);
+  }
+
+  Store.setTournamentsIndex(entries);
+  const dates = entries.map(e => e.date).sort();
+  localStorage.setItem('mexicano_tournament_dates', JSON.stringify(dates));
+  return entries;
+}
+
+/**
+ * Upsert a single tournament entry in tournaments.json.
+ * Reads the current file (to get SHA), merges the entry, writes back.
+ * No-op if GitHub is not configured.
+ *
+ * @param {object} entry - { date, playerCount, roundCount, matchCount, completedCount, isComplete }
+ */
+export async function updateTournamentIndexEntry(entry) {
+  const cfg = getConfig();
+  if (!cfg?.owner || !cfg?.repo || !cfg?.pat) return;
+  if (!entry?.date) return;
+
+  const path = tournamentsIndexPath();
+  ghLog('UPDATE_TOURNAMENT_ENTRY', path, entry.date);
+
+  let entries = [];
+  let sha = null;
+  try {
+    const result = await readFile(path);
+    if (result !== null) {
+      entries = Array.isArray(result.content) ? [...result.content] : [];
+      sha = result.sha;
+    }
+  } catch { /* file may not exist yet */ }
+
+  const idx = entries.findIndex(e => e.date === entry.date);
+  if (idx >= 0) {
+    entries[idx] = { ...entries[idx], ...entry };
+  } else {
+    entries.push(entry);
+  }
+  entries.sort((a, b) => a.date.localeCompare(b.date));
+
+  try {
+    await writeFile(path, entries, sha);
+  } catch (e) {
+    console.warn('[github] failed to update tournaments.json:', e);
+    return;
+  }
+
+  Store.setTournamentsIndex(entries);
+  const dates = entries.map(e => e.date).sort();
+  localStorage.setItem('mexicano_tournament_dates', JSON.stringify(dates));
+}
+
+/**
+ * Public wrapper for fetchTournamentsIndex with create:true.
+ * Used by the Tournaments page for lazy-loading when index is empty.
+ */
+export async function fetchTournamentsIndexPublic() {
+  return fetchTournamentsIndex({ create: true });
+}
+
  *
  * Reads pre-computed summary files (players.json, monthly overviews) and
- * discovers tournament dates from the directory structure — WITHOUT reading
- * every individual day file.
+ * discovers tournament dates via tournaments.json (creating it if missing).
  *
  * Doodle files are read from YYYY/YYYY-MM/doodle_YYYY-MM.json alongside
  * tournament data. Other data (changelog, active_tournament) is read from data/.
@@ -426,70 +581,42 @@ export async function pullAll(onProgress) {
     } catch { /* players.json may not exist yet */ }
     onProgress?.('players.json', 0, 0);
 
-    // ── 2. Walk directory tree: discover dates + collect month paths ────────
-    const rootContents = await listContents(base);
-    const yearDirs = rootContents.filter(f => f.type === 'dir' && /^\d{4}$/.test(f.name));
+    // ── 2. tournaments.json → tournament dates ──────────────────────────────
+    await fetchTournamentsIndex({ create: true });
+    onProgress?.('tournaments.json', 0, 0);
 
-    const allDates = [];
-    const monthDirs = [];
+    // ── 3. Read monthly overview + doodle files (derived from index dates) ──
+    const allDates = JSON.parse(localStorage.getItem('mexicano_tournament_dates') || '[]');
+    const uniqueMonths = [...new Set(allDates.map(d => d.slice(0, 7)))].sort();
+    const total = uniqueMonths.length;
+    for (let i = 0; i < uniqueMonths.length; i++) {
+      const ym = uniqueMonths[i];
+      const year = ym.slice(0, 4);
+      const monthPath = base ? `${base}/${year}/${ym}` : `${year}/${ym}`;
 
-    const monthFileIndex = new Map();
-
-    for (const yearDir of yearDirs) {
-      const monthContents = await listContents(yearDir.path);
-      const months = monthContents.filter(f => f.type === 'dir' && /^\d{4}-\d{2}$/.test(f.name));
-      for (const monthDir of months) {
-        monthDirs.push(monthDir);
-        const dayContents = await listContents(monthDir.path);
-        monthFileIndex.set(monthDir.name, new Set(dayContents.filter(f => f.type === 'file').map(f => f.name)));
-        const dayFiles = dayContents.filter(
-          f => f.type === 'file' && /^\d{4}-\d{2}-\d{2}\.json$/.test(f.name)
-        );
-        for (const df of dayFiles) {
-          allDates.push(df.name.replace('.json', ''));
+      try {
+        const result = await readFile(`${monthPath}/players_overview.json`);
+        if (result?.content && Array.isArray(result.content)) {
+          const camelOverview = result.content.map(p => ({
+            name: p.Name,
+            totalPoints: p.Total_Points,
+            wins: p.Wins,
+            losses: p.Losses,
+            average: p.Average,
+            elo: p.ELO,
+          }));
+          localStorage.setItem(`mexicano_monthly_${ym}`, JSON.stringify(camelOverview));
         }
-      }
-    }
+      } catch { /* overview may not exist */ }
 
-    allDates.sort();
-    localStorage.setItem('mexicano_tournament_dates', JSON.stringify(allDates));
+      try {
+        const doodleResult = await readFile(`${monthPath}/doodle_${ym}.json`);
+        if (doodleResult?.content) {
+          localStorage.setItem(`mexicano_doodle_${ym}`, JSON.stringify(doodleResult.content));
+        }
+      } catch { /* doodle may not exist */ }
 
-    // ── 3. Read monthly overview + doodle files ───────────────────────────
-    const total = monthDirs.length;
-    for (let i = 0; i < monthDirs.length; i++) {
-      const monthDir = monthDirs[i];
-      const files = monthFileIndex.get(monthDir.name) || new Set();
-
-      if (files.has('players_overview.json')) {
-        const overviewPath = `${monthDir.path}/players_overview.json`;
-        try {
-          const result = await readFile(overviewPath);
-          if (result?.content && Array.isArray(result.content)) {
-            const camelOverview = result.content.map(p => ({
-              name: p.Name,
-              totalPoints: p.Total_Points,
-              wins: p.Wins,
-              losses: p.Losses,
-              average: p.Average,
-              elo: p.ELO,
-            }));
-            localStorage.setItem(`mexicano_monthly_${monthDir.name}`, JSON.stringify(camelOverview));
-          }
-        } catch { /* overview read failed */ }
-      }
-
-      const doodleFileName = `doodle_${monthDir.name}.json`;
-      if (files.has(doodleFileName)) {
-        const doodlePath = `${monthDir.path}/${doodleFileName}`;
-        try {
-          const doodleResult = await readFile(doodlePath);
-          if (doodleResult?.content) {
-            localStorage.setItem(`mexicano_doodle_${monthDir.name}`, JSON.stringify(doodleResult.content));
-          }
-        } catch { /* doodle read failed */ }
-      }
-
-      onProgress?.(monthDir.name, total, i + 1);
+      onProgress?.(ym, total, i + 1);
     }
 
     // ── 4. Pull data/ files (changelog, active_tournament, …) ──────────────
@@ -566,7 +693,7 @@ async function _fetchOverview(base, yearMonth) {
 
 /**
  * Pull only the core data needed for every route:
- * players.json, tournament_dates (via dir walk), active_tournament,
+ * players.json, tournament_dates (via tournaments.json), active_tournament,
  * and the current + previous month's players_overview.json.
  *
  * Does NOT clear localStorage. No-op if already fresh in this session.
@@ -595,22 +722,8 @@ async function pullCoreData() {
     }
   } catch { /* players.json may not exist yet */ }
 
-  // ── 2. Dir walk → tournament_dates ────────────────────────────────────────
-  const rootContents = await listContents(base);
-  const yearDirs = rootContents.filter(f => f.type === 'dir' && /^\d{4}$/.test(f.name));
-  const allDates = [];
-  for (const yearDir of yearDirs) {
-    const monthContents = await listContents(yearDir.path);
-    const months = monthContents.filter(f => f.type === 'dir' && /^\d{4}-\d{2}$/.test(f.name));
-    for (const monthDir of months) {
-      const dayContents = await listContents(monthDir.path);
-      dayContents
-        .filter(f => f.type === 'file' && /^\d{4}-\d{2}-\d{2}\.json$/.test(f.name))
-        .forEach(f => allDates.push(f.name.replace('.json', '')));
-    }
-  }
-  allDates.sort();
-  localStorage.setItem('mexicano_tournament_dates', JSON.stringify(allDates));
+  // ── 2. tournaments.json → tournament_dates (no dir-walk, no create) ────────
+  await fetchTournamentsIndex({ create: false });
 
   // ── 3. active_tournament ───────────────────────────────────────────────────
   const dataPath = base ? `${base}/data` : 'data';
@@ -634,6 +747,54 @@ async function pullCoreData() {
 
   markFetched('core');
   ghLog('PULL_CORE', '-', 'done');
+  return true;
+}
+
+/**
+ * Pull data for the Tournaments list page.
+ * Fetches tournaments.json, creating it from a repo traverse if missing.
+ * No-op if already fresh in this session.
+ * @returns {Promise<boolean>} true if any data was fetched
+ */
+async function pullTournamentsPage() {
+  const cfg = getConfig();
+  if (!cfg?.owner || !cfg?.repo || !cfg?.pat) return false;
+  if (isFreshInSession('tournaments_page')) return false;
+
+  ghLog('PULL_TOURNAMENTS_PAGE', '-', 'start');
+  const base = matchesBase();
+
+  // ── 1. players.json ────────────────────────────────────────────────────────
+  const playersPath = base ? `${base}/players.json` : 'players.json';
+  try {
+    const result = await readFile(playersPath);
+    if (result?.content && Array.isArray(result.content)) {
+      const camelPlayers = result.content.map(p => ({
+        name: p.Name,
+        elo: p.ELO,
+        previousElo: p.PreviousELO ?? p.ELO,
+      }));
+      localStorage.setItem('mexicano_players_summary', JSON.stringify(camelPlayers));
+      localStorage.setItem('mexicano_members', JSON.stringify(camelPlayers.map(p => p.name).sort()));
+    }
+  } catch { /* players.json may not exist yet */ }
+
+  // ── 2. tournaments.json — create if missing ────────────────────────────────
+  await fetchTournamentsIndex({ create: true });
+
+  // ── 3. active_tournament ───────────────────────────────────────────────────
+  const dataPath = base ? `${base}/data` : 'data';
+  try {
+    const atResult = await readFile(`${dataPath}/active_tournament.json`);
+    if (atResult !== null) {
+      localStorage.setItem('mexicano_active_tournament', JSON.stringify(atResult.content));
+    } else {
+      localStorage.removeItem('mexicano_active_tournament');
+    }
+  } catch { /* data/ may not exist yet */ }
+
+  markFetched('tournaments_page');
+  ghLog('PULL_TOURNAMENTS_PAGE', '-', 'done');
   return true;
 }
 
@@ -745,14 +906,8 @@ export async function pullDoodleMonth(yearMonth) {
 
 /**
  * Pull only what the home page needs from GitHub.
- * Much lighter than pullCoreData — skips the expensive directory walk when
- * tournament_dates are already cached in localStorage.
- *
- * Fetches:
- *   - players.json           (ELO summaries shown on home)
- *   - active_tournament.json (active tournament card)
- *   - tournament_dates       (dir walk ONLY if not already cached)
- *   - latest date's match file (if matches not already in localStorage)
+ * Fetches players.json, active_tournament.json, tournaments.json (no create),
+ * and the latest date's match file.
  *
  * No-op if already fresh in this session.
  * @returns {Promise<boolean>} true if any data was fetched
@@ -791,26 +946,8 @@ async function pullHomeData() {
     }
   } catch { /* data/ may not exist yet */ }
 
-  // ── 3. Tournament dates — skip dir walk if already cached ────────────────────
-  const cachedDates = localStorage.getItem('mexicano_tournament_dates');
-  if (!cachedDates) {
-    // No cached dates — do the dir walk once to discover them
-    const rootContents = await listContents(base);
-    const yearDirs = rootContents.filter(f => f.type === 'dir' && /^\d{4}$/.test(f.name));
-    const allDates = [];
-    for (const yearDir of yearDirs) {
-      const monthContents = await listContents(yearDir.path);
-      const months = monthContents.filter(f => f.type === 'dir' && /^\d{4}-\d{2}$/.test(f.name));
-      for (const monthDir of months) {
-        const dayContents = await listContents(monthDir.path);
-        dayContents
-          .filter(f => f.type === 'file' && /^\d{4}-\d{2}-\d{2}\.json$/.test(f.name))
-          .forEach(f => allDates.push(f.name.replace('.json', '')));
-      }
-    }
-    allDates.sort();
-    localStorage.setItem('mexicano_tournament_dates', JSON.stringify(allDates));
-  }
+  // ── 3. Tournament dates — read tournaments.json (no create, no dir-walk) ─────
+  await fetchTournamentsIndex({ create: false });
 
   // ── 4. Latest date's matches — only if not already in localStorage ───────────
   const allDates = JSON.parse(localStorage.getItem('mexicano_tournament_dates') || '[]');
@@ -838,7 +975,8 @@ async function pullHomeData() {
  * Pull only what the current route needs from GitHub.
  * Replaces pullAll() for the auto-pull on page load.
  *
- * For /: fetches only what home page needs (players, active_tournament, latest matches).
+ * For /: fetches players, active_tournament, tournaments.json (no create), latest matches.
+ * For /tournaments: fetches players, active_tournament, tournaments.json (creates if missing).
  * For /settings: fetches only players.json (lightweight).
  * For /doodle: fetches core data + current and next month's doodle file.
  * For all other routes: fetches core data (players, dates, active_tournament, recent overviews).
@@ -854,9 +992,15 @@ export async function pullForRoute(hash) {
   try {
     const path = (hash || '').replace(/^#/, '').split('?')[0] || '/';
 
-    // Home page: lightweight fetch — no dir walk when dates are cached
+    // Home page: lightweight fetch — no dir walk, no create
     if (path === '/') {
       const updated = await pullHomeData();
+      return { updated };
+    }
+
+    // Tournaments list page: fetch or create tournaments.json
+    if (path === '/tournaments') {
+      const updated = await pullTournamentsPage();
       return { updated };
     }
 
@@ -915,6 +1059,7 @@ export async function ensureDayMatchesLoaded(date) {
 
 /**
  * Load ALL individual match files from GitHub (for pages that need full history).
+ * Uses tournaments.json index (or tournament_dates) to get file paths — no dir-walk.
  * Stores them in localStorage and sets the fully-loaded flag.
  *
  * @param {function} [onProgress] - called with (label, total, index)
@@ -924,22 +1069,19 @@ export async function pullAllMatches(onProgress) {
   const cfg = getConfig();
   if (!cfg?.owner || !cfg?.repo || !cfg?.pat) throw new Error('GitHub not configured');
 
-  const base = matchesBase();
-  const rootContents = await listContents(base);
-  const yearDirs = rootContents.filter(f => f.type === 'dir' && /^\d{4}$/.test(f.name));
-
-  const dayFilePaths = [];
-  for (const yearDir of yearDirs) {
-    const monthContents = await listContents(yearDir.path);
-    const months = monthContents.filter(f => f.type === 'dir' && /^\d{4}-\d{2}$/.test(f.name));
-    for (const monthDir of months) {
-      const dayContents = await listContents(monthDir.path);
-      const dayFiles = dayContents.filter(
-        f => f.type === 'file' && /^\d{4}-\d{2}-\d{2}\.json$/.test(f.name)
-      );
-      dayFilePaths.push(...dayFiles.map(f => f.path));
-    }
+  // Prefer tournaments index; fall back to tournament_dates; last resort: dir-walk
+  let dates = Store.getTournamentsIndex().map(e => e.date);
+  if (dates.length === 0) {
+    dates = JSON.parse(localStorage.getItem('mexicano_tournament_dates') || '[]');
   }
+
+  // If still no dates, fetch tournaments.json (create if needed) to populate them
+  if (dates.length === 0) {
+    const entries = await fetchTournamentsIndex({ create: true });
+    dates = (entries || []).map(e => e.date);
+  }
+
+  const dayFilePaths = dates.map(d => datePath(d));
 
   const allMatches = [];
   for (let idx = 0; idx < dayFilePaths.length; idx++) {
