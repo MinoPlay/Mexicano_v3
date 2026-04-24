@@ -289,7 +289,7 @@
   font-weight: var(--font-weight-medium);
   color: var(--color-primary);
   cursor: pointer;
-  max-width: 120px;
+  max-width: 80px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -299,8 +299,6 @@
   text-align: right;
   font-variant-numeric: tabular-nums;
 }
-
-/* ─── Column resize handle ─── */
 .col-resize-handle {
   position: absolute;
   right: 0;

@@ -224,7 +224,7 @@ export function renderHome(container, params) {
     </header>
     <div class="page-content" style="padding-left:0;padding-right:0;">
       ${activeTournament ? `
-        <a href="#/tournament/${activeTournament.tournamentDate}" class="card" style="display:block;margin:0 0 var(--space-md);border-radius:0;border-left:3px solid var(--color-success);border-right:none;text-decoration:none;color:inherit;">
+        <a href="#/tournament/${activeTournament.tournamentDate}" class="card" style="display:block;margin:0 0 var(--space-md);border-radius:0;border-left:3px solid var(--color-success);border-right:none;text-decoration:none;color:inherit;background:none;border-top:none;border-bottom:none;">
           <div class="card-header">
             <span class="card-title">Active Tournament</span>
             <span class="badge badge-success">Live</span>
@@ -235,7 +235,7 @@ export function renderHome(container, params) {
         </a>
       ` : ''}
 
-      <div class="card" style="margin:0 0 var(--space-md);border-radius:0;padding:0;overflow:hidden;border-left:none;border-right:none;">
+      <div class="card" style="margin:0 0 var(--space-md);border-radius:0;padding:0;overflow:hidden;border-left:none;border-right:none;background:none;border-top:none;border-bottom:none;">
         <div class="card-header" style="padding:var(--space-md);">
           <span class="card-title">Latest Tournament</span>
           ${latestDate ? `<span class="text-sm text-secondary">${formatDate(latestDate)}</span>` : ''}
