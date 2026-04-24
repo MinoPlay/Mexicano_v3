@@ -140,13 +140,8 @@ function drawLineChart(canvas, datasets, options = {}) {
 // ─── Tooltip ───
 
 function setupTooltip(canvas, formatLabel) {
-  let tooltip = null;
   let stickyTooltip = null;
   let stickyDismiss = null;
-
-  function removeTooltip() {
-    if (tooltip) { tooltip.remove(); tooltip = null; }
-  }
 
   function removeStickyTooltip() {
     if (stickyDismiss) { document.removeEventListener('click', stickyDismiss); stickyDismiss = null; }
@@ -206,29 +201,10 @@ function setupTooltip(canvas, formatLabel) {
     return el;
   }
 
-  function makeHoverTooltipEl(closest) {
-    const el = document.createElement('div');
-    el.style.cssText = `
-      position:absolute;pointer-events:none;background:var(--text-primary);color:var(--bg);
-      padding:4px 8px;border-radius:4px;font-size:11px;white-space:nowrap;z-index:10;
-      transform:translate(-50%,-100%);margin-top:-8px;line-height:1.4;
-    `;
-    el.textContent = `${closest.label} · ${Math.round(closest.value)}`;
-    const parent = canvas.parentElement;
-    parent.style.position = 'relative';
-    el.style.left = closest.x + 'px';
-    el.style.top = closest.y + 'px';
-    parent.appendChild(el);
-    return el;
-  }
-
   canvas.addEventListener('mousemove', e => {
     const closest = findClosest(e.clientX, e.clientY);
-    removeTooltip();
-    if (closest) tooltip = makeHoverTooltipEl(closest);
+    canvas.style.cursor = closest ? 'pointer' : '';
   });
-
-  canvas.addEventListener('mouseleave', removeTooltip);
 
   canvas.addEventListener('click', e => {
     e.stopPropagation();
@@ -255,7 +231,7 @@ function setupTooltip(canvas, formatLabel) {
     }
   }, { passive: true });
 
-  return () => { removeTooltip(); removeStickyTooltip(); };
+  return () => { removeStickyTooltip(); };
 }
 
 // ─── Legend ───
