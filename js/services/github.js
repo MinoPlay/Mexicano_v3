@@ -638,6 +638,39 @@ async function pullCoreData() {
 }
 
 /**
+ * Pull only players.json for the settings page.
+ * Lightweight fetch that skips expensive directory walk and tournament data.
+ * No-op if already fresh in this session.
+ */
+async function pullSettingsData() {
+  const cfg = getConfig();
+  if (!cfg?.owner || !cfg?.repo || !cfg?.pat) return false;
+  if (isFreshInSession('settings')) return false;
+
+  ghLog('PULL_SETTINGS', '-', 'start');
+  const base = matchesBase();
+
+  // Fetch only players.json
+  const playersPath = base ? `${base}/players.json` : 'players.json';
+  try {
+    const result = await readFile(playersPath);
+    if (result?.content && Array.isArray(result.content)) {
+      const camelPlayers = result.content.map(p => ({
+        name: p.Name,
+        elo: p.ELO,
+        previousElo: p.PreviousELO ?? p.ELO,
+      }));
+      localStorage.setItem('mexicano_players_summary', JSON.stringify(camelPlayers));
+      localStorage.setItem('mexicano_members', JSON.stringify(camelPlayers.map(p => p.name).sort()));
+    }
+  } catch { /* players.json may not exist yet */ }
+
+  markFetched('settings');
+  ghLog('PULL_SETTINGS', '-', 'done');
+  return true;
+}
+
+/**
  * Pull a single month's players_overview.json from GitHub and store it.
  * No-op if already fresh in this session.
  * @param {string} yearMonth - 'YYYY-MM'
@@ -714,8 +747,9 @@ export async function pullDoodleMonth(yearMonth) {
  * Pull only what the current route needs from GitHub.
  * Replaces pullAll() for the auto-pull on page load.
  *
- * Always fetches core data (players, dates, active_tournament, recent overviews).
- * For /doodle: also pre-fetches the current and next month's doodle file.
+ * For /settings: fetches only players.json (lightweight).
+ * For /doodle: fetches core data + current and next month's doodle file.
+ * For all other routes: fetches core data (players, dates, active_tournament, recent overviews).
  *
  * @param {string} hash - window.location.hash (e.g. '#/doodle')
  * @returns {Promise<{ updated: boolean }>}
@@ -726,9 +760,16 @@ export async function pullForRoute(hash) {
 
   _isPulling = true;
   try {
+    const path = (hash || '').replace(/^#/, '').split('?')[0];
+
+    // Settings page: only fetch players.json
+    if (path === '/settings') {
+      const updated = await pullSettingsData();
+      return { updated };
+    }
+
     let updated = await pullCoreData();
 
-    const path = (hash || '').replace(/^#/, '').split('?')[0];
     if (path === '/doodle') {
       const now = new Date();
       for (const offset of [0, 1]) {
