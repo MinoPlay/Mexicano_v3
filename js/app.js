@@ -5,7 +5,7 @@ import { renderNav } from './components/nav.js';
 import { initTheme } from './components/theme-toggle.js';
 import { mountSyncIndicator, setSyncBusy } from './components/sync-indicator.js';
 import { showToast } from './components/toast.js';
-import { pullAll } from './services/github.js';
+import { pullAll, pullForRoute } from './services/github.js';
 
 // Pages
 import { renderHome } from './pages/home.js';
@@ -83,7 +83,7 @@ async function loadFromGitHub() {
   }
   setSyncBusy(true);
   try {
-    const { updated } = await pullAll();
+    const { updated } = await pullForRoute(window.location.hash);
     sessionStorage.setItem('mexicano_github_just_pulled', 'true');
     sessionStorage.setItem('mexicano_sync_result', updated ? 'updated' : 'uptodate');
     location.reload();

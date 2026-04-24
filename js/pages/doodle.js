@@ -3,7 +3,7 @@ import { Store } from '../store.js';
 import { State } from '../state.js';
 import { showToast } from '../components/toast.js';
 import { calculateAllEloRankings } from '../services/elo.js';
-import { pushDoodleNow, cancelPendingSync } from '../services/github.js';
+import { pushDoodleNow, cancelPendingSync, pullDoodleMonth } from '../services/github.js';
 
 /** Build a name→ELO map, preferring pre-computed players_summary. */
 function buildEloMap() {
@@ -316,6 +316,16 @@ export function renderDoodle(container, params = {}) {
     renderChangelog();
     // Sync from local dev server file if available (any month, fire-and-forget)
     syncDoodleFromLocal(currentYear, currentMonth).catch(() => {});
+    // Sync from GitHub if configured (on-demand per month navigated to)
+    const ym = `${currentYear}-${String(currentMonth).padStart(2, '0')}`;
+    if (Store.getGitHubConfig()?.pat) {
+      pullDoodleMonth(ym).then(({ content, updated }) => {
+        if (updated && content) {
+          Store.setDoodle(ym, content);
+          State.emit('doodle-changed', { year: currentYear, month: currentMonth });
+        }
+      }).catch(() => {});
+    }
   }
 
   // Re-render when doodle data arrives asynchronously (e.g. from local file load)

@@ -516,6 +516,230 @@ export async function pullAll(onProgress) {
   return { updated: true };
 }
 
+// ─── Session TTL helpers ──────────────────────────────────────────────────────
+
+const SESSION_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
+function markFetched(key) {
+  try { sessionStorage.setItem(`mexicano_gh_ts_${key}`, Date.now().toString()); } catch { /* storage unavailable */ }
+}
+
+function isFreshInSession(key) {
+  try {
+    const ts = parseInt(sessionStorage.getItem(`mexicano_gh_ts_${key}`) || '0', 10);
+    return Date.now() - ts < SESSION_TTL_MS;
+  } catch { return false; }
+}
+
+/** Parse a raw players_overview.json entry (PascalCase) to camelCase. */
+function fromOverview(p) {
+  return {
+    name: p.Name,
+    totalPoints: p.Total_Points,
+    wins: p.Wins,
+    losses: p.Losses,
+    average: p.Average,
+    elo: p.ELO,
+  };
+}
+
+/**
+ * Internal: fetch a single YYYY/YYYY-MM/players_overview.json and store it.
+ * Silently no-ops if the file doesn't exist.
+ */
+async function _fetchOverview(base, yearMonth) {
+  const year = yearMonth.slice(0, 4);
+  const prefix = base ? `${base}/` : '';
+  const path = `${prefix}${year}/${yearMonth}/players_overview.json`;
+  try {
+    const result = await readFile(path);
+    if (result?.content && Array.isArray(result.content)) {
+      localStorage.setItem(`mexicano_monthly_${yearMonth}`, JSON.stringify(result.content.map(fromOverview)));
+    }
+  } catch { /* overview may not exist for this month */ }
+}
+
+/**
+ * Pull only the core data needed for every route:
+ * players.json, tournament_dates (via dir walk), active_tournament,
+ * and the current + previous month's players_overview.json.
+ *
+ * Does NOT clear localStorage. No-op if already fresh in this session.
+ * @returns {Promise<boolean>} true if any data was fetched
+ */
+async function pullCoreData() {
+  const cfg = getConfig();
+  if (!cfg?.owner || !cfg?.repo || !cfg?.pat) return false;
+  if (isFreshInSession('core')) return false;
+
+  ghLog('PULL_CORE', '-', 'start');
+  const base = matchesBase();
+
+  // ── 1. players.json ────────────────────────────────────────────────────────
+  const playersPath = base ? `${base}/players.json` : 'players.json';
+  try {
+    const result = await readFile(playersPath);
+    if (result?.content && Array.isArray(result.content)) {
+      const camelPlayers = result.content.map(p => ({
+        name: p.Name,
+        elo: p.ELO,
+        previousElo: p.PreviousELO ?? p.ELO,
+      }));
+      localStorage.setItem('mexicano_players_summary', JSON.stringify(camelPlayers));
+      localStorage.setItem('mexicano_members', JSON.stringify(camelPlayers.map(p => p.name).sort()));
+    }
+  } catch { /* players.json may not exist yet */ }
+
+  // ── 2. Dir walk → tournament_dates ────────────────────────────────────────
+  const rootContents = await listContents(base);
+  const yearDirs = rootContents.filter(f => f.type === 'dir' && /^\d{4}$/.test(f.name));
+  const allDates = [];
+  for (const yearDir of yearDirs) {
+    const monthContents = await listContents(yearDir.path);
+    const months = monthContents.filter(f => f.type === 'dir' && /^\d{4}-\d{2}$/.test(f.name));
+    for (const monthDir of months) {
+      const dayContents = await listContents(monthDir.path);
+      dayContents
+        .filter(f => f.type === 'file' && /^\d{4}-\d{2}-\d{2}\.json$/.test(f.name))
+        .forEach(f => allDates.push(f.name.replace('.json', '')));
+    }
+  }
+  allDates.sort();
+  localStorage.setItem('mexicano_tournament_dates', JSON.stringify(allDates));
+
+  // ── 3. active_tournament ───────────────────────────────────────────────────
+  const dataPath = base ? `${base}/data` : 'data';
+  try {
+    const atResult = await readFile(`${dataPath}/active_tournament.json`);
+    if (atResult !== null) {
+      localStorage.setItem('mexicano_active_tournament', JSON.stringify(atResult.content));
+    } else {
+      localStorage.removeItem('mexicano_active_tournament');
+    }
+  } catch { /* data/ may not exist yet */ }
+
+  // ── 4. Current + previous month overviews ─────────────────────────────────
+  const now = new Date();
+  for (const offset of [0, -1]) {
+    const d = new Date(now.getFullYear(), now.getMonth() + offset, 1);
+    const ym = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    await _fetchOverview(base, ym);
+    markFetched(`overview_${ym}`);
+  }
+
+  markFetched('core');
+  ghLog('PULL_CORE', '-', 'done');
+  return true;
+}
+
+/**
+ * Pull a single month's players_overview.json from GitHub and store it.
+ * No-op if already fresh in this session.
+ * @param {string} yearMonth - 'YYYY-MM'
+ * @returns {Promise<{ updated: boolean }>}
+ */
+export async function pullMonthlyOverview(yearMonth) {
+  const cfg = getConfig();
+  if (!cfg?.owner || !cfg?.repo || !cfg?.pat) return { updated: false };
+  if (isFreshInSession(`overview_${yearMonth}`)) return { updated: false };
+
+  const base = matchesBase();
+  const hadData = !!localStorage.getItem(`mexicano_monthly_${yearMonth}`);
+  await _fetchOverview(base, yearMonth);
+  markFetched(`overview_${yearMonth}`);
+  const hasData = !!localStorage.getItem(`mexicano_monthly_${yearMonth}`);
+  return { updated: !hadData && hasData };
+}
+
+/**
+ * Pull all monthly overviews from GitHub (one per unique YYYY-MM in tournament_dates).
+ * Skips months already fresh in this session.
+ * @returns {Promise<{ updated: boolean }>}
+ */
+export async function pullAllOverviews() {
+  const cfg = getConfig();
+  if (!cfg?.owner || !cfg?.repo || !cfg?.pat) return { updated: false };
+
+  const dates = JSON.parse(localStorage.getItem('mexicano_tournament_dates') || '[]');
+  const months = [...new Set(dates.map(d => d.slice(0, 7)))].sort();
+  const base = matchesBase();
+  let updated = false;
+
+  for (const ym of months) {
+    if (isFreshInSession(`overview_${ym}`)) continue;
+    const hadData = !!localStorage.getItem(`mexicano_monthly_${ym}`);
+    await _fetchOverview(base, ym);
+    markFetched(`overview_${ym}`);
+    if (!hadData && localStorage.getItem(`mexicano_monthly_${ym}`)) updated = true;
+  }
+  return { updated };
+}
+
+/**
+ * Pull a single doodle month from GitHub.
+ * No-op if already fresh in this session.
+ * Returns the raw content array and whether it differed from the cached version.
+ * The caller is responsible for updating Store and emitting state events.
+ * @param {string} yearMonth - 'YYYY-MM'
+ * @returns {Promise<{ content: Array|null, updated: boolean }>}
+ */
+export async function pullDoodleMonth(yearMonth) {
+  const cfg = getConfig();
+  if (!cfg?.owner || !cfg?.repo || !cfg?.pat) return { content: null, updated: false };
+  if (isFreshInSession(`doodle_${yearMonth}`)) return { content: null, updated: false };
+
+  const base = matchesBase();
+  const year = yearMonth.slice(0, 4);
+  const prefix = base ? `${base}/` : '';
+  const path = `${prefix}${year}/${yearMonth}/doodle_${yearMonth}.json`;
+  try {
+    const result = await readFile(path);
+    markFetched(`doodle_${yearMonth}`);
+    if (!result?.content) return { content: null, updated: false };
+    const existing = localStorage.getItem(`mexicano_doodle_${yearMonth}`);
+    const newJson = JSON.stringify(result.content);
+    return { content: result.content, updated: existing !== newJson };
+  } catch {
+    markFetched(`doodle_${yearMonth}`);
+    return { content: null, updated: false };
+  }
+}
+
+/**
+ * Pull only what the current route needs from GitHub.
+ * Replaces pullAll() for the auto-pull on page load.
+ *
+ * Always fetches core data (players, dates, active_tournament, recent overviews).
+ * For /doodle: also pre-fetches the current and next month's doodle file.
+ *
+ * @param {string} hash - window.location.hash (e.g. '#/doodle')
+ * @returns {Promise<{ updated: boolean }>}
+ */
+export async function pullForRoute(hash) {
+  const cfg = getConfig();
+  if (!cfg?.owner || !cfg?.repo || !cfg?.pat) throw new Error('GitHub not configured');
+
+  _isPulling = true;
+  try {
+    let updated = await pullCoreData();
+
+    const path = (hash || '').replace(/^#/, '').split('?')[0];
+    if (path === '/doodle') {
+      const now = new Date();
+      for (const offset of [0, 1]) {
+        const d = new Date(now.getFullYear(), now.getMonth() + offset, 1);
+        const ym = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+        const { updated: du } = await pullDoodleMonth(ym);
+        if (du) updated = true;
+      }
+    }
+
+    return { updated };
+  } finally {
+    _isPulling = false;
+  }
+}
+
 /**
  * Read matches for a single tournament day from GitHub.
  * @param {string} date - 'YYYY-MM-DD'

@@ -400,17 +400,21 @@ export function renderStatistics(container, params = {}) {
   const allMatches = Store.getMatches();
   const overviewMonths = Store.getMonthlyOverviewMonths();
   const hasSummaryData = overviewMonths.length > 0;
-  const tournamentDates = hasSummaryData
-    ? [...Store.getTournamentDates()].sort()
-    : getUniqueDates(allMatches);
+  const storedDates = Store.getTournamentDates();
+  const tournamentDates = storedDates.length > 0 ? [...storedDates].sort() : getUniqueDates(allMatches);
 
   // Derive months from local match dates when no overview months synced
   const localMonths = !hasSummaryData
     ? [...new Set(allMatches.map(m => m.date?.slice(0, 7)).filter(Boolean))].sort()
     : [];
-  const availableMonths = overviewMonths.length > 0 ? overviewMonths : localMonths;
+  // Prefer all months derived from tournament_dates so the dropdown always shows
+  // every available month even before their overviews are fetched from GitHub.
+  const allTournamentMonths = [...new Set(tournamentDates.map(d => d.slice(0, 7)))].sort();
+  const availableMonths = allTournamentMonths.length > 0
+    ? allTournamentMonths
+    : overviewMonths.length > 0 ? overviewMonths : localMonths;
 
-  if (!allMatches.length && !hasSummaryData) {
+  if (!allMatches.length && !hasSummaryData && tournamentDates.length === 0) {
     content.innerHTML = `<div class="empty-state">
       <div class="empty-state-icon">📊</div>
       <div class="empty-state-text">No statistics yet</div>
@@ -523,10 +527,18 @@ export function renderStatistics(container, params = {}) {
     }
   }
 
-  function renderTable() {
-    // "All Time" — prefer aggregated overviews
+  async function renderTable() {
+    // "All Time" — prefer aggregated overviews, lazy-fetch if needed
     if (activeFilter === 'all') {
-      if (hasSummaryData) {
+      if (Store.getGitHubConfig()?.pat) {
+        tableContainer.innerHTML = '<p class="text-center mt-lg">⏳ Loading…</p>';
+        try {
+          const { pullAllOverviews } = await import('../services/github.js');
+          await pullAllOverviews();
+        } catch { /* continue with cached data */ }
+      }
+      const freshOverviewMonths = Store.getMonthlyOverviewMonths();
+      if (freshOverviewMonths.length > 0) {
         const stats = aggregateOverviews();
         tableContainer.innerHTML = '';
         if (!stats.length) {
@@ -553,8 +565,15 @@ export function renderStatistics(container, params = {}) {
       return;
     }
 
-    // Monthly overview
+    // Monthly overview — lazy-fetch this month if needed
     if (/^\d{4}-\d{2}$/.test(activeFilter)) {
+      if (Store.getGitHubConfig()?.pat) {
+        tableContainer.innerHTML = '<p class="text-center mt-lg">⏳ Loading…</p>';
+        try {
+          const { pullMonthlyOverview } = await import('../services/github.js');
+          await pullMonthlyOverview(activeFilter);
+        } catch { /* continue with cached data */ }
+      }
       const overview = Store.getMonthlyOverview(activeFilter);
       let stats;
       if (overview.length > 0) {
