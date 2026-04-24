@@ -326,7 +326,7 @@ export function completeTournament(tournament) {
   }).catch(() => {});
 
   // Immediately sync completed tournament to GitHub + local dev server
-  import('./github.js').then(({ flushPush, markMatchDateDirty, keyToPath, readFile, deleteFile, updateTournamentIndexEntry }) => {
+  import('./github.js').then(({ flushPush, markMatchDateDirty, keyToPath, readFile, deleteFile, updateTournamentIndexEntry, generateMonthlyOverviews, generatePlayersJson }) => {
     markMatchDateDirty(tournament.tournamentDate);
     // Delete active_tournament.json from GitHub since the tournament is done
     const atPath = keyToPath('active_tournament');
@@ -335,7 +335,12 @@ export function completeTournament(tournament) {
         .then(existing => { if (existing?.sha) return deleteFile(atPath, existing.sha); })
         .catch(() => {});
     }
-    flushPush();
+
+    const yearMonth = tournament.tournamentDate.slice(0, 7);
+    Promise.resolve(flushPush())
+      .then(() => generateMonthlyOverviews(yearMonth))
+      .then(() => generatePlayersJson())
+      .catch(e => console.warn('[tournament] post-complete generation failed:', e));
 
     // Compute full metadata and update tournaments.json index
     const players = new Set();

@@ -1228,7 +1228,7 @@ export function flushPush() {
   if (_isPulling) return;
   if (!getConfig()?.pat) return;
   clearTimeout(_syncTimer);
-  executePush();
+  return executePush();
 }
 
 // ─── Player Summaries ────────────────────────────────────────────────────────
