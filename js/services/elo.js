@@ -110,9 +110,58 @@ export function getEloHistoryAllTime(allMatches) {
         historyMap[name].push({ date, elo: lastEntry.elo });
       }
     }
+    // Compute delta vs previous point
+    for (let i = 0; i < historyMap[name].length; i++) {
+      const prev = historyMap[name][i - 1];
+      historyMap[name][i].delta = prev ? Math.round((historyMap[name][i].elo - prev.elo) * 10) / 10 : 0;
+    }
   }
 
   return { players: historyMap, dates };
+}
+
+/**
+ * Like getEloHistoryAllTime but filtered to last `months` calendar months.
+ * Pass months=null for all time.
+ * Each point includes a `delta` field (ELO change vs previous point for that player).
+ */
+export function getEloHistoryForPeriod(allMatches, months) {
+  const full = getEloHistoryAllTime(allMatches);
+  if (!months || !full.dates || full.dates.length === 0) return full;
+
+  const cutoff = new Date();
+  cutoff.setMonth(cutoff.getMonth() - months);
+  const cutoffStr = cutoff.toISOString().slice(0, 10);
+
+  const filteredDates = full.dates.filter(d => d >= cutoffStr);
+  const filteredDateSet = new Set(filteredDates);
+
+  const filteredPlayers = {};
+  for (const [name, points] of Object.entries(full.players)) {
+    const pts = points.filter(p => filteredDateSet.has(p.date));
+    if (pts.length > 0) filteredPlayers[name] = pts;
+  }
+
+  return { players: filteredPlayers, dates: filteredDates };
+}
+
+/**
+ * Like getEloHistoryForPeriod but filtered to a custom date range [fromStr, toStr] (YYYY-MM-DD).
+ */
+export function getEloHistoryForDateRange(allMatches, fromStr, toStr) {
+  const full = getEloHistoryAllTime(allMatches);
+  if (!full.dates || full.dates.length === 0) return full;
+
+  const filteredDates = full.dates.filter(d => (!fromStr || d >= fromStr) && (!toStr || d <= toStr));
+  const filteredDateSet = new Set(filteredDates);
+
+  const filteredPlayers = {};
+  for (const [name, points] of Object.entries(full.players)) {
+    const pts = points.filter(p => filteredDateSet.has(p.date));
+    if (pts.length > 0) filteredPlayers[name] = pts;
+  }
+
+  return { players: filteredPlayers, dates: filteredDates };
 }
 
 export function getEloHistoryForLatestTournament(allMatches) {
@@ -149,6 +198,11 @@ export function getEloHistoryForLatestTournament(allMatches) {
         const last = entry[entry.length - 1];
         historyMap[name].push({ round: rn, elo: last.elo });
       }
+    }
+    // Compute delta vs previous round point
+    for (let i = 0; i < historyMap[name].length; i++) {
+      const prev = historyMap[name][i - 1];
+      historyMap[name][i].delta = prev ? Math.round((historyMap[name][i].elo - prev.elo) * 10) / 10 : 0;
     }
   }
 

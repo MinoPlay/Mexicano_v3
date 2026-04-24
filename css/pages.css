@@ -617,9 +617,103 @@
   margin-bottom: var(--space-md);
 }
 
+.chart-container-bleed {
+  background: var(--bg-card);
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  margin-bottom: var(--space-md);
+}
+
 .chart-canvas {
   width: 100%;
   height: 250px;
+}
+
+.elo-section-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: var(--space-sm) var(--space-md) 0;
+  gap: var(--space-sm);
+}
+
+.elo-section-title {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  flex-shrink: 0;
+}
+
+.elo-section-meta {
+  font-size: var(--font-size-xs);
+  color: var(--text-tertiary);
+}
+
+.elo-controls {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  padding: var(--space-sm) var(--space-md);
+  flex-wrap: wrap;
+}
+
+.elo-control-btn {
+  padding: 4px 10px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  min-height: 28px;
+  display: inline-flex;
+  align-items: center;
+}
+
+.elo-control-btn:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+.elo-control-btn.active {
+  background: var(--color-primary-light);
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+  font-weight: var(--font-weight-semibold);
+}
+
+.elo-control-divider {
+  width: 1px;
+  height: 16px;
+  background: var(--border);
+  margin: 0 2px;
+  flex-shrink: 0;
+}
+
+.elo-custom-range {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  padding: 0 var(--space-md) var(--space-sm);
+  flex-wrap: wrap;
+}
+
+.elo-custom-range input[type="date"] {
+  padding: 4px 8px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: var(--font-size-xs);
+  color: var(--text-primary);
+  min-height: 28px;
+}
+
+.elo-custom-range-label {
+  font-size: var(--font-size-xs);
+  color: var(--text-tertiary);
 }
 
 /* Member picker */
