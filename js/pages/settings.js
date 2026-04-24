@@ -95,7 +95,10 @@ export function renderSettings(container, params) {
         </p>
         <div class="flex flex-col gap-sm">
           <button id="gen-players-btn" class="btn btn-primary" style="width:100%;">Generate players.json</button>
-          <button id="gen-overviews-btn" class="btn btn-secondary" style="width:100%;">Generate monthly overviews</button>
+          <div class="flex gap-sm">
+            <input type="month" id="gen-overviews-month" style="flex:1;" />
+            <button id="gen-overviews-btn" class="btn btn-secondary">Generate monthly overview</button>
+          </div>
         </div>
         <div id="remote-data-status" class="text-sm mt-sm" style="min-height:1.25rem;"></div>
       </div>
@@ -311,10 +314,15 @@ export function renderSettings(container, params) {
 
   // ─── Remote Data Tools ────────────────────────────────────────────────────
 
-  const remoteDataSection = container.querySelector('#remote-data-section');
-  const genPlayersBtn     = container.querySelector('#gen-players-btn');
-  const genOverviewsBtn   = container.querySelector('#gen-overviews-btn');
-  const remoteDataStatus  = container.querySelector('#remote-data-status');
+  const remoteDataSection  = container.querySelector('#remote-data-section');
+  const genPlayersBtn      = container.querySelector('#gen-players-btn');
+  const genOverviewsBtn    = container.querySelector('#gen-overviews-btn');
+  const genOverviewsMonth  = container.querySelector('#gen-overviews-month');
+  const remoteDataStatus   = container.querySelector('#remote-data-status');
+
+  // Default month input to current month
+  const now = new Date();
+  genOverviewsMonth.value = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
 
   function setRemoteDataMsg(msg, isError = false) {
     remoteDataStatus.textContent = msg;
@@ -347,15 +355,20 @@ export function renderSettings(container, params) {
   });
 
   genOverviewsBtn.addEventListener('click', async () => {
+    const month = genOverviewsMonth.value.trim();
+    if (!month) {
+      setRemoteDataMsg('Select a month first.', true);
+      return;
+    }
     setRemoteBtnsDisabled(true);
     setRemoteDataMsg('Loading match files…');
     try {
-      const { written } = await generateMonthlyOverviews((label) => setRemoteDataMsg(label));
-      setRemoteDataMsg(`Done! Written ${written} monthly overview file${written !== 1 ? 's' : ''}.`);
-      showToast('Monthly overviews generated');
+      const { month: written } = await generateMonthlyOverviews(month, (label) => setRemoteDataMsg(label));
+      setRemoteDataMsg(`Done! players_overview.json written for ${month}.`);
+      showToast(`Overview generated for ${month}`);
     } catch (e) {
       setRemoteDataMsg(`Error: ${e.message}`, true);
-      showToast('Failed to generate overviews', 'error');
+      showToast('Failed to generate overview', 'error');
     } finally {
       setRemoteBtnsDisabled(false);
     }
