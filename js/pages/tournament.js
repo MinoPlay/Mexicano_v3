@@ -251,9 +251,9 @@ export function renderTournament(container, params) {
       if (roundComplete) {
         html += `<button class="btn btn-primary btn-block" id="next-round-btn">Next Round</button>`;
       }
-      html += `<button class="btn btn-danger btn-block" id="end-tournament-btn" ${allScored ? '' : 'disabled'}>End Tournament</button>`;
+      html += `<button class="btn btn-danger btn-block" id="end-tournament-btn">End Tournament</button>`;
       if (!allScored) {
-        html += `<p class="text-sm text-secondary text-center">All match scores must be set before ending</p>`;
+        html += `<p class="text-sm text-secondary text-center">Unscored matches will be removed when ending</p>`;
       }
       html += '</div>';
     }
@@ -294,19 +294,29 @@ export function renderTournament(container, params) {
 
     // Event: end tournament
     content.querySelector('#end-tournament-btn')?.addEventListener('click', () => {
-      showConfirmDialog(
-        'End Tournament?',
-        'This will finalize the tournament. Match history will be saved.',
-        () => {
-          try {
-            completeTournament(tournament);
-            showToast('Tournament completed!');
-            render();
-          } catch (err) {
-            showToast(err.message || 'Failed to end tournament');
+      const unscoredCount = tournament.rounds.reduce((acc, r) =>
+        acc + r.matches.filter(m => !isMatchComplete(m)).length, 0);
+
+      const title = 'End Tournament?';
+      const message = unscoredCount > 0
+        ? `Ending the tournament will remove ${unscoredCount} match${unscoredCount > 1 ? 'es' : ''} that ${unscoredCount > 1 ? 'have' : 'has'} no score. This cannot be undone.`
+        : 'This will finalize the tournament. Match history will be saved.';
+
+      showConfirmDialog(title, message, () => {
+        try {
+          if (unscoredCount > 0) {
+            for (const round of tournament.rounds) {
+              round.matches = round.matches.filter(m => isMatchComplete(m));
+            }
+            tournament.rounds = tournament.rounds.filter(r => r.matches.length > 0);
           }
+          completeTournament(tournament);
+          showToast('Tournament completed!');
+          render();
+        } catch (err) {
+          showToast(err.message || 'Failed to end tournament');
         }
-      );
+      });
     });
   }
 

@@ -275,14 +275,6 @@ export function startNextRound(tournament) {
 }
 
 export function completeTournament(tournament) {
-  // Safety check: all matches must be scored
-  const hasUnscoredMatches = tournament.rounds.some(r =>
-    r.matches.some(m => !isMatchComplete(m))
-  );
-  if (hasUnscoredMatches) {
-    throw new Error('Cannot end tournament: some matches have no scores set');
-  }
-
   tournament.isCompleted = true;
   tournament.completedAt = Date.now();
 
