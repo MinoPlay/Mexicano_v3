@@ -5,6 +5,8 @@ import { showToast } from '../components/toast.js';
 import { calculateAllEloRankings } from '../services/elo.js';
 import { pushDoodleNow, cancelPendingSync, pullDoodleMonth } from '../services/github.js';
 
+const WEEKDAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
 /** Build a name→ELO map, preferring pre-computed players_summary. */
 function buildEloMap() {
   const summary = Store.getPlayersSummary();
@@ -13,7 +15,6 @@ function buildEloMap() {
     for (const p of summary) map[p.name] = p.elo;
     return map;
   }
-  // Fallback: compute from locally cached matches
   const { players } = calculateAllEloRankings(Store.getMatches());
   const map = {};
   for (const [name, data] of Object.entries(players)) map[name] = data.elo;
@@ -24,11 +25,10 @@ function buildEloMap() {
 
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June',
   'July', 'August', 'September', 'October', 'November', 'December'];
-const WEEKDAY_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 function formatDay(dateStr) {
   const d = new Date(dateStr + 'T00:00:00');
-  return { day: d.getDate(), weekday: WEEKDAY_SHORT[d.getDay()] };
+  return { day: d.getDate(), weekday: WEEKDAY_LABELS[d.getDay()] };
 }
 
 // ─── Main Render ───
@@ -74,10 +74,22 @@ export function renderDoodle(container, params = {}) {
   nav.className = 'flex items-center justify-between mb-md';
   content.appendChild(nav);
 
-  // Matrix container
+  // User calendar container
+  const calContainer = document.createElement('div');
+  calContainer.className = 'mt-sm';
+  content.appendChild(calContainer);
+
+  // Overall collapsible
+  const overallDetails = document.createElement('details');
+  overallDetails.className = 'doodle-overall mt-lg';
+  const overallSummary = document.createElement('summary');
+  overallSummary.className = 'doodle-overall-summary';
+  overallSummary.textContent = 'Overall availability';
+  overallDetails.appendChild(overallSummary);
   const matrixContainer = document.createElement('div');
-  matrixContainer.className = 'mt-md';
-  content.appendChild(matrixContainer);
+  matrixContainer.className = 'mt-sm';
+  overallDetails.appendChild(matrixContainer);
+  content.appendChild(overallDetails);
 
   // Changelog container
   const changelogSection = document.createElement('div');
@@ -102,6 +114,90 @@ export function renderDoodle(container, params = {}) {
     });
   }
 
+  function renderUserCalendar() {
+    calContainer.innerHTML = '';
+
+    const todayStr = new Date().toISOString().slice(0, 10);
+    const doodleData = getDoodle(currentYear, currentMonth);
+
+    // Build user's selected dates set
+    const userSelected = new Set();
+    if (doodleData) {
+      const entry = doodleData.find(e => e.name === currentUser);
+      if (entry && entry.selected) {
+        Object.keys(entry.selected).forEach(d => {
+          if (entry.selected[d]) userSelected.add(d);
+        });
+      }
+    }
+
+    // Build calendar grid: find first day of month and total days
+    const firstDay = new Date(currentYear, currentMonth - 1, 1).getDay(); // 0=Sun
+    const daysInMonth = new Date(currentYear, currentMonth, 0).getDate();
+
+    // Weekday header
+    const grid = document.createElement('div');
+    grid.className = 'doodle-cal-grid';
+
+    WEEKDAY_LABELS.forEach(label => {
+      const hCell = document.createElement('div');
+      hCell.className = 'doodle-cal-header';
+      hCell.textContent = label;
+      grid.appendChild(hCell);
+    });
+
+    // Empty cells before first day
+    for (let i = 0; i < firstDay; i++) {
+      const empty = document.createElement('div');
+      empty.className = 'doodle-cal-cell doodle-cal-empty';
+      grid.appendChild(empty);
+    }
+
+    // Day cells
+    for (let d = 1; d <= daysInMonth; d++) {
+      const date = new Date(currentYear, currentMonth - 1, d);
+      const dow = date.getDay();
+      const mm = String(currentMonth).padStart(2, '0');
+      const dd = String(d).padStart(2, '0');
+      const dateStr = `${currentYear}-${mm}-${dd}`;
+
+      const isPlayable = dow === 2 || dow === 4; // Tue or Thu
+      const isPast = dateStr < todayStr;
+      const isSelected = userSelected.has(dateStr);
+
+      const cell = document.createElement('div');
+      cell.className = 'doodle-cal-cell'
+        + (isPlayable ? ' playable' : ' inactive')
+        + (isSelected ? ' selected' : '')
+        + (isPast ? ' past' : '');
+      cell.textContent = d;
+
+      if (isPlayable && !isPast) {
+        cell.addEventListener('click', async () => {
+          if (isSelected) {
+            userSelected.delete(dateStr);
+          } else {
+            userSelected.add(dateStr);
+          }
+          const updatedDates = [...userSelected].sort();
+          saveDoodle(currentUser, currentYear, currentMonth, updatedDates);
+          const yearMonth = `${currentYear}-${String(currentMonth).padStart(2, '0')}`;
+          try {
+            await pushDoodleNow(yearMonth);
+            cancelPendingSync();
+          } catch (e) {
+            console.error('Doodle push failed:', e);
+            showToast('Sync failed — saved locally');
+          }
+        });
+      }
+
+      grid.appendChild(cell);
+    }
+
+    calContainer.appendChild(grid);
+  }
+
   function renderMatrix() {
     matrixContainer.innerHTML = '';
 
@@ -115,7 +211,7 @@ export function renderDoodle(container, params = {}) {
       return;
     }
 
-    // Collect players: from doodle JSON + current user
+    // Collect players
     const allPlayerSet = new Set();
     if (currentUser) allPlayerSet.add(currentUser);
     if (doodleData) {
@@ -123,7 +219,7 @@ export function renderDoodle(container, params = {}) {
     }
     const allPlayers = [...allPlayerSet];
 
-    // Build lookup: player → Set of selected dates
+    // Build selections lookup
     const selections = {};
     allPlayers.forEach(p => { selections[p] = new Set(); });
     if (doodleData) {
@@ -136,12 +232,10 @@ export function renderDoodle(container, params = {}) {
       });
     }
 
-    // Show only players with a selection on a visible (future) date, plus current user
     const players = allPlayers
       .filter(p => p === currentUser || visibleDates.some(d => selections[p].has(d)))
       .sort((a, b) => a.localeCompare(b));
 
-    // Totals
     const totals = {};
     visibleDates.forEach(d => { totals[d] = 0; });
     players.forEach(p => {
@@ -149,14 +243,12 @@ export function renderDoodle(container, params = {}) {
     });
     const maxTotal = Math.max(0, ...Object.values(totals));
 
-    // Build table
     const wrapper = document.createElement('div');
     wrapper.className = 'doodle-matrix';
 
     const table = document.createElement('table');
     table.className = 'doodle-table';
 
-    // Header row
     const thead = document.createElement('thead');
     const hRow = document.createElement('tr');
     const cornerTh = document.createElement('th');
@@ -175,7 +267,6 @@ export function renderDoodle(container, params = {}) {
     thead.appendChild(hRow);
     table.appendChild(thead);
 
-    // Body rows
     const tbody = document.createElement('tbody');
     players.forEach(player => {
       const tr = document.createElement('tr');
@@ -211,14 +302,12 @@ export function renderDoodle(container, params = {}) {
             const updatedDates = [...selections[player]].sort();
             saveDoodle(player, currentYear, currentMonth, updatedDates);
             const yearMonth = `${currentYear}-${String(currentMonth).padStart(2, '0')}`;
-            showToast('Saving…');
             try {
               await pushDoodleNow(yearMonth);
               cancelPendingSync();
-              showToast('Saved ✓');
             } catch (e) {
               console.error('Doodle push failed:', e);
-              showToast('Saved locally (GitHub sync failed)');
+              showToast('Sync failed — saved locally');
             }
           });
         }
@@ -230,7 +319,6 @@ export function renderDoodle(container, params = {}) {
     });
     table.appendChild(tbody);
 
-    // Total row
     const tfoot = document.createElement('tfoot');
     const totalRow = document.createElement('tr');
     totalRow.className = 'doodle-total-row';
@@ -253,15 +341,12 @@ export function renderDoodle(container, params = {}) {
         td.classList.add('doodle-total-clickable');
         td.addEventListener('click', () => {
           const availablePlayers = players.filter(p => selections[p].has(dateStr));
-
-          // Sort by ELO descending (prefer pre-computed summary)
           const eloMap = buildEloMap();
           availablePlayers.sort((a, b) => {
             const eloA = eloMap[a] ?? 1000;
             const eloB = eloMap[b] ?? 1000;
             return eloB - eloA;
           });
-
           const namesParam = availablePlayers.map(n => encodeURIComponent(n)).join(',');
           window.location.hash = `#/create-tournament?date=${dateStr}&names=${namesParam}`;
         });
@@ -312,11 +397,10 @@ export function renderDoodle(container, params = {}) {
 
   function renderAll() {
     renderNav();
+    renderUserCalendar();
     renderMatrix();
     renderChangelog();
-    // Sync from local dev server file if available (any month, fire-and-forget)
     syncDoodleFromLocal(currentYear, currentMonth).catch(() => {});
-    // Sync from GitHub if configured (on-demand per month navigated to)
     const ym = `${currentYear}-${String(currentMonth).padStart(2, '0')}`;
     if (Store.getGitHubConfig()?.pat) {
       pullDoodleMonth(ym).then(({ content, updated }) => {
@@ -328,9 +412,9 @@ export function renderDoodle(container, params = {}) {
     }
   }
 
-  // Re-render when doodle data arrives asynchronously (e.g. from local file load)
   const unsubDoodle = State.on('doodle-changed', ({ year, month } = {}) => {
     if (!year || (year === currentYear && month === currentMonth)) {
+      renderUserCalendar();
       renderMatrix();
       renderChangelog();
     }

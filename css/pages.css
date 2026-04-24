@@ -470,6 +470,101 @@
   pointer-events: none;
 }
 
+/* ─── Doodle User Calendar Grid ─── */
+.doodle-cal-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 3px;
+}
+
+.doodle-cal-header {
+  text-align: center;
+  font-size: 0.6rem;
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-secondary);
+  padding: 2px 0 4px;
+}
+
+.doodle-cal-cell {
+  aspect-ratio: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm);
+  font-size: 0.7rem;
+  font-weight: var(--font-weight-medium);
+  border: 1px solid transparent;
+  user-select: none;
+}
+
+.doodle-cal-cell.inactive {
+  color: var(--text-disabled, var(--text-secondary));
+  opacity: 0.25;
+  cursor: default;
+}
+
+.doodle-cal-cell.doodle-cal-empty {
+  visibility: hidden;
+}
+
+.doodle-cal-cell.playable {
+  background: var(--bg-card);
+  border-color: var(--border);
+  cursor: pointer;
+  color: var(--text-primary);
+}
+
+.doodle-cal-cell.playable:hover:not(.past) {
+  border-color: var(--color-primary);
+  background: var(--color-primary-light);
+}
+
+.doodle-cal-cell.playable.selected {
+  background: var(--color-success-light);
+  border-color: var(--color-success);
+  color: var(--color-success);
+  font-weight: var(--font-weight-bold);
+}
+
+.doodle-cal-cell.past {
+  opacity: 0.35;
+  cursor: default;
+  pointer-events: none;
+}
+
+/* ─── Doodle Overall Collapsible ─── */
+.doodle-overall {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: var(--space-sm) var(--space-md);
+  background: var(--bg-card);
+}
+
+.doodle-overall-summary {
+  cursor: pointer;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-secondary);
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  padding: var(--space-xs) 0;
+}
+
+.doodle-overall-summary::-webkit-details-marker { display: none; }
+
+.doodle-overall-summary::before {
+  content: '▶';
+  font-size: 0.6rem;
+  transition: transform 0.15s;
+}
+
+.doodle-overall[open] .doodle-overall-summary::before {
+  transform: rotate(90deg);
+}
+
+
 /* ─── Attendance Calendar ─── */
 .attendance-calendar {
   display: grid;
