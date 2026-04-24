@@ -1424,6 +1424,213 @@ export async function generateOrUpdatePlayerSummary(playerName, onProgress) {
   return { newDates: newDates.length, upToDate: false };
 }
 
+// ─── Remote Data Generation ───────────────────────────────────────────────────
+
+/**
+ * Re-implement generate_players.py entirely in JS.
+ * Reads all match files from GitHub, replays ELO chronologically, computes
+ * all-time stats, and writes players.json back to the repo root.
+ *
+ * Output: [{ Name, ELO, PreviousELO, Wins, Losses, TotalPoints, Average, Tournaments }]
+ * Sorted by ELO descending.
+ *
+ * @param {function} [onProgress] - called with (label, total, index)
+ * @returns {Promise<{ written: number }>}
+ */
+export async function generatePlayersJson(onProgress) {
+  const cfg = getConfig();
+  if (!cfg?.owner || !cfg?.repo || !cfg?.pat) throw new Error('GitHub not configured');
+
+  const { processMatchElo } = await import('./elo.js');
+
+  onProgress?.('Loading all match files…', 0, 0);
+  const allMatches = await pullAllMatches((label, total, idx) => onProgress?.(`Loading: ${label}`, total, idx));
+
+  const INITIAL_ELO = 1000;
+
+  const valid = allMatches.filter(m => !(m.scoreTeam1 === 0 && m.scoreTeam2 === 0));
+  valid.sort((a, b) => {
+    const ak = `${a.date}.${String(a.roundNumber).padStart(2, '0')}`;
+    const bk = `${b.date}.${String(b.roundNumber).padStart(2, '0')}`;
+    return ak.localeCompare(bk);
+  });
+
+  // Replay ELO (processMatchElo tracks history per player)
+  const players = {};
+  for (const m of valid) {
+    processMatchElo(m, players);
+  }
+
+  // Compute previousElo from history (ELO at end of second-to-last played date)
+  function getPreviousElo(player) {
+    if (!player.history || player.history.length === 0) return INITIAL_ELO;
+    const dates = [...new Set(player.history.map(h => h.date))].sort();
+    if (dates.length <= 1) return INITIAL_ELO;
+    const prevDate = dates[dates.length - 2];
+    const prevEntries = player.history.filter(h => h.date === prevDate);
+    return prevEntries[prevEntries.length - 1].elo;
+  }
+
+  // Aggregate all-time stats from valid matches
+  const alltime = {};
+  for (const m of valid) {
+    const t1names = [m.team1Player1Name, m.team1Player2Name];
+    const t2names = [m.team2Player1Name, m.team2Player2Name];
+    const team1Won = m.scoreTeam1 > m.scoreTeam2;
+    for (const name of t1names) {
+      if (!alltime[name]) alltime[name] = { pts: 0, wins: 0, losses: 0, games: 0, dates: new Set() };
+      alltime[name].pts += m.scoreTeam1;
+      alltime[name].games++;
+      alltime[name].dates.add(m.date);
+      if (team1Won) alltime[name].wins++; else alltime[name].losses++;
+    }
+    for (const name of t2names) {
+      if (!alltime[name]) alltime[name] = { pts: 0, wins: 0, losses: 0, games: 0, dates: new Set() };
+      alltime[name].pts += m.scoreTeam2;
+      alltime[name].games++;
+      alltime[name].dates.add(m.date);
+      if (!team1Won) alltime[name].wins++; else alltime[name].losses++;
+    }
+  }
+
+  const result = Object.values(players)
+    .sort((a, b) => b.elo - a.elo)
+    .map(p => {
+      const at = alltime[p.name] || {};
+      const games = at.games || 1;
+      return {
+        Name: p.name,
+        ELO: p.elo,
+        PreviousELO: getPreviousElo(p),
+        Wins: at.wins ?? 0,
+        Losses: at.losses ?? 0,
+        TotalPoints: at.pts ?? 0,
+        Average: Math.round((at.pts ?? 0) / games * 100) / 100,
+        Tournaments: at.dates ? at.dates.size : 0,
+      };
+    });
+
+  const base = matchesBase();
+  const path = base ? `${base}/players.json` : 'players.json';
+  onProgress?.('Writing players.json…', 1, 1);
+  const existing = await readFile(path);
+  await writeFile(path, result, existing?.sha);
+
+  ghLog('GENERATE_PLAYERS_JSON', path, `${result.length} players`);
+  return { written: result.length };
+}
+
+/**
+ * Re-implement generate_monthly_overviews.py entirely in JS.
+ * Reads all match files from GitHub, replays ELO chronologically (running state
+ * across months, matching Python sequential update order), computes per-month
+ * stats, and writes players_overview.json into each monthly folder.
+ *
+ * Output per month: [{ Name, Total_Points, Wins, Losses, Average, ELO }]
+ * Sorted by ELO descending.
+ *
+ * @param {function} [onProgress] - called with (label, total, index)
+ * @returns {Promise<{ written: number }>}
+ */
+export async function generateMonthlyOverviews(onProgress) {
+  const cfg = getConfig();
+  if (!cfg?.owner || !cfg?.repo || !cfg?.pat) throw new Error('GitHub not configured');
+
+  const { calculateClassicElo } = await import('./elo.js');
+
+  onProgress?.('Loading all match files…', 0, 0);
+  const allMatches = await pullAllMatches((label, total, idx) => onProgress?.(`Loading: ${label}`, total, idx));
+
+  const INITIAL_ELO = 1000;
+
+  const valid = allMatches.filter(m => !(m.scoreTeam1 === 0 && m.scoreTeam2 === 0));
+  valid.sort((a, b) => {
+    const ak = `${a.date}.${String(a.roundNumber).padStart(2, '0')}`;
+    const bk = `${b.date}.${String(b.roundNumber).padStart(2, '0')}`;
+    return ak.localeCompare(bk);
+  });
+
+  // Group by YYYY-MM
+  const matchesByMonth = {};
+  for (const m of valid) {
+    const ym = m.date.slice(0, 7);
+    if (!matchesByMonth[ym]) matchesByMonth[ym] = [];
+    matchesByMonth[ym].push(m);
+  }
+  const sortedMonths = Object.keys(matchesByMonth).sort();
+
+  const eloState = {}; // running ELO across all months
+  const base = matchesBase();
+  let written = 0;
+
+  for (let i = 0; i < sortedMonths.length; i++) {
+    const ym = sortedMonths[i];
+    const monthMatches = matchesByMonth[ym];
+
+    onProgress?.(`Processing ${ym}…`, sortedMonths.length, i + 1);
+
+    // Compute monthly stats (points, wins, losses)
+    const monthStats = {};
+    for (const m of monthMatches) {
+      const { team1Player1Name: t1p1, team1Player2Name: t1p2, team2Player1Name: t2p1, team2Player2Name: t2p2, scoreTeam1, scoreTeam2 } = m;
+      const team1Won = scoreTeam1 > scoreTeam2;
+      for (const name of [t1p1, t1p2]) {
+        if (!monthStats[name]) monthStats[name] = { points: 0, wins: 0, losses: 0, games: 0 };
+        monthStats[name].points += scoreTeam1;
+        monthStats[name].games++;
+        if (team1Won) monthStats[name].wins++; else monthStats[name].losses++;
+      }
+      for (const name of [t2p1, t2p2]) {
+        if (!monthStats[name]) monthStats[name] = { points: 0, wins: 0, losses: 0, games: 0 };
+        monthStats[name].points += scoreTeam2;
+        monthStats[name].games++;
+        if (!team1Won) monthStats[name].wins++; else monthStats[name].losses++;
+      }
+    }
+
+    // Replay ELO for this month — sequential update order matching Python:
+    // update t1p1, t1p2 first (using original t2 ELOs), then t2p1/t2p2 using updated t1 ELOs
+    for (const m of monthMatches) {
+      const { team1Player1Name: t1p1, team1Player2Name: t1p2, team2Player1Name: t2p1, team2Player2Name: t2p2, scoreTeam1, scoreTeam2 } = m;
+      const team1Won = scoreTeam1 > scoreTeam2;
+      for (const name of [t1p1, t1p2, t2p1, t2p2]) {
+        if (!(name in eloState)) eloState[name] = INITIAL_ELO;
+      }
+      const t2p1Elo = eloState[t2p1];
+      const t2p2Elo = eloState[t2p2];
+      eloState[t1p1] = calculateClassicElo(eloState[t1p1], t2p1Elo, t2p2Elo, team1Won);
+      eloState[t1p2] = calculateClassicElo(eloState[t1p2], t2p1Elo, t2p2Elo, team1Won);
+      eloState[t2p1] = calculateClassicElo(t2p1Elo, eloState[t1p1], eloState[t1p2], !team1Won);
+      eloState[t2p2] = calculateClassicElo(t2p2Elo, eloState[t1p1], eloState[t1p2], !team1Won);
+    }
+
+    // Build overview for this month
+    const overview = Object.entries(monthStats).map(([name, stats]) => ({
+      Name: name,
+      Total_Points: stats.points,
+      Wins: stats.wins,
+      Losses: stats.losses,
+      Average: stats.games > 0 ? Math.round(stats.points / stats.games * 100) / 100 : 0,
+      ELO: eloState[name] ?? INITIAL_ELO,
+    }));
+    overview.sort((a, b) => b.ELO - a.ELO);
+
+    const year = ym.slice(0, 4);
+    const prefix = base ? `${base}/` : '';
+    const path = `${prefix}${year}/${ym}/players_overview.json`;
+    try {
+      const existing = await readFile(path);
+      await writeFile(path, overview, existing?.sha);
+      written++;
+    } catch (e) {
+      console.warn(`[github] failed to write ${path}:`, e);
+    }
+  }
+
+  ghLog('GENERATE_MONTHLY_OVERVIEWS', '-', `${written} months written`);
+  return { written };
+}
+
 /**
  * Push a single doodle file to GitHub immediately (bypasses debounce).
  * Returns a Promise that resolves when the write completes.

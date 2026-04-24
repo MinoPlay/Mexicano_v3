@@ -2,7 +2,7 @@ import { Store } from '../store.js';
 import { getMembers, addMember, removeMember } from '../services/members.js';
 import { renderThemeToggle } from '../components/theme-toggle.js';
 import { showToast } from '../components/toast.js';
-import { testConnection, onSyncStatus, getSyncStatus } from '../services/github.js';
+import { testConnection, onSyncStatus, getSyncStatus, generatePlayersJson, generateMonthlyOverviews } from '../services/github.js';
 
 function renderMembersList(listEl) {
   const members = getMembers();
@@ -86,7 +86,21 @@ export function renderSettings(container, params) {
         <div id="github-status-msg" class="text-sm mt-sm" style="min-height:1.25rem;"></div>
       </div>
 
-      <!-- Player Summaries -->
+      <!-- Remote Data Tools -->
+      <div class="settings-section" id="remote-data-section" style="display:none;">
+        <div class="settings-section-title">Remote Data Tools</div>
+        <p class="text-sm text-secondary" style="margin-bottom:var(--space-sm);">
+          Regenerate pre-computed data files in the GitHub repository.
+          Reads all match files, recomputes stats &amp; ELO, and commits results directly to the repo.
+        </p>
+        <div class="flex flex-col gap-sm">
+          <button id="gen-players-btn" class="btn btn-primary" style="width:100%;">Generate players.json</button>
+          <button id="gen-overviews-btn" class="btn btn-secondary" style="width:100%;">Generate monthly overviews</button>
+        </div>
+        <div id="remote-data-status" class="text-sm mt-sm" style="min-height:1.25rem;"></div>
+      </div>
+
+
       <div class="settings-section" id="player-summaries-section" style="display:none;">
         <div class="settings-section-title">Player Summary</div>
         <p class="text-sm text-secondary" style="margin-bottom:var(--space-sm);">
@@ -293,5 +307,64 @@ export function renderSettings(container, params) {
   container.querySelector('#github-clear-btn').addEventListener('click', () => {
     summariesSection.style.display = 'none';
     setSummariesMsg('');
+  }, { capture: true });
+
+  // ─── Remote Data Tools ────────────────────────────────────────────────────
+
+  const remoteDataSection = container.querySelector('#remote-data-section');
+  const genPlayersBtn     = container.querySelector('#gen-players-btn');
+  const genOverviewsBtn   = container.querySelector('#gen-overviews-btn');
+  const remoteDataStatus  = container.querySelector('#remote-data-status');
+
+  function setRemoteDataMsg(msg, isError = false) {
+    remoteDataStatus.textContent = msg;
+    remoteDataStatus.style.color = isError ? 'var(--color-danger, #ef4444)' : 'var(--color-success, #22c55e)';
+  }
+
+  function refreshRemoteDataSection() {
+    remoteDataSection.style.display = Store.getGitHubConfig()?.pat ? '' : 'none';
+  }
+  refreshRemoteDataSection();
+
+  function setRemoteBtnsDisabled(disabled) {
+    genPlayersBtn.disabled   = disabled;
+    genOverviewsBtn.disabled = disabled;
+  }
+
+  genPlayersBtn.addEventListener('click', async () => {
+    setRemoteBtnsDisabled(true);
+    setRemoteDataMsg('Loading match files…');
+    try {
+      const { written } = await generatePlayersJson((label) => setRemoteDataMsg(label));
+      setRemoteDataMsg(`Done! players.json written with ${written} players.`);
+      showToast('players.json generated');
+    } catch (e) {
+      setRemoteDataMsg(`Error: ${e.message}`, true);
+      showToast('Failed to generate players.json', 'error');
+    } finally {
+      setRemoteBtnsDisabled(false);
+    }
+  });
+
+  genOverviewsBtn.addEventListener('click', async () => {
+    setRemoteBtnsDisabled(true);
+    setRemoteDataMsg('Loading match files…');
+    try {
+      const { written } = await generateMonthlyOverviews((label) => setRemoteDataMsg(label));
+      setRemoteDataMsg(`Done! Written ${written} monthly overview file${written !== 1 ? 's' : ''}.`);
+      showToast('Monthly overviews generated');
+    } catch (e) {
+      setRemoteDataMsg(`Error: ${e.message}`, true);
+      showToast('Failed to generate overviews', 'error');
+    } finally {
+      setRemoteBtnsDisabled(false);
+    }
+  });
+
+  // Keep remote data section in sync with GitHub config changes
+  container.querySelector('#github-save-btn').addEventListener('click', refreshRemoteDataSection, { capture: true });
+  container.querySelector('#github-clear-btn').addEventListener('click', () => {
+    remoteDataSection.style.display = 'none';
+    setRemoteDataMsg('');
   }, { capture: true });
 }
