@@ -48,14 +48,15 @@ function drawLineChart(canvas, datasets, options = {}) {
   const yMax = rawYMax !== undefined ? rawYMax : Math.ceil(dataYMax + (dataYMax - dataYMin) * 0.1);
   const yRange = yMax - yMin || 1;
 
-  // Minimal padding — no axis labels
-  const pad = { top: title ? 28 : 10, right: 10, bottom: 10, left: 8 };
+  // Padding: left space for Y-axis labels
+  const pad = { top: title ? 28 : 10, right: 10, bottom: 10, left: 40 };
   const plotW = W - pad.left - pad.right;
   const plotH = H - pad.top - pad.bottom;
 
   ctx.clearRect(0, 0, W, H);
 
   const cssVar = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  const textColor = cssVar('--text-secondary') || '#64748b';
   const gridColor = cssVar('--border-light') || '#f1f5f9';
   const bgColor = cssVar('--bg-card') || '#ffffff';
 
@@ -69,17 +70,23 @@ function drawLineChart(canvas, datasets, options = {}) {
     ctx.fillText(title, W / 2, 18);
   }
 
-  // Horizontal grid lines only (no labels)
+  // Horizontal grid lines + Y-axis labels
   const gridLines = 5;
   ctx.strokeStyle = gridColor;
   ctx.lineWidth = 1;
+  ctx.fillStyle = textColor;
+  ctx.font = `10px ${cssVar('--font-family') || 'sans-serif'}`;
+  ctx.textAlign = 'right';
+  ctx.textBaseline = 'middle';
   for (let i = 0; i <= gridLines; i++) {
     const ratio = i / gridLines;
     const y = pad.top + plotH - ratio * plotH;
+    const val = yMin + ratio * yRange;
     ctx.beginPath();
     ctx.moveTo(pad.left, y);
     ctx.lineTo(pad.left + plotW, y);
     ctx.stroke();
+    ctx.fillText(Math.round(val).toString(), pad.left - 4, y);
   }
 
   const xCount = xLabels.length || 1;
@@ -135,12 +142,14 @@ function drawLineChart(canvas, datasets, options = {}) {
 function setupTooltip(canvas, formatLabel) {
   let tooltip = null;
   let stickyTooltip = null;
+  let stickyDismiss = null;
 
   function removeTooltip() {
     if (tooltip) { tooltip.remove(); tooltip = null; }
   }
 
   function removeStickyTooltip() {
+    if (stickyDismiss) { document.removeEventListener('click', stickyDismiss); stickyDismiss = null; }
     if (stickyTooltip) { stickyTooltip.remove(); stickyTooltip = null; }
   }
 
@@ -173,18 +182,38 @@ function setupTooltip(canvas, formatLabel) {
   function makeTooltipEl(closest, sticky = false) {
     const el = document.createElement('div');
     const deltaSign = closest.delta > 0 ? '+' : '';
-    const deltaStr = closest.delta !== 0 ? ` · ${deltaSign}${closest.delta}` : '';
-    const line1 = closest.label;
-    const line2 = `${closest.pointLabel ? closest.pointLabel + ' · ' : ''}ELO ${Math.round(closest.value)}${deltaStr}`;
+    const deltaStr = closest.delta !== 0 ? `${deltaSign}${closest.delta}` : '—';
+    const pointLabelStr = closest.pointLabel || '';
 
     el.style.cssText = `
       position:absolute;pointer-events:none;background:var(--text-primary);color:var(--bg);
-      padding:5px 9px;border-radius:6px;font-size:11px;white-space:nowrap;z-index:${sticky ? 15 : 10};
-      transform:translate(-50%,-100%);margin-top:-10px;line-height:1.4;
+      padding:6px 10px;border-radius:6px;font-size:11px;white-space:nowrap;z-index:${sticky ? 15 : 10};
+      transform:translate(-50%,-100%);margin-top:-10px;line-height:1.6;
       ${sticky ? 'box-shadow:0 2px 8px rgba(0,0,0,.4);' : ''}
     `;
-    el.innerHTML = `<div style="font-weight:600">${line1}</div><div style="opacity:.85">${line2}</div>`;
+    el.innerHTML = `
+      <div style="font-weight:700;margin-bottom:2px">${closest.label}</div>
+      ${pointLabelStr ? `<div>${pointLabelStr}</div>` : ''}
+      <div>${Math.round(closest.value)}</div>
+      <div>${deltaStr}</div>
+    `;
 
+    const parent = canvas.parentElement;
+    parent.style.position = 'relative';
+    el.style.left = closest.x + 'px';
+    el.style.top = closest.y + 'px';
+    parent.appendChild(el);
+    return el;
+  }
+
+  function makeHoverTooltipEl(closest) {
+    const el = document.createElement('div');
+    el.style.cssText = `
+      position:absolute;pointer-events:none;background:var(--text-primary);color:var(--bg);
+      padding:4px 8px;border-radius:4px;font-size:11px;white-space:nowrap;z-index:10;
+      transform:translate(-50%,-100%);margin-top:-8px;line-height:1.4;
+    `;
+    el.textContent = `${closest.label} · ${Math.round(closest.value)}`;
     const parent = canvas.parentElement;
     parent.style.position = 'relative';
     el.style.left = closest.x + 'px';
@@ -196,30 +225,32 @@ function setupTooltip(canvas, formatLabel) {
   canvas.addEventListener('mousemove', e => {
     const closest = findClosest(e.clientX, e.clientY);
     removeTooltip();
-    if (closest) tooltip = makeTooltipEl(closest, false);
+    if (closest) tooltip = makeHoverTooltipEl(closest);
   });
 
   canvas.addEventListener('mouseleave', removeTooltip);
 
   canvas.addEventListener('click', e => {
+    e.stopPropagation();
     const closest = findClosest(e.clientX, e.clientY);
     removeStickyTooltip();
     if (closest) {
       stickyTooltip = makeTooltipEl(closest, true);
-      const dismiss = () => { removeStickyTooltip(); document.removeEventListener('click', dismiss); };
-      setTimeout(() => document.addEventListener('click', dismiss, { once: true }), 0);
+      stickyDismiss = () => { removeStickyTooltip(); };
+      setTimeout(() => document.addEventListener('click', stickyDismiss, { once: true }), 0);
     }
   });
 
   canvas.addEventListener('touchstart', e => {
     if (e.touches.length === 1) {
+      e.stopPropagation();
       const t = e.touches[0];
       const closest = findClosest(t.clientX, t.clientY);
       removeStickyTooltip();
       if (closest) {
         stickyTooltip = makeTooltipEl(closest, true);
-        const dismiss = () => { removeStickyTooltip(); document.removeEventListener('touchstart', dismiss); };
-        setTimeout(() => document.addEventListener('touchstart', dismiss, { once: true }), 0);
+        stickyDismiss = () => { removeStickyTooltip(); };
+        setTimeout(() => document.addEventListener('touchstart', stickyDismiss, { once: true }), 0);
       }
     }
   }, { passive: true });
@@ -364,19 +395,42 @@ function renderMemberPicker(container, { allMembers, selectedMembers, colorMap, 
   }
 }
 
+// ─── localStorage helpers ───
+
+const LS_KEY = 'elo-charts-prefs';
+
+function loadPrefs() {
+  try { return JSON.parse(localStorage.getItem(LS_KEY) || '{}'); } catch { return {}; }
+}
+
+function savePrefs(prefs) {
+  try { localStorage.setItem(LS_KEY, JSON.stringify(prefs)); } catch {}
+}
+
 // ─── Section builder ───
 
-function buildChartSection({ container, title, metaText, controls, pickerEl, canvasHeight = 220 }) {
+function buildChartSection({ container, title, metaText, controls, canvasHeight = 220, storageKey, onToggle }) {
   const wrap = document.createElement('div');
   wrap.style.cssText = 'margin-bottom:var(--space-lg);';
 
-  // Section header
+  // Section header — acts as collapse toggle
   const header = document.createElement('div');
-  header.className = 'elo-section-header';
+  header.className = 'elo-section-header elo-section-header--collapsible';
+  header.style.cursor = 'pointer';
+  header.style.userSelect = 'none';
+
+  const titleRow = document.createElement('div');
+  titleRow.style.cssText = 'display:flex;align-items:center;gap:6px;';
+  const chevron = document.createElement('span');
+  chevron.className = 'elo-section-chevron';
+  chevron.textContent = '▾';
   const titleEl = document.createElement('span');
   titleEl.className = 'elo-section-title';
   titleEl.textContent = title;
-  header.appendChild(titleEl);
+  titleRow.appendChild(chevron);
+  titleRow.appendChild(titleEl);
+  header.appendChild(titleRow);
+
   if (metaText) {
     const meta = document.createElement('span');
     meta.className = 'elo-section-meta';
@@ -385,14 +439,12 @@ function buildChartSection({ container, title, metaText, controls, pickerEl, can
   }
   wrap.appendChild(header);
 
-  // Controls row
-  if (controls) wrap.appendChild(controls);
+  // Collapsible body
+  const body = document.createElement('div');
+  body.className = 'elo-section-body';
 
-  // Member picker
-  if (pickerEl) {
-    pickerEl.style.padding = '0 var(--space-md)';
-    wrap.appendChild(pickerEl);
-  }
+  // Controls row
+  if (controls) body.appendChild(controls);
 
   // Chart box (full-bleed)
   const box = document.createElement('div');
@@ -402,14 +454,39 @@ function buildChartSection({ container, title, metaText, controls, pickerEl, can
   canvas.style.width = '100%';
   canvas.style.height = `${canvasHeight}px`;
   box.appendChild(canvas);
-  wrap.appendChild(box);
+  body.appendChild(box);
 
-  // Legend placeholder
-  const legendEl = document.createElement('div');
-  wrap.appendChild(legendEl);
-
+  wrap.appendChild(body);
   container.appendChild(wrap);
-  return { canvas, legendEl };
+
+  // Collapse logic
+  const prefs = loadPrefs();
+  let collapsed = storageKey ? (prefs[storageKey + '-collapsed'] === true) : false;
+
+  function applyCollapse(animate = false) {
+    chevron.textContent = collapsed ? '▶' : '▼';
+    chevron.style.color = collapsed ? 'var(--color-primary)' : '';
+    if (animate) {
+      body.style.transition = 'opacity 0.15s ease';
+    }
+    body.style.display = collapsed ? 'none' : '';
+    body.style.opacity = collapsed ? '0' : '1';
+    if (onToggle) onToggle(collapsed);
+  }
+
+  applyCollapse(false);
+
+  header.addEventListener('click', () => {
+    collapsed = !collapsed;
+    applyCollapse(true);
+    if (storageKey) {
+      const p = loadPrefs();
+      p[storageKey + '-collapsed'] = collapsed;
+      savePrefs(p);
+    }
+  });
+
+  return { canvas };
 }
 
 // ─── Main Render ───
@@ -476,91 +553,85 @@ export function renderEloCharts(container, params = {}) {
     const allMemberNames = getMembers();
     const colorMap = getMemberColorMap(allMemberNames);
 
+    // Load persisted prefs
+    const prefs = loadPrefs();
+    const savedMembers = prefs['selected-members'];
+
     const currentUser = Store.getCurrentUser();
     const selectedMembers = new Set();
-    if (currentUser && allMemberNames.some(m => m.toLowerCase() === currentUser.toLowerCase())) {
-      selectedMembers.add(allMemberNames.find(m => m.toLowerCase() === currentUser.toLowerCase()));
-    } else {
-      allMemberNames.forEach(m => selectedMembers.add(m));
-    }
 
-    // ── Smooth state (shared) ──
-    let smooth = false;
-
-    const cleanupFns = [];
-
-    // ═══════════════════════════════════════════
-    // Section 1: Latest Tournament
-    // ═══════════════════════════════════════════
-
-    const tournamentPickerEl = document.createElement('div');
-    tournamentPickerEl.className = 'elo-member-picker';
-
-    const { canvas: tCanvas, legendEl: tLegendEl } = buildChartSection({
-      container: content,
-      title: 'Latest Tournament',
-      controls: null,
-      pickerEl: tournamentPickerEl,
-      canvasHeight: 220,
-    });
-
-    let tCleanupTooltip = null;
-    let tResizeHandler = null;
-
-    function renderTournamentChart() {
-      if (tCleanupTooltip) { tCleanupTooltip(); tCleanupTooltip = null; }
-      if (tResizeHandler) { window.removeEventListener('resize', tResizeHandler); tResizeHandler = null; }
-
-      const history = getEloHistoryForLatestTournament(allMatches);
-      filterHistoryToMembers(history);
-      filterHistoryToSelected(history, selectedMembers);
-
-      const datasets = buildDatasets(history, colorMap, pt => `Round ${pt.round}`);
-
-      tLegendEl.innerHTML = '';
-      if (!datasets.length) return;
-
-      function draw() {
-        drawLineChart(tCanvas, datasets, { xLabels: history.rounds || [], smooth });
-      }
-      requestAnimationFrame(draw);
-
-      renderLegend(tLegendEl, datasets);
-      tCleanupTooltip = setupTooltip(tCanvas);
-
-      tResizeHandler = () => requestAnimationFrame(draw);
-      window.addEventListener('resize', tResizeHandler);
-    }
-
-    function renderTournamentPicker() {
-      renderMemberPicker(tournamentPickerEl, {
-        allMembers: allMemberNames,
-        selectedMembers,
-        colorMap,
-        onChange: () => { renderTournamentPicker(); renderTournamentChart(); renderHistoryChart(); renderHistoryPicker(); },
+    if (savedMembers && Array.isArray(savedMembers) && savedMembers.length > 0) {
+      // Restore saved selection, keeping only still-valid members
+      const validSet = new Set(allMemberNames.map(m => m.toLowerCase()));
+      savedMembers.forEach(name => {
+        const exact = allMemberNames.find(m => m.toLowerCase() === name.toLowerCase());
+        if (exact && validSet.has(name.toLowerCase())) selectedMembers.add(exact);
       });
     }
 
-    renderTournamentPicker();
-    renderTournamentChart();
+    if (selectedMembers.size === 0) {
+      if (currentUser && allMemberNames.some(m => m.toLowerCase() === currentUser.toLowerCase())) {
+        selectedMembers.add(allMemberNames.find(m => m.toLowerCase() === currentUser.toLowerCase()));
+      } else {
+        allMemberNames.forEach(m => selectedMembers.add(m));
+      }
+    }
 
-    cleanupFns.push(() => {
-      if (tCleanupTooltip) tCleanupTooltip();
-      if (tResizeHandler) window.removeEventListener('resize', tResizeHandler);
+    function persistMembers() {
+      const p = loadPrefs();
+      p['selected-members'] = [...selectedMembers];
+      savePrefs(p);
+    }
+
+    // ── Smooth state (shared) ──
+    let smooth = prefs['smooth'] === true;
+
+    const cleanupFns = [];
+
+    // ── Shared member picker (above both sections) ──
+    const sharedPickerEl = document.createElement('div');
+    sharedPickerEl.className = 'elo-member-picker';
+    sharedPickerEl.style.cssText = 'padding:var(--space-sm) var(--space-md);';
+    content.appendChild(sharedPickerEl);
+
+    function renderSharedPicker() {
+      renderMemberPicker(sharedPickerEl, {
+        allMembers: allMemberNames,
+        selectedMembers,
+        colorMap,
+        onChange: () => { persistMembers(); renderSharedPicker(); renderTournamentChart(); renderHistoryChart(); },
+      });
+    }
+
+    // ── Shared controls bar: smooth toggle only (applies to both charts) ──
+    const sharedControlsEl = document.createElement('div');
+    sharedControlsEl.className = 'elo-controls';
+    sharedControlsEl.style.cssText = 'padding:0 var(--space-md) var(--space-xs);';
+    content.appendChild(sharedControlsEl);
+
+    const smoothBtn = document.createElement('button');
+    smoothBtn.className = 'elo-control-btn' + (smooth ? ' active' : '');
+    smoothBtn.title = 'Toggle smooth/rough lines';
+    smoothBtn.textContent = smooth ? '〰 Smooth' : '⟋ Straight';
+    smoothBtn.addEventListener('click', () => {
+      smooth = !smooth;
+      smoothBtn.classList.toggle('active', smooth);
+      smoothBtn.textContent = smooth ? '〰 Smooth' : '⟋ Straight';
+      const p = loadPrefs(); p['smooth'] = smooth; savePrefs(p);
+      renderTournamentChart();
+      renderHistoryChart();
     });
+    sharedControlsEl.appendChild(smoothBtn);
 
-    // ═══════════════════════════════════════════
-    // Section 2: ELO History
-    // ═══════════════════════════════════════════
+    // ── Interval controls (ELO History only) ──
+    let interval = prefs['interval'] || '3m';
+    let customFrom = prefs['custom-from'] || '';
+    let customTo = prefs['custom-to'] || '';
 
-    // interval state
-    let interval = '3m'; // '1m' | '3m' | '6m' | 'custom'
-    let customFrom = '';
-    let customTo = '';
+    const historyControlsWrap = document.createElement('div');
 
-    // Controls row
-    const controlsRow = document.createElement('div');
-    controlsRow.className = 'elo-controls';
+    const intervalRow = document.createElement('div');
+    intervalRow.className = 'elo-controls';
 
     const intervals = [
       { id: '1m', label: '1M' },
@@ -578,35 +649,16 @@ export function renderEloCharts(container, params = {}) {
         interval = id;
         Object.entries(intervalBtns).forEach(([k, b]) => b.classList.toggle('active', k === id));
         customRangeEl.style.display = id === 'custom' ? 'flex' : 'none';
+        const p = loadPrefs(); p['interval'] = interval; savePrefs(p);
         renderHistoryChart();
       });
       intervalBtns[id] = btn;
-      controlsRow.appendChild(btn);
+      intervalRow.appendChild(btn);
     });
 
-    // Divider
-    const divider = document.createElement('span');
-    divider.className = 'elo-control-divider';
-    controlsRow.appendChild(divider);
-
-    // Smooth toggle
-    const smoothBtn = document.createElement('button');
-    smoothBtn.className = 'elo-control-btn' + (smooth ? ' active' : '');
-    smoothBtn.title = 'Toggle smooth/rough lines';
-    smoothBtn.textContent = smooth ? '〰' : '⟋';
-    smoothBtn.addEventListener('click', () => {
-      smooth = !smooth;
-      smoothBtn.classList.toggle('active', smooth);
-      smoothBtn.textContent = smooth ? '〰' : '⟋';
-      renderTournamentChart();
-      renderHistoryChart();
-    });
-    controlsRow.appendChild(smoothBtn);
-
-    // Custom date range row
     const customRangeEl = document.createElement('div');
     customRangeEl.className = 'elo-custom-range';
-    customRangeEl.style.display = 'none';
+    customRangeEl.style.display = interval === 'custom' ? 'flex' : 'none';
 
     const fromLabel = document.createElement('span');
     fromLabel.className = 'elo-custom-range-label';
@@ -614,7 +666,11 @@ export function renderEloCharts(container, params = {}) {
     const fromInput = document.createElement('input');
     fromInput.type = 'date';
     fromInput.value = customFrom;
-    fromInput.addEventListener('change', () => { customFrom = fromInput.value; renderHistoryChart(); });
+    fromInput.addEventListener('change', () => {
+      customFrom = fromInput.value;
+      const p = loadPrefs(); p['custom-from'] = customFrom; savePrefs(p);
+      renderHistoryChart();
+    });
 
     const toLabel = document.createElement('span');
     toLabel.className = 'elo-custom-range-label';
@@ -622,27 +678,75 @@ export function renderEloCharts(container, params = {}) {
     const toInput = document.createElement('input');
     toInput.type = 'date';
     toInput.value = customTo;
-    toInput.addEventListener('change', () => { customTo = toInput.value; renderHistoryChart(); });
+    toInput.addEventListener('change', () => {
+      customTo = toInput.value;
+      const p = loadPrefs(); p['custom-to'] = customTo; savePrefs(p);
+      renderHistoryChart();
+    });
 
     customRangeEl.appendChild(fromLabel);
     customRangeEl.appendChild(fromInput);
     customRangeEl.appendChild(toLabel);
     customRangeEl.appendChild(toInput);
 
-    // Wrap controls + customRange into a single fragment for buildChartSection
-    const controlsWrap = document.createElement('div');
-    controlsWrap.appendChild(controlsRow);
-    controlsWrap.appendChild(customRangeEl);
+    historyControlsWrap.appendChild(intervalRow);
+    historyControlsWrap.appendChild(customRangeEl);
 
-    const historyPickerEl = document.createElement('div');
-    historyPickerEl.className = 'elo-member-picker';
+    // ═══════════════════════════════════════════
+    // Section 1: Latest Tournament
+    // ═══════════════════════════════════════════
 
-    const { canvas: hCanvas, legendEl: hLegendEl } = buildChartSection({
+    const { canvas: tCanvas } = buildChartSection({
+      container: content,
+      title: 'Latest Tournament',
+      controls: null,
+      canvasHeight: 220,
+      storageKey: 'tournament',
+    });
+
+    let tCleanupTooltip = null;
+    let tResizeHandler = null;
+
+    function renderTournamentChart() {
+      if (tCleanupTooltip) { tCleanupTooltip(); tCleanupTooltip = null; }
+      if (tResizeHandler) { window.removeEventListener('resize', tResizeHandler); tResizeHandler = null; }
+
+      const history = getEloHistoryForLatestTournament(allMatches, [...selectedMembers]);
+      filterHistoryToMembers(history);
+      filterHistoryToSelected(history, selectedMembers);
+
+      const datasets = buildDatasets(history, colorMap, pt => `Round ${pt.round}`);
+
+      if (!datasets.length) return;
+
+      function draw() {
+        drawLineChart(tCanvas, datasets, { xLabels: history.rounds || [], smooth });
+      }
+      requestAnimationFrame(draw);
+
+      tCleanupTooltip = setupTooltip(tCanvas);
+
+      tResizeHandler = () => requestAnimationFrame(draw);
+      window.addEventListener('resize', tResizeHandler);
+    }
+
+    renderTournamentChart();
+
+    cleanupFns.push(() => {
+      if (tCleanupTooltip) tCleanupTooltip();
+      if (tResizeHandler) window.removeEventListener('resize', tResizeHandler);
+    });
+
+    // ═══════════════════════════════════════════
+    // Section 2: ELO History
+    // ═══════════════════════════════════════════
+
+    const { canvas: hCanvas } = buildChartSection({
       container: content,
       title: 'ELO History',
-      controls: controlsWrap,
-      pickerEl: historyPickerEl,
+      controls: historyControlsWrap,
       canvasHeight: 260,
+      storageKey: 'history',
     });
 
     let hCleanupTooltip = null;
@@ -666,7 +770,6 @@ export function renderEloCharts(container, params = {}) {
 
       const datasets = buildDatasets(history, colorMap, pt => pt.date ? formatDateShort(pt.date) : `Round ${pt.round}`);
 
-      hLegendEl.innerHTML = '';
       if (!datasets.length) return;
 
       function draw() {
@@ -674,23 +777,13 @@ export function renderEloCharts(container, params = {}) {
       }
       requestAnimationFrame(draw);
 
-      renderLegend(hLegendEl, datasets);
       hCleanupTooltip = setupTooltip(hCanvas);
 
       hResizeHandler = () => requestAnimationFrame(draw);
       window.addEventListener('resize', hResizeHandler);
     }
 
-    function renderHistoryPicker() {
-      renderMemberPicker(historyPickerEl, {
-        allMembers: allMemberNames,
-        selectedMembers,
-        colorMap,
-        onChange: () => { renderHistoryPicker(); renderTournamentPicker(); renderTournamentChart(); renderHistoryChart(); },
-      });
-    }
-
-    renderHistoryPicker();
+    renderSharedPicker();
     renderHistoryChart();
 
     cleanupFns.push(() => {

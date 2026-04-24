@@ -631,10 +631,12 @@
 
 .elo-section-header {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
-  padding: var(--space-sm) var(--space-md) 0;
+  padding: var(--space-xs) var(--space-md);
   gap: var(--space-sm);
+  border-top: 1px solid var(--border-light);
+  margin-top: var(--space-sm);
 }
 
 .elo-section-title {
@@ -644,6 +646,32 @@
   text-transform: uppercase;
   letter-spacing: 0.05em;
   flex-shrink: 0;
+}
+
+.elo-section-header--collapsible {
+  transition: background var(--transition-fast);
+  border-radius: var(--radius-sm);
+}
+
+.elo-section-header--collapsible:hover {
+  background: var(--bg-secondary);
+}
+
+.elo-section-header--collapsible:hover .elo-section-title {
+  color: var(--text-primary);
+}
+
+.elo-section-chevron {
+  font-size: 0.65rem;
+  color: var(--text-tertiary);
+  transition: color var(--transition-fast);
+  flex-shrink: 0;
+  width: 14px;
+  text-align: center;
+}
+
+.elo-section-header--collapsible:hover .elo-section-chevron {
+  color: var(--color-primary);
 }
 
 .elo-section-meta {

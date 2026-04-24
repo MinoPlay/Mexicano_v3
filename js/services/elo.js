@@ -164,14 +164,30 @@ export function getEloHistoryForDateRange(allMatches, fromStr, toStr) {
   return { players: filteredPlayers, dates: filteredDates };
 }
 
-export function getEloHistoryForLatestTournament(allMatches) {
+/**
+ * Returns ELO history for the latest tournament that involved any of the given players.
+ * Pass playerNames=null (or omit) to use the global latest tournament.
+ */
+export function getEloHistoryForLatestTournament(allMatches, playerNames = null) {
   const validMatches = allMatches.filter(m => !(m.scoreTeam1 === 0 && m.scoreTeam2 === 0));
   if (validMatches.length === 0) return {};
 
   const sorted = [...validMatches].sort((a, b) => buildSortKey(a).localeCompare(buildSortKey(b)));
 
   const dates = [...new Set(sorted.map(m => m.date))].sort();
-  const latestDate = dates[dates.length - 1];
+
+  // Find latest date where any of the selected players participated
+  let latestDate;
+  if (playerNames && playerNames.length > 0) {
+    const playerSet = new Set(playerNames.map(n => n.toLowerCase()));
+    const isInvolved = (m) =>
+      [m.team1Player1Name, m.team1Player2Name, m.team2Player1Name, m.team2Player2Name]
+        .some(n => playerSet.has((n || '').toLowerCase()));
+    const involvedDates = dates.filter(d => sorted.some(m => m.date === d && isInvolved(m)));
+    latestDate = involvedDates.length > 0 ? involvedDates[involvedDates.length - 1] : dates[dates.length - 1];
+  } else {
+    latestDate = dates[dates.length - 1];
+  }
 
   // Process all matches up to and including the latest tournament
   const players = {};
