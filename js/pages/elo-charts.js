@@ -562,12 +562,14 @@ export function renderEloCharts(container, params = {}) {
         <p class="text-secondary text-sm">This may take a moment</p>
       </div>`;
 
-      import('../services/github.js').then(({ readEloHistory }) =>
-        readEloHistory()
-      ).then(history => {
-        if (history) {
-          eloHistoryData = history;
-          try { localStorage.setItem('mexicano_elo_history', JSON.stringify(history)); } catch {}
+      import('../services/github.js').then(({ pullForRoute }) =>
+        pullForRoute('#/elo-charts')
+      ).then(() => {
+        const cached = (() => {
+          try { return JSON.parse(localStorage.getItem('mexicano_elo_history') || 'null'); } catch { return null; }
+        })();
+        if (cached) {
+          eloHistoryData = cached;
           content.innerHTML = '';
           content.style.paddingLeft = '0';
           content.style.paddingRight = '0';
