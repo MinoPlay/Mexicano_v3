@@ -684,8 +684,37 @@ export function renderStatistics(container, params = {}) {
         renderSortableTable(tableContainer, stats, name => showPlayerProfile(name));
         return;
       }
-      // Fall back to aggregated monthly overviews (already cached locally, no fetch)
+      // Fall back to aggregated monthly overviews — fetch missing months if needed
       const freshOverviewMonths = Store.getMonthlyOverviewMonths();
+      const loadedMonthsSet = new Set(freshOverviewMonths);
+      const missingMonths = allTournamentMonths.filter(m => !loadedMonthsSet.has(m));
+
+      if (missingMonths.length > 0 && Store.getGitHubConfig()?.pat) {
+        tableContainer.innerHTML = `<div class="empty-state">
+          <div class="empty-state-icon">⏳</div>
+          <div class="empty-state-text">Loading all monthly overviews…</div>
+          <p class="text-secondary text-sm">${missingMonths.length} month(s) remaining</p>
+        </div>`;
+        import('../services/github.js')
+          .then(({ pullAllOverviews }) => pullAllOverviews())
+          .then(() => {
+            if (!tableContainer.isConnected) return;
+            const stats = aggregateOverviews();
+            tableContainer.innerHTML = '';
+            if (!stats.length) {
+              tableContainer.innerHTML = '<p class="text-secondary text-center mt-lg">No data for this filter</p>';
+              return;
+            }
+            attachEloFromSummary(stats, 'alltime');
+            renderSortableTable(tableContainer, stats, null);
+          })
+          .catch(e => {
+            if (!tableContainer.isConnected) return;
+            tableContainer.innerHTML = `<div class="empty-state text-danger">Failed to load: ${e.message}</div>`;
+          });
+        return;
+      }
+
       if (freshOverviewMonths.length > 0) {
         const stats = aggregateOverviews();
         tableContainer.innerHTML = '';

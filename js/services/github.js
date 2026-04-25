@@ -669,6 +669,11 @@ function isFreshInSession(key) {
   } catch { return false; }
 }
 
+/** Clear the session TTL for a key so the next pull always re-fetches. */
+export function clearSessionTTL(key) {
+  try { sessionStorage.removeItem(`mexicano_gh_ts_${key}`); } catch { /* unavailable */ }
+}
+
 /** Parse a raw players_overview.json entry (PascalCase) to camelCase. */
 function fromOverview(p) {
   return {
@@ -998,6 +1003,60 @@ async function pullHomeData() {
 }
 
 /**
+ * Pull only what the elo-charts page needs from GitHub.
+ * Fetches players.json, tournaments.json, and elo_history.json.
+ *
+ * No-op if already fresh in this session.
+ * @returns {Promise<boolean>} true if any data was fetched
+ */
+async function pullEloChartsData() {
+  const cfg = getConfig();
+  if (!cfg?.owner || !cfg?.repo || !cfg?.pat) return false;
+  if (isFreshInSession('elo_charts')) return false;
+
+  ghLog('PULL_ELO_CHARTS', '-', 'start');
+  const base = matchesBase();
+
+  // ── 1. players.json ──────────────────────────────────────────────────────────
+  const playersPath = base ? `${base}/players.json` : 'players.json';
+  try {
+    const result = await readFile(playersPath);
+    if (result?.content && Array.isArray(result.content)) {
+      const camelPlayers = result.content.map(p => ({
+        name: p.Name,
+        elo: p.ELO,
+        previousElo: p.PreviousELO ?? p.ELO,
+        wins: p.Wins ?? null,
+        losses: p.Losses ?? null,
+        points: p.TotalPoints ?? null,
+        average: p.Average ?? null,
+        tournaments: p.Tournaments ?? null,
+      }));
+      localStorage.setItem('mexicano_players_summary', JSON.stringify(camelPlayers));
+      localStorage.setItem('mexicano_members', JSON.stringify(camelPlayers.map(p => p.name).sort()));
+    }
+  } catch { /* players.json may not exist yet */ }
+
+  // ── 2. tournaments.json ──────────────────────────────────────────────────────
+  try {
+    await fetchTournamentsIndex({ create: false });
+  } catch { /* tournaments.json may not exist */ }
+
+  // ── 3. elo_history.json ──────────────────────────────────────────────────────
+  const eloHistoryPath = base ? `${base}/elo_history.json` : 'elo_history.json';
+  try {
+    const result = await readFile(eloHistoryPath);
+    if (result?.content) {
+      localStorage.setItem('mexicano_elo_history', JSON.stringify(result.content));
+    }
+  } catch { /* elo_history.json may not exist yet */ }
+
+  markFetched('elo_charts');
+  ghLog('PULL_ELO_CHARTS', '-', 'done');
+  return true;
+}
+
+/**
  * Pull only what the current route needs from GitHub.
  * Replaces pullAll() for the auto-pull on page load.
  *
@@ -1036,6 +1095,12 @@ export async function pullForRoute(hash) {
       return { updated };
     }
 
+    // Elo charts page: fetch players, tournaments, elo_history
+    if (path === '/elo-charts') {
+      const updated = await pullEloChartsData();
+      return { updated };
+    }
+
     let updated = await pullCoreData();
 
     if (path === '/doodle') {
@@ -1052,6 +1117,67 @@ export async function pullForRoute(hash) {
   } finally {
     _isPulling = false;
   }
+}
+
+/**
+ * Refresh data for the current route, clearing TTLs first so pull always re-fetches.
+ * Reports progress via onStep(type, label, status) callbacks.
+ *
+ * @param {string} hash - window.location.hash
+ * @param {Function} [onStep] - (type: 'add'|'update', label: string, status: string) => void
+ * @returns {Promise<{ updated: boolean }>}
+ */
+export async function refreshCurrentPage(hash, onStep) {
+  const cfg = getConfig();
+  if (!cfg?.pat) throw new Error('GitHub not configured');
+
+  const path = (hash || '').replace(/^#/, '').split('?')[0] || '/';
+
+  // Clear TTLs so next pull always re-fetches
+  if (path === '/') {
+    clearSessionTTL('home');
+  } else if (path === '/tournaments') {
+    clearSessionTTL('tournaments_page');
+  } else if (path === '/elo-charts') {
+    clearSessionTTL('elo_charts');
+  } else if (path === '/settings') {
+    clearSessionTTL('settings');
+  } else {
+    clearSessionTTL('core');
+    const now = new Date();
+    for (const offset of [-1, 0]) {
+      const d = new Date(now.getFullYear(), now.getMonth() + offset, 1);
+      const ym = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      clearSessionTTL(`overview_${ym}`);
+    }
+  }
+  if (path === '/doodle') {
+    const now = new Date();
+    for (const offset of [0, 1]) {
+      const d = new Date(now.getFullYear(), now.getMonth() + offset, 1);
+      const ym = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      clearSessionTTL(`doodle_${ym}`);
+    }
+  }
+
+  const steps = _getRefreshSteps(path);
+  steps.forEach(s => onStep?.('add', s, 'pending'));
+
+  if (steps.length > 0) onStep?.('update', steps[0], 'loading');
+  const result = await pullForRoute(hash);
+  steps.forEach(s => onStep?.('update', s, 'done'));
+  return result;
+}
+
+function _getRefreshSteps(path) {
+  if (path === '/') return ['players.json', 'tournaments.json', 'Latest match data'];
+  if (path === '/tournaments') return ['players.json', 'tournaments.json'];
+  if (path === '/elo-charts') return ['players.json', 'elo_history.json'];
+  if (path === '/statistics') return ['players.json', 'tournaments.json', 'Monthly overviews'];
+  if (path === '/doodle') return ['Core data', 'Doodle schedules'];
+  if (path === '/settings') return ['players.json'];
+  if (path.startsWith('/tournament/')) return ['Core data', 'Match data'];
+  return ['players.json', 'tournaments.json', 'Monthly data'];
 }
 
 /**
@@ -1428,14 +1554,14 @@ export async function generateOrUpdatePlayerSummary(playerName, onProgress) {
 
 /**
  * Re-implement generate_players.py entirely in JS.
- * Reads all match files from GitHub, replays ELO chronologically, computes
- * all-time stats, and writes players.json back to the repo root.
+ * Incremental: reads existing players.json + players_meta.json to skip already-
+ * processed dates. Falls back to full rebuild when no existing data is found.
  *
  * Output: [{ Name, ELO, PreviousELO, Wins, Losses, TotalPoints, Average, Tournaments }]
  * Sorted by ELO descending.
  *
  * @param {function} [onProgress] - called with (label, total, index)
- * @returns {Promise<{ written: number }>}
+ * @returns {Promise<{ written: number, upToDate?: boolean }>}
  */
 export async function generatePlayersJson(onProgress) {
   const cfg = getConfig();
@@ -1443,26 +1569,80 @@ export async function generatePlayersJson(onProgress) {
 
   const { processMatchElo } = await import('./elo.js');
 
-  onProgress?.('Loading all match files…', 0, 0);
-  const allMatches = await pullAllMatches((label, total, idx) => onProgress?.(`Loading: ${label}`, total, idx));
-
   const INITIAL_ELO = 1000;
+  const base = matchesBase();
+  const playersPath = base ? `${base}/players.json` : 'players.json';
+  const metaPath    = base ? `${base}/players_meta.json` : 'players_meta.json';
 
-  const valid = allMatches.filter(m => !(m.scoreTeam1 === 0 && m.scoreTeam2 === 0));
+  // ── 1. Read existing players.json and players_meta.json ──────────────────
+  onProgress?.('Checking for new tournaments…', 0, 0);
+
+  const [existingPlayersResult, existingMetaResult] = await Promise.all([
+    readFile(playersPath).catch(() => null),
+    readFile(metaPath).catch(() => null),
+  ]);
+
+  const existingPlayers    = Array.isArray(existingPlayersResult?.content) ? existingPlayersResult.content : [];
+  const existingPlayersSha = existingPlayersResult?.sha ?? undefined;
+  const lastGeneratedDate  = existingMetaResult?.content?.lastGeneratedDate ?? null;
+  const existingMetaSha    = existingMetaResult?.sha ?? undefined;
+
+  // ── 2. Get all known tournament dates ────────────────────────────────────
+  let allDates = Store.getTournamentsIndex().map(e => e.date);
+  if (allDates.length === 0) {
+    allDates = JSON.parse(localStorage.getItem('mexicano_tournament_dates') || '[]');
+  }
+  if (allDates.length === 0) {
+    const entries = await fetchTournamentsIndex({ create: true });
+    allDates = (entries || []).map(e => e.date);
+  }
+  allDates.sort();
+
+  // ── 3. Filter to only new dates ──────────────────────────────────────────
+  const newDates = (lastGeneratedDate && existingPlayers.length > 0)
+    ? allDates.filter(d => d > lastGeneratedDate)
+    : allDates;
+
+  if (newDates.length === 0) {
+    ghLog('GENERATE_PLAYERS_JSON', playersPath, 'up-to-date');
+    return { written: existingPlayers.length, upToDate: true };
+  }
+
+  const isIncremental = !!(lastGeneratedDate && existingPlayers.length > 0);
+
+  // ── 4. Fetch match files for new dates ───────────────────────────────────
+  const newMatches = [];
+  for (let i = 0; i < newDates.length; i++) {
+    onProgress?.(`Fetching ${newDates[i]}`, newDates.length, i + 1);
+    const dayMatches = await readDayMatches(newDates[i]);
+    newMatches.push(...dayMatches);
+  }
+
+  const valid = newMatches.filter(m => !(m.scoreTeam1 === 0 && m.scoreTeam2 === 0));
   valid.sort((a, b) => {
     const ak = `${a.date}.${String(a.roundNumber).padStart(2, '0')}`;
     const bk = `${b.date}.${String(b.roundNumber).padStart(2, '0')}`;
     return ak.localeCompare(bk);
   });
 
-  // Replay ELO (processMatchElo tracks history per player)
+  // ── 5. Replay ELO, seeding from existing data when incremental ───────────
   const players = {};
+  if (isIncremental) {
+    for (const p of existingPlayers) {
+      players[p.Name] = { name: p.Name, elo: p.ELO, history: [] };
+    }
+  }
   for (const m of valid) {
     processMatchElo(m, players);
   }
 
-  // Compute previousElo from history (ELO at end of second-to-last played date)
+  // PreviousELO: in incremental mode = existing ELO (before this batch);
+  // in full-rebuild mode = ELO at end of second-to-last date in history.
   function getPreviousElo(player) {
+    if (isIncremental) {
+      const existing = existingPlayers.find(p => p.Name === player.name);
+      if (existing) return existing.ELO;
+    }
     if (!player.history || player.history.length === 0) return INITIAL_ELO;
     const dates = [...new Set(player.history.map(h => h.date))].sort();
     if (dates.length <= 1) return INITIAL_ELO;
@@ -1471,21 +1651,34 @@ export async function generatePlayersJson(onProgress) {
     return prevEntries[prevEntries.length - 1].elo;
   }
 
-  // Aggregate all-time stats from valid matches
+  // ── 6. Aggregate stats (seed from existing totals in incremental mode) ───
   const alltime = {};
+  if (isIncremental) {
+    for (const p of existingPlayers) {
+      alltime[p.Name] = {
+        pts:                 p.TotalPoints ?? 0,
+        wins:                p.Wins        ?? 0,
+        losses:              p.Losses      ?? 0,
+        games:               (p.Wins ?? 0) + (p.Losses ?? 0),
+        dates:               new Set(),
+        existingTournaments: p.Tournaments ?? 0,
+      };
+    }
+  }
+
   for (const m of valid) {
-    const t1names = [m.team1Player1Name, m.team1Player2Name];
-    const t2names = [m.team2Player1Name, m.team2Player2Name];
+    const t1names  = [m.team1Player1Name, m.team1Player2Name];
+    const t2names  = [m.team2Player1Name, m.team2Player2Name];
     const team1Won = m.scoreTeam1 > m.scoreTeam2;
     for (const name of t1names) {
-      if (!alltime[name]) alltime[name] = { pts: 0, wins: 0, losses: 0, games: 0, dates: new Set() };
+      if (!alltime[name]) alltime[name] = { pts: 0, wins: 0, losses: 0, games: 0, dates: new Set(), existingTournaments: 0 };
       alltime[name].pts += m.scoreTeam1;
       alltime[name].games++;
       alltime[name].dates.add(m.date);
       if (team1Won) alltime[name].wins++; else alltime[name].losses++;
     }
     for (const name of t2names) {
-      if (!alltime[name]) alltime[name] = { pts: 0, wins: 0, losses: 0, games: 0, dates: new Set() };
+      if (!alltime[name]) alltime[name] = { pts: 0, wins: 0, losses: 0, games: 0, dates: new Set(), existingTournaments: 0 };
       alltime[name].pts += m.scoreTeam2;
       alltime[name].games++;
       alltime[name].dates.add(m.date);
@@ -1493,31 +1686,104 @@ export async function generatePlayersJson(onProgress) {
     }
   }
 
-  const result = Object.values(players)
-    .sort((a, b) => b.elo - a.elo)
-    .map(p => {
-      const at = alltime[p.name] || {};
-      const games = at.games || 1;
+  // ── 7. Build result (include existing players who had no new matches) ─────
+  const allPlayerNames = new Set([
+    ...Object.keys(players),
+    ...(isIncremental ? existingPlayers.map(p => p.Name) : []),
+  ]);
+
+  const result = [...allPlayerNames]
+    .map(name => {
+      const player = players[name];
+      const at     = alltime[name] || {};
+      const games  = at.games || 1;
+
+      if (!player) {
+        // Existing player with no new matches — carry forward unchanged
+        const ep = existingPlayers.find(p => p.Name === name);
+        return ep ? { ...ep } : null;
+      }
+
       return {
-        Name: p.name,
-        ELO: p.elo,
-        PreviousELO: getPreviousElo(p),
-        Wins: at.wins ?? 0,
-        Losses: at.losses ?? 0,
-        TotalPoints: at.pts ?? 0,
-        Average: Math.round((at.pts ?? 0) / games * 100) / 100,
-        Tournaments: at.dates ? at.dates.size : 0,
+        Name:        player.name,
+        ELO:         player.elo,
+        PreviousELO: getPreviousElo(player),
+        Wins:        at.wins   ?? 0,
+        Losses:      at.losses ?? 0,
+        TotalPoints: at.pts    ?? 0,
+        Average:     Math.round((at.pts ?? 0) / games * 100) / 100,
+        Tournaments: (at.existingTournaments ?? 0) + (at.dates ? at.dates.size : 0),
       };
-    });
+    })
+    .filter(Boolean)
+    .sort((a, b) => b.ELO - a.ELO);
+
+  // ── 8. Write players.json and players_meta.json ───────────────────────────
+  const newLastDate = newDates[newDates.length - 1];
+
+  onProgress?.('Writing players.json…', 1, 1);
+  await Promise.all([
+    writeFile(playersPath, result, existingPlayersSha),
+    writeFile(metaPath, { lastGeneratedDate: newLastDate }, existingMetaSha),
+  ]);
+
+  ghLog('GENERATE_PLAYERS_JSON', playersPath, `${result.length} players (${isIncremental ? 'incremental' : 'full rebuild'})`);
+  return { written: result.length };
+}
+
+/**
+ * Generate elo_history.json from all match files.
+ * Reads all match files, computes ELO history for all players, and writes
+ * elo_history.json to the repo.
+ *
+ * @param {function} [onProgress] - called with (label, total, index)
+ * @returns {Promise<{ written: number }>}
+ */
+export async function generateEloHistory(onProgress) {
+  const cfg = getConfig();
+  if (!cfg?.owner || !cfg?.repo || !cfg?.pat) throw new Error('GitHub not configured');
+
+  const { getEloHistoryAllTime } = await import('./elo.js');
+
+  onProgress?.('Loading all match files…', 0, 0);
+  const allMatches = await pullAllMatches((label, total, idx) => onProgress?.(`Loading: ${label}`, total, idx));
+
+  onProgress?.('Computing ELO history…', 1, 1);
+  const history = getEloHistoryAllTime(allMatches);
+
+  const output = {
+    generatedAt: new Date().toISOString(),
+    players: history.players,
+    dates: history.dates,
+  };
 
   const base = matchesBase();
-  const path = base ? `${base}/players.json` : 'players.json';
-  onProgress?.('Writing players.json…', 1, 1);
-  const existing = await readFile(path);
-  await writeFile(path, result, existing?.sha);
+  const eloHistoryPath = base ? `${base}/elo_history.json` : 'elo_history.json';
+  onProgress?.('Writing elo_history.json…', 1, 1);
+  const existing = await readFile(eloHistoryPath);
+  await writeFile(eloHistoryPath, output, existing?.sha);
 
-  ghLog('GENERATE_PLAYERS_JSON', path, `${result.length} players`);
-  return { written: result.length };
+  const playerCount = Object.keys(output.players).length;
+  ghLog('GENERATE_ELO_HISTORY', eloHistoryPath, `${playerCount} players`);
+  return { written: playerCount };
+}
+
+/**
+ * Read elo_history.json from GitHub.
+ * @returns {Promise<object|null>} parsed content or null if not found / not configured
+ */
+export async function readEloHistory() {
+  const cfg = getConfig();
+  if (!cfg?.owner || !cfg?.repo || !cfg?.pat) return null;
+
+  const base = matchesBase();
+  const eloHistoryPath = base ? `${base}/elo_history.json` : 'elo_history.json';
+  try {
+    const result = await readFile(eloHistoryPath);
+    return result?.content ?? null;
+  } catch {
+    return null;
+  }
 }
 
 /**

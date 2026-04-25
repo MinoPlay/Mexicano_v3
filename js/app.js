@@ -5,7 +5,8 @@ import { renderNav } from './components/nav.js';
 import { initTheme } from './components/theme-toggle.js';
 import { mountSyncIndicator, setSyncBusy } from './components/sync-indicator.js';
 import { showToast } from './components/toast.js';
-import { pullAll, pullForRoute } from './services/github.js';
+import { showRefreshDialog } from './components/refresh-dialog.js';
+import { pullForRoute } from './services/github.js';
 
 // Pages
 import { renderHome } from './pages/home.js';
@@ -94,14 +95,24 @@ async function init() {
   // Mount sync indicator (needs GitHub config to be loaded first)
   if (Store.getGitHubConfig()?.pat) {
     mountSyncIndicator(async () => {
+      const pageName = getPageName(window.location.hash);
+      const dialog = showRefreshDialog(pageName);
       setSyncBusy(true);
       try {
-        await pullAll();
-        sessionStorage.setItem('mexicano_github_just_pulled', 'true');
-        sessionStorage.setItem('mexicano_sync_result', 'updated');
-        location.reload();
+        const { refreshCurrentPage } = await import('./services/github.js');
+        const { updated } = await refreshCurrentPage(window.location.hash, (type, label, status) => {
+          if (type === 'add') dialog.addStep(label, status);
+          else if (type === 'update') dialog.markStep(label, status);
+        });
+        dialog.close();
+        if (updated) {
+          router.resolve();
+        }
+        showToast(updated ? '✅ Data updated' : '✓ Already up to date');
       } catch (e) {
-        showToast(`⚠️ Sync failed: ${e.message}`);
+        dialog.setError(e.message);
+        showToast(`⚠️ Refresh failed: ${e.message}`);
+      } finally {
         setSyncBusy(false);
       }
     });
@@ -165,6 +176,21 @@ const routes = {
 
 // Initialize router
 const router = new Router(routes, pageContainer);
+
+function getPageName(hash) {
+  const path = (hash || '').replace(/^#/, '').split('?')[0] || '/';
+  const names = {
+    '/': 'Home',
+    '/tournaments': 'Tournaments',
+    '/statistics': 'Statistics',
+    '/elo-charts': 'ELO Charts',
+    '/attendance': 'Attendance',
+    '/doodle': 'Doodle',
+    '/settings': 'Settings',
+  };
+  if (path.startsWith('/tournament/')) return 'Tournament';
+  return names[path] || 'Data';
+}
 
 // Register service worker
 if ('serviceWorker' in navigator) {
