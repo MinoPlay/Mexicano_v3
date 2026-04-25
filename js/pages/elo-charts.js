@@ -371,6 +371,60 @@ function renderMemberPicker(container, { allMembers, selectedMembers, colorMap, 
   }
 }
 
+// ─── ELO History Adapters (from pre-computed elo_history.json) ───
+
+function eloHistoryForPeriod(eloData, months) {
+  if (!eloData || !eloData.dates) return { players: {}, dates: [] };
+  let dates = eloData.dates;
+  if (months) {
+    const cutoff = new Date();
+    cutoff.setMonth(cutoff.getMonth() - months);
+    const cutoffStr = cutoff.toISOString().slice(0, 10);
+    dates = dates.filter(d => d >= cutoffStr);
+  }
+  const dateSet = new Set(dates);
+  const players = {};
+  for (const [name, points] of Object.entries(eloData.players)) {
+    const pts = points.filter(p => dateSet.has(p.date));
+    if (pts.length > 0) players[name] = pts;
+  }
+  return { players, dates };
+}
+
+function eloHistoryForDateRange(eloData, fromStr, toStr) {
+  if (!eloData || !eloData.dates) return { players: {}, dates: [] };
+  const dates = eloData.dates.filter(d => (!fromStr || d >= fromStr) && (!toStr || d <= toStr));
+  const dateSet = new Set(dates);
+  const players = {};
+  for (const [name, points] of Object.entries(eloData.players)) {
+    const pts = points.filter(p => dateSet.has(p.date));
+    if (pts.length > 0) players[name] = pts;
+  }
+  return { players, dates };
+}
+
+function eloHistoryForLatestTournament(eloData, playerNames) {
+  if (!eloData || !eloData.dates || eloData.dates.length === 0) return { players: {}, rounds: [] };
+  let latestDate;
+  if (playerNames && playerNames.length > 0) {
+    const playerSet = new Set(playerNames.map(n => n.toLowerCase()));
+    for (let i = eloData.dates.length - 1; i >= 0; i--) {
+      const d = eloData.dates[i];
+      const hasPlayer = Object.entries(eloData.players).some(([name, pts]) =>
+        playerSet.has(name.toLowerCase()) && pts.some(p => p.date === d)
+      );
+      if (hasPlayer) { latestDate = d; break; }
+    }
+  }
+  if (!latestDate) latestDate = eloData.dates[eloData.dates.length - 1];
+  const players = {};
+  for (const [name, points] of Object.entries(eloData.players)) {
+    const pt = points.find(p => p.date === latestDate);
+    if (pt) players[name] = [{ round: 1, elo: pt.elo, delta: pt.delta ?? 0 }];
+  }
+  return { players, rounds: [1] };
+}
+
 // ─── localStorage helpers ───
 
 const LS_KEY = 'elo-charts-prefs';
@@ -481,8 +535,18 @@ export function renderEloCharts(container, params = {}) {
   content.style.paddingRight = '0';
   container.appendChild(content);
 
+  const cachedEloHistory = (() => {
+    try { return JSON.parse(localStorage.getItem('mexicano_elo_history') || 'null'); } catch { return null; }
+  })();
+
   let allMatches = Store.getMatches();
+  let eloHistoryData = cachedEloHistory;
   let _chartCleanup = null;
+
+  if (eloHistoryData) {
+    _chartCleanup = renderChartContent();
+    return () => { if (_chartCleanup) _chartCleanup(); };
+  }
 
   const needsFullLoad = !Store.isMatchesFullyLoaded() && Store.getGitHubConfig()?.pat;
 
@@ -498,14 +562,27 @@ export function renderEloCharts(container, params = {}) {
         <p class="text-secondary text-sm">This may take a moment</p>
       </div>`;
 
-      import('../services/github.js').then(({ ensureAllMatchesLoaded }) =>
-        ensureAllMatchesLoaded()
-      ).then(matches => {
-        allMatches = matches;
-        content.innerHTML = '';
-        content.style.paddingLeft = '0';
-        content.style.paddingRight = '0';
-        _chartCleanup = renderChartContent();
+      import('../services/github.js').then(({ readEloHistory }) =>
+        readEloHistory()
+      ).then(history => {
+        if (history) {
+          eloHistoryData = history;
+          try { localStorage.setItem('mexicano_elo_history', JSON.stringify(history)); } catch {}
+          content.innerHTML = '';
+          content.style.paddingLeft = '0';
+          content.style.paddingRight = '0';
+          _chartCleanup = renderChartContent();
+          return;
+        }
+        return import('../services/github.js').then(({ ensureAllMatchesLoaded }) =>
+          ensureAllMatchesLoaded()
+        ).then(matches => {
+          allMatches = matches;
+          content.innerHTML = '';
+          content.style.paddingLeft = '0';
+          content.style.paddingRight = '0';
+          _chartCleanup = renderChartContent();
+        });
       }).catch(() => {
         content.innerHTML = `<div class="empty-state">
           <div class="empty-state-icon">❌</div>
@@ -696,7 +773,9 @@ export function renderEloCharts(container, params = {}) {
       if (tCleanupTooltip) { tCleanupTooltip(); tCleanupTooltip = null; }
       if (tResizeHandler) { window.removeEventListener('resize', tResizeHandler); tResizeHandler = null; }
 
-      const history = getEloHistoryForLatestTournament(allMatches, [...selectedMembers]);
+      const history = eloHistoryData
+        ? eloHistoryForLatestTournament(eloHistoryData, [...selectedMembers])
+        : getEloHistoryForLatestTournament(allMatches, [...selectedMembers]);
       filterHistoryToMembers(history);
       filterHistoryToSelected(history, selectedMembers);
 
@@ -738,6 +817,12 @@ export function renderEloCharts(container, params = {}) {
     let hResizeHandler = null;
 
     function getHistoryData() {
+      if (eloHistoryData) {
+        if (interval === 'custom') return eloHistoryForDateRange(eloHistoryData, customFrom || null, customTo || null);
+        if (interval === 'all') return eloHistoryForPeriod(eloHistoryData, null);
+        const monthsMap = { '1m': 1, '3m': 3, '6m': 6 };
+        return eloHistoryForPeriod(eloHistoryData, monthsMap[interval] ?? 3);
+      }
       if (interval === 'custom') {
         return getEloHistoryForDateRange(allMatches, customFrom || null, customTo || null);
       }

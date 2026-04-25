@@ -2,7 +2,7 @@ import { Store } from '../store.js';
 import { getMembers, addMember, removeMember } from '../services/members.js';
 import { renderThemeToggle } from '../components/theme-toggle.js';
 import { showToast } from '../components/toast.js';
-import { testConnection, onSyncStatus, getSyncStatus, generatePlayersJson, generateMonthlyOverviews } from '../services/github.js';
+import { testConnection, onSyncStatus, getSyncStatus, generatePlayersJson, generateMonthlyOverviews, generateEloHistory } from '../services/github.js';
 
 function renderMembersList(listEl) {
   const members = getMembers();
@@ -95,6 +95,7 @@ export function renderSettings(container, params) {
         </p>
         <div class="flex flex-col gap-sm">
           <button id="gen-players-btn" class="btn btn-primary" style="width:100%;">Generate players.json</button>
+          <button id="gen-elo-history-btn" class="btn btn-secondary" style="width:100%;">Generate elo_history.json</button>
           <div class="flex gap-sm">
             <input type="month" id="gen-overviews-month" style="flex:1;" />
             <button id="gen-overviews-btn" class="btn btn-secondary">Generate monthly overview</button>
@@ -316,6 +317,7 @@ export function renderSettings(container, params) {
 
   const remoteDataSection  = container.querySelector('#remote-data-section');
   const genPlayersBtn      = container.querySelector('#gen-players-btn');
+  const genEloHistoryBtn   = container.querySelector('#gen-elo-history-btn');
   const genOverviewsBtn    = container.querySelector('#gen-overviews-btn');
   const genOverviewsMonth  = container.querySelector('#gen-overviews-month');
   const remoteDataStatus   = container.querySelector('#remote-data-status');
@@ -335,8 +337,9 @@ export function renderSettings(container, params) {
   refreshRemoteDataSection();
 
   function setRemoteBtnsDisabled(disabled) {
-    genPlayersBtn.disabled   = disabled;
-    genOverviewsBtn.disabled = disabled;
+    genPlayersBtn.disabled    = disabled;
+    genEloHistoryBtn.disabled = disabled;
+    genOverviewsBtn.disabled  = disabled;
   }
 
   genPlayersBtn.addEventListener('click', async () => {
@@ -349,6 +352,22 @@ export function renderSettings(container, params) {
     } catch (e) {
       setRemoteDataMsg(`Error: ${e.message}`, true);
       showToast('Failed to generate players.json', 'error');
+    } finally {
+      setRemoteBtnsDisabled(false);
+    }
+  });
+
+  genEloHistoryBtn.addEventListener('click', async () => {
+    setRemoteBtnsDisabled(true);
+    setRemoteDataMsg('Loading match files…');
+    try {
+      const { written } = await generateEloHistory((label) => setRemoteDataMsg(label));
+      localStorage.removeItem('mexicano_elo_history');
+      setRemoteDataMsg(`Done! elo_history.json written with ${written} players.`);
+      showToast('elo_history.json generated');
+    } catch (e) {
+      setRemoteDataMsg(`Error: ${e.message}`, true);
+      showToast('Failed to generate elo_history.json', 'error');
     } finally {
       setRemoteBtnsDisabled(false);
     }
