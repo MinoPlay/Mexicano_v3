@@ -337,6 +337,14 @@ export function completeTournament(tournament) {
     }
 
     const yearMonth = tournament.tournamentDate.slice(0, 7);
+    // Order is critical: overview must be written before players.json.
+    // generateMonthlyOverviews seeds ELO from the previous month's overview and
+    // writes the current month's players_overview.json.  generatePlayersJson then
+    // increments from the existing players.json using those same match files.
+    // Writing them in this order keeps the ELO values shown on the Statistics page
+    // (overview) and the Home page (players.json) consistent.  If the overview
+    // write fails the whole chain aborts — players.json is never updated with a
+    // partial/stale state.
     Promise.resolve(flushPush())
       .then(() => generateMonthlyOverviews(yearMonth))
       .then(() => generatePlayersJson())
