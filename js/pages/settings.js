@@ -140,6 +140,13 @@ export function renderSettings(container, params) {
             Pull doodle availability from the Azure <code>Doodle</code> table and overwrite the
             local doodle JSON for the selected month. Uses the same connection string as Azure Upload.
           </p>
+          <p class="text-sm" style="margin:0 0 var(--space-sm);color:var(--color-warning,#f59e0b);">
+            ⚠️ First-time setup: Azure Storage must allow CORS from <code>https://minoplay.github.io</code>.
+            In the <a href="https://portal.azure.com" target="_blank" rel="noopener">Azure Portal</a>
+            → Storage account → <strong>Resource sharing (CORS)</strong> → Table service tab → add a rule:
+            origins <code>https://minoplay.github.io</code>, methods <code>DELETE GET HEAD OPTIONS PUT</code>,
+            headers <code>*</code>, max age <code>3600</code>.
+          </p>
           <div class="flex flex-col gap-sm">
             <label class="text-sm" for="azure-doodle-month">Month</label>
             <div class="flex gap-sm">

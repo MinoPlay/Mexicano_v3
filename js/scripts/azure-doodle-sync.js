@@ -58,7 +58,7 @@ async function queryDoodleMonth(tableEndpoint, accountName, accountKey, yearMont
       method: 'GET',
       headers: {
         'Authorization': `SharedKeyLite ${accountName}:${sig}`,
-        'Date': date,
+        'x-ms-date': date,
         'x-ms-version': '2019-02-02',
         'Accept': 'application/json;odata=minimalmetadata',
       },

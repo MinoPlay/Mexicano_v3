@@ -42,7 +42,7 @@ async function upsertAzureEntity(tableEndpoint, accountName, accountKey, entity)
     headers: {
       'Authorization': `SharedKeyLite ${accountName}:${sig}`,
       'Content-Type': 'application/json',
-      'Date': date,
+      'x-ms-date': date,
       'x-ms-version': '2019-02-02',
       'Accept': 'application/json;odata=minimalmetadata',
       'Prefer': 'return-no-content',
