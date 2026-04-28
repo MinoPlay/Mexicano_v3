@@ -33,7 +33,7 @@ import { generateMonthlyOverviews } from '../../js/scripts/generate-monthly-over
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function cfg() {
-  return { owner: 'MinoPlay', repo: 'DataHub', pat: 'token', basePath: 'base/backup-data' };
+  return { owner: 'MinoPlay', repo: 'DataHub_Mexicano', pat: 'token', basePath: 'base/backup-data' };
 }
 
 /** Build a camelCase match (post-fromBackupMatch). */

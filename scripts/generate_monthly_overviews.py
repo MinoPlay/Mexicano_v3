@@ -24,7 +24,7 @@ import re
 import glob
 from collections import defaultdict
 
-DATA_ROOT = r"C:\Private\DataHub\mexicano_v3\backup-data"
+DATA_ROOT = r"C:\Private\DataHub_Mexicano\mexicano_v3\backup-data"
 
 K = 32
 INITIAL_ELO = 1000

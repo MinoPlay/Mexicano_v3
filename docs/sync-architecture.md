@@ -138,5 +138,5 @@ These keys are **never touched** by `pullAll` (neither cleared nor overwritten):
 
 **Hardcoded values:**
 - `owner`: `MinoPlay`
-- `repo`: `DataHub`
+- `repo`: `DataHub_Mexicano`
 - `basePath`: `mexicano_v3/backup-data`

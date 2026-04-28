@@ -82,7 +82,7 @@ export function renderSettings(container, params) {
         </p>
         <div class="flex flex-col gap-sm">
           <input type="text"  id="github-owner"     value="MinoPlay"                   disabled style="opacity:0.6;cursor:not-allowed;" />
-          <input type="text"  id="github-repo"      value="DataHub"                    disabled style="opacity:0.6;cursor:not-allowed;" />
+          <input type="text"  id="github-repo"      value="DataHub_Mexicano"                    disabled style="opacity:0.6;cursor:not-allowed;" />
           <input type="password" id="github-pat"    placeholder="Personal Access Token (PAT)" maxlength="255" autocomplete="off" />
           <input type="text"  id="github-base-path" value="mexicano_v3/backup-data"    disabled style="opacity:0.6;cursor:not-allowed;" />
         </div>
@@ -284,7 +284,7 @@ export function renderSettings(container, params) {
       setGhStatusMsg('Personal Access Token is required.', true);
       return;
     }
-    Store.setGitHubConfig({ owner: 'MinoPlay', repo: 'DataHub', pat, basePath: 'mexicano_v3/backup-data' });
+    Store.setGitHubConfig({ owner: 'MinoPlay', repo: 'DataHub_Mexicano', pat, basePath: 'mexicano_v3/backup-data' });
     setGhStatusMsg('Configuration saved.');
     showToast('GitHub config saved');
   });
@@ -297,7 +297,7 @@ export function renderSettings(container, params) {
       return;
     }
     // Temporarily save to let testConnection() read from Store
-    Store.setGitHubConfig({ owner: 'MinoPlay', repo: 'DataHub', pat, basePath: 'mexicano_v3/backup-data' });
+    Store.setGitHubConfig({ owner: 'MinoPlay', repo: 'DataHub_Mexicano', pat, basePath: 'mexicano_v3/backup-data' });
     setGhStatusMsg('Testing connection…');
     updateSyncIcon('syncing');
     const result = await testConnection();

@@ -26,7 +26,7 @@ import { generatePlayersJson } from '../../js/scripts/generate-players-json.js';
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function cfg() {
-  return { owner: 'MinoPlay', repo: 'DataHub', pat: 'token', basePath: 'base/backup-data' };
+  return { owner: 'MinoPlay', repo: 'DataHub_Mexicano', pat: 'token', basePath: 'base/backup-data' };
 }
 
 function makeOverviewRow(name, elo, wins = 5, losses = 3, points = 80) {

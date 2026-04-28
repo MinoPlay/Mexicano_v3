@@ -16,7 +16,7 @@ import os
 import re
 import glob
 
-DATA_ROOT = os.path.join(os.path.dirname(__file__), '..', '..', 'DataHub', 'mexicano_v3', 'backup-data')
+DATA_ROOT = os.path.join(os.path.dirname(__file__), '..', '..', 'DataHub_Mexicano', 'mexicano_v3', 'backup-data')
 
 K = 32
 INITIAL_ELO = 1000

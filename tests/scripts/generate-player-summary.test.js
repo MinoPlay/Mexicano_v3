@@ -54,7 +54,7 @@ import { generateOrUpdatePlayerSummary } from '../../js/scripts/generate-player-
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function cfg() {
-  return { owner: 'MinoPlay', repo: 'DataHub', pat: 'token', basePath: 'base/backup-data' };
+  return { owner: 'MinoPlay', repo: 'DataHub_Mexicano', pat: 'token', basePath: 'base/backup-data' };
 }
 
 const SUMMARY_PATH = 'base/backup-data/players_summaries/summary_Alice.json';

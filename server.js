@@ -18,7 +18,7 @@ try {
 // ─── Local dev secrets (gitignored) ───
 const DEFAULT_GH_CONFIG = {
   owner: 'MinoPlay',
-  repo: 'DataHub',
+  repo: 'DataHub_Mexicano',
   basePath: 'mexicano_v3/backup-data',
 };
 let LOCAL_DEV_CONFIG = null;

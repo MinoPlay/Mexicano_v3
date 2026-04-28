@@ -5,7 +5,7 @@
 import { readFileSync, readdirSync, statSync } from 'fs';
 import { join, basename } from 'path';
 
-const BACKUP_DIR = 'C:\\Private\\DataHub\\mexicano_v3\\backup-data';
+const BACKUP_DIR = 'C:\\Private\\DataHub_Mexicano\\mexicano_v3\\backup-data';
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}\.json$/;
 
 export function loadAllMatches(backupDir = BACKUP_DIR) {
