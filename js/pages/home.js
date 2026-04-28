@@ -2,7 +2,7 @@ import { Store } from '../store.js';
 import { State } from '../state.js';
 import { renderThemeToggle } from '../components/theme-toggle.js';
 import { calculateAllEloRankings, getEloSnapshots, getEloForDate } from '../services/elo.js';
-import { getAllTournamentDates, getActiveTournament } from '../services/tournament.js';
+import { getLatestCompleteTournamentDate, getActiveTournament } from '../services/tournament.js';
 import { getMembers } from '../services/members.js';
 import { calculatePlayerStatistics } from '../services/statistics.js';
 
@@ -16,12 +16,11 @@ function formatDate(dateStr) {
 }
 
 export function renderHome(container, params) {
-  const tournamentDates = getAllTournamentDates();
   const activeTournament = getActiveTournament();
   const allMatches = Store.getMatches();
 
-  // Get latest tournament date (dates sorted newest first)
-  const latestDate = tournamentDates.length > 0 ? tournamentDates[0] : null;
+  // Get latest COMPLETE tournament date
+  const latestDate = getLatestCompleteTournamentDate();
 
   // Helper: attach ELO ratings to a stats array for the latest date
   function attachEloToStats(stats) {

@@ -457,6 +457,17 @@ export function loadTournamentByDate(date) {
   return tournament;
 }
 
+export function getLatestCompleteTournamentDate() {
+  const index = Store.getTournamentsIndex();
+  if (index.length > 0) {
+    const complete = index.filter(e => e.isComplete).sort((a, b) => b.date.localeCompare(a.date));
+    if (complete.length > 0) return complete[0].date;
+  }
+  // Fallback: no index data — use latest date regardless of completion status
+  const all = getAllTournamentDates();
+  return all.length > 0 ? all[0] : null;
+}
+
 export function getAllTournamentDates() {
   // Prefer pre-computed dates from pullAll summary
   const storedDates = Store.getTournamentDates();
