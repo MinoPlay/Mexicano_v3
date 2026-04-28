@@ -87,7 +87,7 @@ Writes happen via tournament lifecycle (see section below).
 |-----------|-----------------|------|
 | READ | `players.json` | Via `pullCoreData` on load |
 | READ | `tournaments.json` | Via `pullCoreData` on load |
-| READ | `YYYY/YYYY-MM/players_overview.json` | Current + prev month via `pullCoreData`; all months via `pullAllOverviews` |
+| READ | `YYYY/YYYY-MM/players_overview.json` | Current + prev month via `pullCoreData`; specific month lazy-fetched when user selects it |
 | READ | `YYYY/YYYY-MM/YYYY-MM-DD.json` | Lazy-loaded when user selects a date with no cached matches |
 
 No writes.

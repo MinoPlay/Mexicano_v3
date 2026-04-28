@@ -62,59 +62,6 @@ const STAT_COLUMNS = [
   { key: 'eloChange', label: 'WLO',  cls: 'num-cell' },
 ];
 
-// ─── Aggregate monthly overviews into all-time stats ───
-
-function aggregateOverviews() {
-  const months = Store.getMonthlyOverviewMonths();
-  const playerMap = {};
-
-  for (const m of months) {
-    const overview = Store.getMonthlyOverview(m);
-    for (const p of overview) {
-      if (!playerMap[p.name]) {
-        playerMap[p.name] = { name: p.name, wins: 0, losses: 0, points: 0 };
-      }
-      playerMap[p.name].wins += p.wins;
-      playerMap[p.name].losses += p.losses;
-      playerMap[p.name].points += p.totalPoints;
-    }
-  }
-
-  const stats = Object.values(playerMap).map(p => {
-    const totalMatches = p.wins + p.losses;
-    return {
-      rank: 0,
-      name: p.name,
-      wins: p.wins,
-      losses: p.losses,
-      points: p.points,
-      wl: totalMatches,
-      average: totalMatches > 0 ? Math.round((p.points / totalMatches) * 100) / 100 : 0,
-      winRate: totalMatches > 0 ? Math.round((p.wins / totalMatches) * 100 * 100) / 100 : 0,
-      change: 0,
-      tightWins: 0,
-      solidWins: 0,
-      dominatingWins: 0,
-    };
-  });
-
-  stats.sort((a, b) => {
-    if (b.average !== a.average) return b.average - a.average;
-    return b.winRate - a.winRate;
-  });
-
-  let currentRank = 1;
-  for (let i = 0; i < stats.length; i++) {
-    if (i > 0 && stats[i].average === stats[i - 1].average && stats[i].winRate === stats[i - 1].winRate) {
-      stats[i].rank = stats[i - 1].rank;
-    } else {
-      currentRank = i + 1;
-      stats[i].rank = currentRank;
-    }
-  }
-
-  return stats;
-}
 
 // ─── Convert monthly overview to stats rows ───
 
@@ -653,7 +600,7 @@ export function renderStatistics(container, params = {}) {
   }
 
   async function renderTable() {
-    // "All Time" — use players_summary (players.json) if it has win/loss data
+    // "All Time" — use players.json (players_summary); fall back to local match calculation only
     if (activeFilter === 'all') {
       const summary = Store.getPlayersSummary();
       if (summary.length > 0 && summary[0].wins != null) {
@@ -684,61 +631,20 @@ export function renderStatistics(container, params = {}) {
         renderSortableTable(tableContainer, stats, name => showPlayerProfile(name));
         return;
       }
-      // Fall back to aggregated monthly overviews — fetch missing months if needed
-      const freshOverviewMonths = Store.getMonthlyOverviewMonths();
-      const loadedMonthsSet = new Set(freshOverviewMonths);
-      const missingMonths = allTournamentMonths.filter(m => !loadedMonthsSet.has(m));
-
-      if (missingMonths.length > 0 && Store.getGitHubConfig()?.pat) {
-        tableContainer.innerHTML = `<div class="empty-state">
-          <div class="empty-state-icon">⏳</div>
-          <div class="empty-state-text">Loading all monthly overviews…</div>
-          <p class="text-secondary text-sm">${missingMonths.length} month(s) remaining</p>
-        </div>`;
-        import('../services/github.js')
-          .then(({ pullAllOverviews }) => pullAllOverviews())
-          .then(() => {
-            if (!tableContainer.isConnected) return;
-            const stats = aggregateOverviews();
-            tableContainer.innerHTML = '';
-            if (!stats.length) {
-              tableContainer.innerHTML = '<p class="text-secondary text-center mt-lg">No data for this filter</p>';
-              return;
-            }
-            attachEloFromSummary(stats, 'alltime');
-            renderSortableTable(tableContainer, stats, null);
-          })
-          .catch(e => {
-            if (!tableContainer.isConnected) return;
-            tableContainer.innerHTML = `<div class="empty-state text-danger">Failed to load: ${e.message}</div>`;
-          });
+      // Fallback: no players.json data — calculate from local matches
+      const stats = calculatePlayerStatistics(allMatches);
+      tableContainer.innerHTML = '';
+      if (!stats.length) {
+        tableContainer.innerHTML = '<p class="text-secondary text-center mt-lg">No data for this filter</p>';
         return;
       }
-
-      if (freshOverviewMonths.length > 0) {
-        const stats = aggregateOverviews();
-        tableContainer.innerHTML = '';
-        if (!stats.length) {
-          tableContainer.innerHTML = '<p class="text-secondary text-center mt-lg">No data for this filter</p>';
-          return;
-        }
-        attachEloFromSummary(stats, 'alltime');
-        renderSortableTable(tableContainer, stats, null);
-      } else {
-        const stats = calculatePlayerStatistics(allMatches);
-        tableContainer.innerHTML = '';
-        if (!stats.length) {
-          tableContainer.innerHTML = '<p class="text-secondary text-center mt-lg">No data for this filter</p>';
-          return;
-        }
-        const { rankings } = calculateAllEloRankings(allMatches);
-        const eloMap = {};
-        rankings.forEach(r => {
-          eloMap[r.name] = { elo: r.elo, eloChange: Math.round((r.elo - 1000) * 100) / 100 };
-        });
-        attachEloFromSnapshots(stats, eloMap);
-        renderSortableTable(tableContainer, stats, name => showPlayerProfile(name));
-      }
+      const { rankings } = calculateAllEloRankings(allMatches);
+      const eloMap = {};
+      rankings.forEach(r => {
+        eloMap[r.name] = { elo: r.elo, eloChange: Math.round((r.elo - 1000) * 100) / 100 };
+      });
+      attachEloFromSnapshots(stats, eloMap);
+      renderSortableTable(tableContainer, stats, name => showPlayerProfile(name));
       return;
     }
 
