@@ -748,7 +748,12 @@ async function pullCoreData() {
     if (atResult !== null) {
       localStorage.setItem('mexicano_active_tournament', JSON.stringify(atResult.content));
     } else {
-      localStorage.removeItem('mexicano_active_tournament');
+      // Only remove if no locally in-progress tournament exists.
+      // Preserves a tournament that hasn't been pushed to GitHub yet (push pending/failed).
+      const local = Store.getActiveTournament();
+      if (!local || local.isCompleted) {
+        localStorage.removeItem('mexicano_active_tournament');
+      }
     }
   } catch { /* data/ may not exist yet */ }
 
@@ -810,7 +815,10 @@ async function pullTournamentsPage() {
     if (atResult !== null) {
       localStorage.setItem('mexicano_active_tournament', JSON.stringify(atResult.content));
     } else {
-      localStorage.removeItem('mexicano_active_tournament');
+      const local = Store.getActiveTournament();
+      if (!local || local.isCompleted) {
+        localStorage.removeItem('mexicano_active_tournament');
+      }
     }
   } catch { /* data/ may not exist yet */ }
 
@@ -973,7 +981,10 @@ async function pullHomeData() {
     if (atResult !== null) {
       localStorage.setItem('mexicano_active_tournament', JSON.stringify(atResult.content));
     } else {
-      localStorage.removeItem('mexicano_active_tournament');
+      const local = Store.getActiveTournament();
+      if (!local || local.isCompleted) {
+        localStorage.removeItem('mexicano_active_tournament');
+      }
     }
   } catch { /* data/ may not exist yet */ }
 
