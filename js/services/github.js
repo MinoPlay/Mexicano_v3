@@ -676,13 +676,18 @@ export function clearSessionTTL(key) {
 
 /** Parse a raw players_overview.json entry (PascalCase) to camelCase. */
 function fromOverview(p) {
+  // ELO may be an array [{Date, ELO}, ...] (new format) or a plain number (legacy).
+  // Store the final ELO value for display in the monthly stats view.
+  const elo = Array.isArray(p.ELO)
+    ? (p.ELO.length > 0 ? p.ELO[p.ELO.length - 1].ELO : 1000)
+    : (p.ELO ?? 1000);
   return {
     name: p.Name,
     totalPoints: p.Total_Points,
     wins: p.Wins,
     losses: p.Losses,
     average: p.Average,
-    elo: p.ELO,
+    elo,
   };
 }
 

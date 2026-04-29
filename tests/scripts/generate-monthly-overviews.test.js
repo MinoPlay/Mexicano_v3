@@ -174,7 +174,9 @@ describe('generateMonthlyOverviews', () => {
 
     await generateMonthlyOverviews('2025-01');
     const [, payload] = mockWriteFile.mock.calls[0];
-    const elos = payload.map(p => p.ELO);
+
+    // ELO is now an array — extract last entry's ELO for sort check
+    const elos = payload.map(p => Array.isArray(p.ELO) ? p.ELO[p.ELO.length - 1].ELO : p.ELO);
 
     for (let i = 1; i < elos.length; i++) {
       expect(elos[i]).toBeLessThanOrEqual(elos[i - 1]);

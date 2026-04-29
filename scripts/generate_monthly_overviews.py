@@ -12,9 +12,12 @@ Output format per month:
     "Wins": 12,
     "Losses": 8,
     "Average": 12.25,
-    "ELO": 1042.57
+    "ELO": [
+      {"Date": "2024-01-10", "ELO": 1025.5},
+      {"Date": "2024-01-17", "ELO": 1042.57}
+    ]
   }, ...]
-  Sorted by ELO descending.
+  Sorted by last ELO entry descending.
 """
 
 import json
@@ -151,24 +154,44 @@ def main():
                 else:
                     month_stats[name]["losses"] += 1
 
-        # Replay ELO for this month's matches (updates running state)
+        # Replay ELO for this month's matches, snapshotting after each tournament day
+        # Group matches by date (tournament day) within the month
+        from collections import defaultdict as _dd
+        matches_by_day = _dd(list)
         for m in month_matches:
-            process_match_elo(m, elo_state)
+            matches_by_day[m["Date"]].append(m)
+        sorted_days = sorted(matches_by_day.keys())
+
+        # elo_snapshots[name] = list of {"Date": ..., "ELO": ...} in day order
+        elo_snapshots = {}
+        for day in sorted_days:
+            for m in matches_by_day[day]:
+                process_match_elo(m, elo_state)
+            # Collect all players who appear on this day
+            day_players = set()
+            for m in matches_by_day[day]:
+                for key in ("Team1Player1Name", "Team1Player2Name", "Team2Player1Name", "Team2Player2Name"):
+                    day_players.add(m[key])
+            for name in day_players:
+                if name not in elo_snapshots:
+                    elo_snapshots[name] = []
+                elo_snapshots[name].append({"Date": day, "ELO": elo_state[name]})
 
         # Build overview for this month
         overview = []
         for name, stats in month_stats.items():
             avg = round(stats["points"] / stats["games"] * 100) / 100 if stats["games"] > 0 else 0
+            snapshots = elo_snapshots.get(name, [{"Date": month + "-01", "ELO": elo_state.get(name, INITIAL_ELO)}])
             overview.append({
                 "Name": name,
                 "Total_Points": stats["points"],
                 "Wins": stats["wins"],
                 "Losses": stats["losses"],
                 "Average": avg,
-                "ELO": elo_state.get(name, INITIAL_ELO),
+                "ELO": snapshots,
             })
 
-        overview.sort(key=lambda p: p["ELO"], reverse=True)
+        overview.sort(key=lambda p: p["ELO"][-1]["ELO"] if p["ELO"] else INITIAL_ELO, reverse=True)
 
         # Write to the monthly folder
         year = month[:4]

@@ -62,7 +62,7 @@ export async function generatePlayersJson(onProgress) {
       playerTotals[name].wins   += p.Wins         ?? 0;
       playerTotals[name].losses += p.Losses       ?? 0;
       playerTotals[name].pts    += p.Total_Points ?? 0;
-      playerMonths[name].push({ yearMonth, elo: p.ELO ?? 1000 });
+      playerMonths[name].push({ yearMonth, elo: Array.isArray(p.ELO) ? (p.ELO.length > 0 ? p.ELO[p.ELO.length - 1].ELO : 1000) : (p.ELO ?? 1000) });
     }
   }
 
