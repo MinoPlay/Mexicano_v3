@@ -1,6 +1,5 @@
 import { Store } from '../store.js';
 import { State } from '../state.js';
-import { renderThemeToggle } from '../components/theme-toggle.js';
 import { calculateAllEloRankings, getEloSnapshots, getEloForDate } from '../services/elo.js';
 import { getLatestCompleteTournamentDate, getActiveTournament } from '../services/tournament.js';
 import { getMembers } from '../services/members.js';
@@ -280,11 +279,5 @@ export function renderHome(container, params) {
         if (noDataEl.isConnected) noDataEl.textContent = 'No tournament data available';
       });
     }
-  }
-
-  // Append theme toggle button
-  const headerRight = container.querySelector('#home-header-right');
-  if (headerRight) {
-    headerRight.appendChild(renderThemeToggle());
   }
 }
