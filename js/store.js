@@ -93,14 +93,6 @@ export const Store = {
     this.set('changelog', entries.slice(0, 20));
   },
 
-  getTheme() {
-    return this.get('theme') || 'dark';
-  },
-
-  setTheme(theme) {
-    this.set('theme', theme);
-  },
-
   getCurrentUser() {
     return this.get('current_user') || '';
   },

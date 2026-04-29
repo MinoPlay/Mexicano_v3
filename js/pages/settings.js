@@ -1,6 +1,5 @@
 import { Store } from '../store.js';
 import { getMembers, addMember, removeMember } from '../services/members.js';
-import { renderThemeToggle } from '../components/theme-toggle.js';
 import { showToast } from '../components/toast.js';
 import { testConnection, onSyncStatus, getSyncStatus, readFile, pushDoodleNow } from '../services/github.js';
 import { writeDoodle } from '../services/local.js';
@@ -61,14 +60,6 @@ export function renderSettings(container, params) {
             <button type="submit" class="btn btn-primary">Add</button>
           </form>
         </details>
-      </div>
-
-      <!-- Theme -->
-      <div class="settings-section">
-        <div class="settings-section-title">Theme</div>
-        <div id="theme-toggle-container" class="flex items-center gap-sm">
-          <span class="text-sm">Toggle light / dark mode</span>
-        </div>
       </div>
 
       <!-- GitHub Backend -->
@@ -188,10 +179,6 @@ export function renderSettings(container, params) {
   // Render members list
   const membersListEl = container.querySelector('#members-list');
   renderMembersList(membersListEl);
-
-  // Theme toggle
-  const themeContainer = container.querySelector('#theme-toggle-container');
-  themeContainer.appendChild(renderThemeToggle());
 
   // Avatar ref
   const avatarEl = container.querySelector('#settings-avatar');

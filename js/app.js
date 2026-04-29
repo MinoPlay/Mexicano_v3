@@ -2,7 +2,6 @@ import { Router } from './router.js';
 import { Store } from './store.js';
 import { State } from './state.js';
 import { renderNav } from './components/nav.js';
-import { initTheme } from './components/theme-toggle.js';
 import { mountSyncIndicator, setSyncBusy } from './components/sync-indicator.js';
 import { showToast } from './components/toast.js';
 import { showRefreshDialog } from './components/refresh-dialog.js';
@@ -18,9 +17,6 @@ import { renderEloCharts } from './pages/elo-charts.js';
 import { renderAttendance } from './pages/attendance.js';
 import { renderDoodle } from './pages/doodle.js';
 import { renderSettings } from './pages/settings.js';
-
-// Initialize theme
-initTheme();
 
 // ─── Dev secrets: auto-inject GitHub config on localhost ───
 async function loadDevSecrets() {
