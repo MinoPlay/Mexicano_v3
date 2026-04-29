@@ -25,7 +25,26 @@ flowchart TD
 
 ---
 
-## GitHub Pull Flow (`pullAll`)
+## PAT First Save Flow
+
+When the user enters a PAT and clicks **Save** in Settings for the first time (or updates the PAT):
+
+```mermaid
+flowchart TD
+    A[User enters PAT\nclicks Save] --> B[Store.setGitHubConfig\nwrites to localStorage]
+    B --> C[showToast: Config saved — reloading…]
+    C --> D[location.reload]
+    D --> E{Page Load Flow:\nGitHub config present?}
+    E -->|Yes| F[loadFromGitHub\npulls all data from GitHub]
+    F --> G[location.reload with\njust_pulled flag]
+    G --> H[Render page with\nreal GitHub data]
+```
+
+**Cross-tab behaviour:** When the PAT is saved in one browser tab, all other open tabs detect the `storage` event on `mexicano_github_config` and call `loadFromGitHub()` automatically — no manual refresh required in any tab.
+
+---
+
+
 
 ```mermaid
 flowchart TD

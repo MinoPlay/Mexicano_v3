@@ -38,7 +38,7 @@ Create a new **private** repository (recommended) under your GitHub account or o
    | GitHub owner | `myusername` |
    | Repository name | `mexicano-data` |
    | Personal Access Token | `ghp_xxxxxxxxxxxxxxxxxxxx` |
-4. Click **Save**.
+4. Click **Save**. The app automatically reloads and pulls fresh data from GitHub — no hard refresh needed.
 5. Click **Test** to verify the connection. The sync icon next to the section title will turn ✅ on success or ❌ on failure.
 
 ---
@@ -106,6 +106,7 @@ Two buttons are available in the GitHub Backend section:
 | ❌ "Forbidden — check PAT scopes" | PAT exists but lacks `repo` scope | Regenerate with `repo` scope |
 | ❌ "Network error" | No internet connection | Check connectivity |
 | Push succeeds but data doesn't appear | Files may be in a different branch | Check repo default branch |
+| Data not refreshed after saving PAT | Older behaviour — fixed; app now auto-reloads after Save | Update to latest version |
 
 ---
 

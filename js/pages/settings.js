@@ -285,8 +285,8 @@ export function renderSettings(container, params) {
       return;
     }
     Store.setGitHubConfig({ owner: 'MinoPlay', repo: 'DataHub_Mexicano', pat, basePath: 'mexicano_v3/backup-data' });
-    setGhStatusMsg('Configuration saved.');
-    showToast('GitHub config saved');
+    showToast('GitHub config saved — reloading…');
+    location.reload();
   });
 
   // Test

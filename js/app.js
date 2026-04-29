@@ -123,6 +123,16 @@ async function init() {
 }
 init();
 
+// Cross-tab PAT sync: when another tab saves/clears the GitHub config, reload data here too.
+window.addEventListener('storage', (e) => {
+  if (e.key !== 'mexicano_github_config') return;
+  if (e.newValue) {
+    loadFromGitHub();
+  } else {
+    location.reload();
+  }
+});
+
 // Auto-pull from GitHub on every page open/refresh if configured.
 // Uses a flag to distinguish our own reload (skip) from a user-initiated refresh (pull).
 async function loadFromGitHub() {
