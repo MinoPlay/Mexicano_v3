@@ -10,6 +10,7 @@ import { generateMonthlyOverviews } from '../scripts/generate-monthly-overviews.
 import { generateOrUpdatePlayerSummary } from '../scripts/generate-player-summary.js';
 import { uploadToAzure } from '../scripts/azure-upload.js';
 import { syncDoodleFromAzure } from '../scripts/azure-doodle-sync.js';
+import { canInstall, triggerInstall } from '../components/install-prompt.js';
 
 function renderMembersList(listEl) {
   const members = getMembers();
@@ -173,8 +174,47 @@ export function renderSettings(container, params) {
         </details>
       </div>
 
+      <!-- Install App -->
+      <div class="settings-section" id="install-app-section">
+        <div class="settings-section-title">Install App</div>
+        <p class="text-sm text-secondary" style="margin-bottom:var(--space-sm);">
+          Add Mexicano to your home screen for a full-screen, offline-ready experience.
+        </p>
+        <button id="install-app-btn" class="btn btn-primary" style="width:100%;">Install Mexicano</button>
+        <p id="install-app-note" class="text-sm text-secondary mt-sm" style="display:none;"></p>
+      </div>
+
     </div>
   `;
+
+  // ─── Install App ───────────────────────────────────────────────────────────
+  const installSection = container.querySelector('#install-app-section');
+  const installBtn     = container.querySelector('#install-app-btn');
+  const installNote    = container.querySelector('#install-app-note');
+
+  if (window.matchMedia('(display-mode: standalone)').matches) {
+    // Already running as installed PWA — hide the section entirely.
+    installSection.style.display = 'none';
+  } else if (canInstall()) {
+    // Prompt is ready — clear any old dismissed flag so banner can reappear next time.
+    localStorage.removeItem('mexicano_install_dismissed');
+    installBtn.addEventListener('click', async () => {
+      installBtn.disabled = true;
+      const accepted = await triggerInstall();
+      if (accepted) {
+        showToast('✅ App installed!');
+        installSection.style.display = 'none';
+      } else {
+        installBtn.disabled = false;
+        showToast('Install cancelled');
+      }
+    });
+  } else {
+    // beforeinstallprompt hasn't fired yet (or browser doesn't support it).
+    installBtn.disabled = true;
+    installNote.textContent = 'Install not available in this browser, or the app is already installed.';
+    installNote.style.display = '';
+  }
 
   // Render members list
   const membersListEl = container.querySelector('#members-list');

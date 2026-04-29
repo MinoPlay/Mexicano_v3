@@ -500,3 +500,58 @@
 @keyframes sync-spin {
   to { transform: rotate(360deg); }
 }
+
+/* ─── PWA Install Prompt ─── */
+@keyframes install-prompt-in {
+  from { transform: translateY(100%); opacity: 0; }
+  to   { transform: translateY(0);    opacity: 1; }
+}
+
+@keyframes install-prompt-out {
+  from { transform: translateY(0);    opacity: 1; }
+  to   { transform: translateY(100%); opacity: 0; }
+}
+
+.install-prompt {
+  position: fixed;
+  bottom: calc(var(--nav-height) + var(--space-sm));
+  left: 50%;
+  transform: translateX(-50%);
+  width: calc(100% - var(--space-lg) * 2);
+  max-width: calc(var(--max-width) - var(--space-lg) * 2);
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-sm) var(--space-md);
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  z-index: 900;
+  animation: install-prompt-in var(--transition-normal) ease both;
+}
+
+.install-prompt--hiding {
+  animation: install-prompt-out var(--transition-normal) ease both;
+}
+
+.install-prompt__icon {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-sm);
+  flex-shrink: 0;
+}
+
+.install-prompt__text {
+  flex: 1;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.install-prompt__btn {
+  flex-shrink: 0;
+}

@@ -6,6 +6,7 @@ import { mountSyncIndicator, setSyncBusy } from './components/sync-indicator.js'
 import { showToast } from './components/toast.js';
 import { showRefreshDialog } from './components/refresh-dialog.js';
 import { pullForRoute } from './services/github.js';
+import { initInstallPrompt } from './components/install-prompt.js';
 
 // Pages
 import { renderHome } from './pages/home.js';
@@ -87,6 +88,7 @@ async function loadLocalData() {
 
 async function init() {
   await loadDevSecrets();
+  initInstallPrompt();
 
   // Mount sync indicator (needs GitHub config to be loaded first)
   if (Store.getGitHubConfig()?.pat) {
