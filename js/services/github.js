@@ -629,6 +629,7 @@ export async function pullAll(onProgress) {
     const dataPath = base ? `${base}/data` : 'data';
     const dataFiles = await listContents(dataPath);
     const jsonFiles = dataFiles.filter(f => f.type === 'file' && f.name.endsWith('.json'));
+    const foundActiveTournament = jsonFiles.some(f => f.name === 'active_tournament.json');
     for (const file of jsonFiles) {
       const key = file.name.replace(/\.json$/, '');
       if (keyToPath(key) === null) continue;
@@ -642,6 +643,19 @@ export async function pullAll(onProgress) {
           continue;
         }
         localStorage.setItem(`mexicano_${key}`, JSON.stringify(result.content));
+      }
+    }
+    // If active_tournament.json is absent from GitHub, clear any stale local entry
+    // that the tournaments index already marks as complete.
+    if (!foundActiveTournament) {
+      const local = Store.getActiveTournament();
+      if (!local || local.isCompleted) {
+        localStorage.removeItem('mexicano_active_tournament');
+      } else {
+        const index = Store.getTournamentsIndex();
+        if (index.some(e => e.date === local.tournamentDate && e.isComplete)) {
+          localStorage.removeItem('mexicano_active_tournament');
+        }
       }
     }
 
@@ -758,16 +772,19 @@ async function pullCoreData() {
     if (atResult !== null && !atResult.content?.isCompleted) {
       localStorage.setItem('mexicano_active_tournament', JSON.stringify(atResult.content));
     } else {
-      // Only remove if no locally in-progress tournament exists.
-      // Preserves a tournament that hasn't been pushed to GitHub yet (push pending/failed).
       const local = Store.getActiveTournament();
       if (!local || local.isCompleted) {
         localStorage.removeItem('mexicano_active_tournament');
+      } else {
+        const index = Store.getTournamentsIndex();
+        if (index.some(e => e.date === local.tournamentDate && e.isComplete)) {
+          localStorage.removeItem('mexicano_active_tournament');
+        }
       }
     }
   } catch { /* data/ may not exist yet */ }
 
-  // ── 4. Current + previous month overviews ─────────────────────────────────
+  // ── 4. Current + previous month overviews─────────────────────────────────
   const now = new Date();
   for (const offset of [0, -1]) {
     const d = new Date(now.getFullYear(), now.getMonth() + offset, 1);
@@ -828,6 +845,11 @@ async function pullTournamentsPage() {
       const local = Store.getActiveTournament();
       if (!local || local.isCompleted) {
         localStorage.removeItem('mexicano_active_tournament');
+      } else {
+        const index = Store.getTournamentsIndex();
+        if (index.some(e => e.date === local.tournamentDate && e.isComplete)) {
+          localStorage.removeItem('mexicano_active_tournament');
+        }
       }
     }
   } catch { /* data/ may not exist yet */ }
@@ -984,7 +1006,11 @@ async function pullHomeData() {
     }
   } catch { /* players.json may not exist yet */ }
 
-  // ── 2. active_tournament.json ────────────────────────────────────────────────
+  // ── 2. Tournament dates — read tournaments.json (no create, no dir-walk) ─────
+  // Must come before active_tournament check so the index is available for the stale-entry guard.
+  await fetchTournamentsIndex({ create: false });
+
+  // ── 3. active_tournament.json ────────────────────────────────────────────────
   const dataPath = base ? `${base}/data` : 'data';
   try {
     const atResult = await readFile(`${dataPath}/active_tournament.json`);
@@ -994,12 +1020,14 @@ async function pullHomeData() {
       const local = Store.getActiveTournament();
       if (!local || local.isCompleted) {
         localStorage.removeItem('mexicano_active_tournament');
+      } else {
+        const index = Store.getTournamentsIndex();
+        if (index.some(e => e.date === local.tournamentDate && e.isComplete)) {
+          localStorage.removeItem('mexicano_active_tournament');
+        }
       }
     }
   } catch { /* data/ may not exist yet */ }
-
-  // ── 3. Tournament dates — read tournaments.json (no create, no dir-walk) ─────
-  await fetchTournamentsIndex({ create: false });
 
   // ── 4. Latest date's matches — only if not already in localStorage ───────────
   const allDates = JSON.parse(localStorage.getItem('mexicano_tournament_dates') || '[]');

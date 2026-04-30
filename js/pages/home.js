@@ -15,7 +15,13 @@ function formatDate(dateStr) {
 }
 
 export function renderHome(container, params) {
-  const activeTournament = getActiveTournament();
+  const _rawActive = getActiveTournament();
+  // Guard: if the tournaments index already marks this date complete, don't show as active.
+  // This prevents stale localStorage from showing a completed tournament before the pull clears it.
+  const _index = Store.getTournamentsIndex();
+  const activeTournament = (_rawActive && _index.some(e => e.date === _rawActive.tournamentDate && e.isComplete))
+    ? null
+    : _rawActive;
   const allMatches = Store.getMatches();
 
   // Get latest COMPLETE tournament date
