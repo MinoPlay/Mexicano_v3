@@ -126,59 +126,49 @@ export function renderSettings(container, params) {
 
       <!-- Azure Doodle Sync -->
       <div class="settings-section" id="azure-doodle-section" style="display:none;">
-        <details id="azure-doodle-details">
-          <summary class="settings-section-title members-summary">Azure Doodle Sync</summary>
-          <p class="text-sm text-secondary" style="margin:var(--space-sm) 0;">
-            Pull doodle availability from the Azure <code>Doodle</code> table and overwrite the
-            local doodle JSON for the selected month. Uses the same connection string as Azure Upload.
-          </p>
-          <p class="text-sm" style="margin:0 0 var(--space-sm);color:var(--color-warning,#f59e0b);">
-            ⚠️ First-time setup: Azure Storage must allow CORS from <code>https://minoplay.github.io</code>.
-            In the <a href="https://portal.azure.com" target="_blank" rel="noopener">Azure Portal</a>
-            → Storage account → <strong>Resource sharing (CORS)</strong> → Table service tab → add a rule:
-            origins <code>https://minoplay.github.io</code>, methods <code>DELETE GET HEAD OPTIONS PUT</code>,
-            headers <code>*</code>, max age <code>3600</code>.
-          </p>
-          <div class="flex flex-col gap-sm">
-            <label class="text-sm" for="azure-doodle-month">Month</label>
-            <div class="flex gap-sm">
-              <input type="month" id="azure-doodle-month" style="flex:1;" />
-              <button id="azure-doodle-sync-btn" class="btn btn-primary">Sync from Azure</button>
-            </div>
+        <div class="settings-section-title">Azure Doodle Sync</div>
+        <p class="text-sm text-secondary" style="margin:var(--space-sm) 0;">
+          Pull doodle availability from the Azure <code>Doodle</code> table and overwrite the
+          local doodle JSON for the selected month. Uses the same connection string as Azure Upload.
+        </p>
+        <div class="flex flex-col gap-sm">
+          <label class="text-sm" for="azure-doodle-month">Month</label>
+          <div class="flex gap-sm">
+            <input type="month" id="azure-doodle-month" style="flex:1;" />
+            <button id="azure-doodle-sync-btn" class="btn btn-primary">Sync from Azure</button>
           </div>
-          <div id="azure-doodle-status" class="text-sm mt-sm" style="min-height:1.25rem;"></div>
-        </details>
+        </div>
+        <div id="azure-doodle-status" class="text-sm mt-sm" style="min-height:1.25rem;"></div>
       </div>
 
       <!-- Azure Upload -->
       <div class="settings-section" id="azure-upload-section" style="display:none;">
-        <details id="azure-upload-details">
-          <summary class="settings-section-title members-summary">Azure Upload</summary>
-          <p class="text-sm text-secondary" style="margin:var(--space-sm) 0;">
-            Upload a backup JSON file directly to Azure Tables storage.
-            Enter the backup date, save your connection string, then click Upload.
-          </p>
-          <p class="text-sm" style="margin:0 0 var(--space-sm);color:var(--color-warning,#f59e0b);">
-            ⚠️ First-time setup: Azure Storage must allow CORS from <code>https://minoplay.github.io</code>.
-            In the <a href="https://portal.azure.com" target="_blank" rel="noopener">Azure Portal</a>
-            → Storage account → <strong>Resource sharing (CORS)</strong> → Table service tab → add a rule:
-            origins <code>https://minoplay.github.io</code>, methods <code>DELETE GET HEAD OPTIONS PUT</code>,
-            headers <code>*</code>, max age <code>3600</code>.
-          </p>
-          <div class="flex flex-col gap-sm">
-            <label class="text-sm" for="azure-conn-str">Connection String</label>
-            <div class="flex gap-sm">
-              <input type="password" id="azure-conn-str" placeholder="DefaultEndpointsProtocol=https;AccountName=…" style="flex:1;" autocomplete="off" />
-              <button id="azure-conn-save-btn" class="btn btn-primary">Save</button>
-            </div>
-            <label class="text-sm" for="azure-date-input">Backup Date</label>
-            <div class="flex gap-sm">
-              <input type="text" id="azure-date-input" placeholder="2026-04-28" style="flex:1;" autocomplete="off" />
-              <button id="azure-upload-btn" class="btn btn-primary">Upload</button>
-            </div>
+        <div class="settings-section-title">Azure Upload</div>
+        <p class="text-sm text-secondary" style="margin:var(--space-sm) 0;">
+          Upload a backup JSON file directly to Azure Tables storage.
+          Enter the backup date, save your connection string, then click Upload.
+        </p>
+        <p class="text-sm" style="margin:0 0 var(--space-sm);color:var(--color-warning,#f59e0b);">
+          ⚠️ First-time CORS setup (applies to both Azure sections): Azure Storage must allow
+          <code>https://minoplay.github.io</code>. In the
+          <a href="https://portal.azure.com" target="_blank" rel="noopener">Azure Portal</a>
+          → Storage account → <strong>Resource sharing (CORS)</strong> → Table service tab → add a rule:
+          origins <code>https://minoplay.github.io</code>, methods <code>DELETE GET HEAD OPTIONS PUT</code>,
+          headers <code>*</code>, max age <code>3600</code>.
+        </p>
+        <div class="flex flex-col gap-sm">
+          <label class="text-sm" for="azure-conn-str">Connection String</label>
+          <div class="flex gap-sm">
+            <input type="password" id="azure-conn-str" placeholder="DefaultEndpointsProtocol=https;AccountName=…" style="flex:1;" autocomplete="off" />
+            <button id="azure-conn-save-btn" class="btn btn-primary">Save</button>
           </div>
-          <div id="azure-upload-status" class="text-sm mt-sm" style="min-height:1.25rem;"></div>
-        </details>
+          <label class="text-sm" for="azure-date-input">Backup Date</label>
+          <div class="flex gap-sm">
+            <input type="date" id="azure-date-input" style="flex:1;" autocomplete="off" />
+            <button id="azure-upload-btn" class="btn btn-primary">Upload</button>
+          </div>
+        </div>
+        <div id="azure-upload-status" class="text-sm mt-sm" style="min-height:1.25rem;"></div>
       </div>
 
       <!-- Install App -->
