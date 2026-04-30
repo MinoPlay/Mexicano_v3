@@ -158,6 +158,13 @@ export function renderSettings(container, params) {
             Upload a backup JSON file directly to Azure Tables storage.
             Enter the backup date, save your connection string, then click Upload.
           </p>
+          <p class="text-sm" style="margin:0 0 var(--space-sm);color:var(--color-warning,#f59e0b);">
+            ⚠️ First-time setup: Azure Storage must allow CORS from <code>https://minoplay.github.io</code>.
+            In the <a href="https://portal.azure.com" target="_blank" rel="noopener">Azure Portal</a>
+            → Storage account → <strong>Resource sharing (CORS)</strong> → Table service tab → add a rule:
+            origins <code>https://minoplay.github.io</code>, methods <code>DELETE GET HEAD OPTIONS PUT</code>,
+            headers <code>*</code>, max age <code>3600</code>.
+          </p>
           <div class="flex flex-col gap-sm">
             <label class="text-sm" for="azure-conn-str">Connection String</label>
             <div class="flex gap-sm">
