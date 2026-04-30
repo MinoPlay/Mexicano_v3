@@ -636,6 +636,11 @@ export async function pullAll(onProgress) {
       if (key.startsWith('doodle_')) continue;
       const result = await readFile(`${dataPath}/${file.name}`);
       if (result !== null) {
+        if (key === 'active_tournament' && result.content?.isCompleted) {
+          const local = Store.getActiveTournament();
+          if (!local || local.isCompleted) localStorage.removeItem('mexicano_active_tournament');
+          continue;
+        }
         localStorage.setItem(`mexicano_${key}`, JSON.stringify(result.content));
       }
     }
@@ -750,7 +755,7 @@ async function pullCoreData() {
   const dataPath = base ? `${base}/data` : 'data';
   try {
     const atResult = await readFile(`${dataPath}/active_tournament.json`);
-    if (atResult !== null) {
+    if (atResult !== null && !atResult.content?.isCompleted) {
       localStorage.setItem('mexicano_active_tournament', JSON.stringify(atResult.content));
     } else {
       // Only remove if no locally in-progress tournament exists.
@@ -817,7 +822,7 @@ async function pullTournamentsPage() {
   const dataPath = base ? `${base}/data` : 'data';
   try {
     const atResult = await readFile(`${dataPath}/active_tournament.json`);
-    if (atResult !== null) {
+    if (atResult !== null && !atResult.content?.isCompleted) {
       localStorage.setItem('mexicano_active_tournament', JSON.stringify(atResult.content));
     } else {
       const local = Store.getActiveTournament();
@@ -983,7 +988,7 @@ async function pullHomeData() {
   const dataPath = base ? `${base}/data` : 'data';
   try {
     const atResult = await readFile(`${dataPath}/active_tournament.json`);
-    if (atResult !== null) {
+    if (atResult !== null && !atResult.content?.isCompleted) {
       localStorage.setItem('mexicano_active_tournament', JSON.stringify(atResult.content));
     } else {
       const local = Store.getActiveTournament();
