@@ -103,6 +103,43 @@ describe('generatePlayersJson', () => {
     expect(bob.PreviousELO).toBe(1000);
   });
 
+  it('PreviousELO uses second-to-last tournament day when player plays multiple days in one month', async () => {
+    mockListContents.mockResolvedValueOnce([{ name: '2026', type: 'dir' }]);
+    mockListContents.mockResolvedValueOnce([
+      { name: '2026-03', type: 'dir' },
+      { name: '2026-04', type: 'dir' },
+    ]);
+    // March: single day, ELO 1138.49
+    mockReadFile.mockResolvedValueOnce({
+      content: [{
+        Name: 'Mino',
+        ELO: [{ Date: '2026-03-24', ELO: 1138.49 }],
+        Wins: 5, Losses: 2, Total_Points: 90,
+      }],
+      sha: 'sha-mar',
+    });
+    // April: TWO days in the same month
+    mockReadFile.mockResolvedValueOnce({
+      content: [{
+        Name: 'Mino',
+        ELO: [
+          { Date: '2026-04-28', ELO: 968.13 },
+          { Date: '2026-04-30', ELO: 1040.11 },
+        ],
+        Wins: 4, Losses: 3, Total_Points: 70,
+      }],
+      sha: 'sha-apr',
+    });
+    mockReadFile.mockResolvedValueOnce(null);
+
+    await generatePlayersJson();
+    const [, payload] = mockWriteFile.mock.calls[0];
+    const mino = payload.find(p => p.Name === 'Mino');
+
+    expect(mino.ELO).toBe(1040.11);
+    // Must be second-to-last DAY (Apr 28), NOT second-to-last month (Mar → 1138.49)
+    expect(mino.PreviousELO).toBe(968.13);
+  });
   it('PreviousELO equals ELO when player appears in only one month', async () => {
     mockListContents.mockResolvedValueOnce([{ name: '2025', type: 'dir' }]);
     mockListContents.mockResolvedValueOnce([{ name: '2025-01', type: 'dir' }]);

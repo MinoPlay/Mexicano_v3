@@ -52,6 +52,7 @@ export async function generatePlayersJson(onProgress) {
   // ── 2. Aggregate per-player stats across all months ───────────────────────
   const playerTotals = {}; // name → { wins, losses, pts }
   const playerMonths = {}; // name → [{yearMonth, elo}] in chronological order
+  const playerDays   = {}; // name → [{date, elo}] all tournament days across all months
 
   for (const { yearMonth, rows } of overviews) {
     for (const p of rows) {
@@ -59,19 +60,33 @@ export async function generatePlayersJson(onProgress) {
       if (!name) continue;
       if (!playerTotals[name]) playerTotals[name] = { wins: 0, losses: 0, pts: 0 };
       if (!playerMonths[name]) playerMonths[name] = [];
+      if (!playerDays[name])   playerDays[name]   = [];
       playerTotals[name].wins   += p.Wins         ?? 0;
       playerTotals[name].losses += p.Losses       ?? 0;
       playerTotals[name].pts    += p.Total_Points ?? 0;
       playerMonths[name].push({ yearMonth, elo: Array.isArray(p.ELO) ? (p.ELO.length > 0 ? p.ELO[p.ELO.length - 1].ELO : 1000) : (p.ELO ?? 1000) });
+      // Collect all per-day ELO entries for fine-grained PreviousELO computation
+      if (Array.isArray(p.ELO)) {
+        for (const entry of p.ELO) {
+          if (entry.Date && entry.ELO != null) {
+            playerDays[name].push({ date: entry.Date, elo: entry.ELO });
+          }
+        }
+      }
     }
   }
 
   // ── 3. Build result ───────────────────────────────────────────────────────
   const result = Object.entries(playerTotals)
     .map(([name, s]) => {
-      const months  = playerMonths[name];
-      const elo     = months[months.length - 1].elo;
-      const prevElo = months.length >= 2 ? months[months.length - 2].elo : elo;
+      const months = playerMonths[name];
+      const elo    = months[months.length - 1].elo;
+      // Use per-day granularity when available so that PreviousELO reflects the
+      // second-to-last tournament day, not the second-to-last month.
+      const days    = (playerDays[name] || []).sort((a, b) => a.date.localeCompare(b.date));
+      const prevElo = days.length >= 2
+        ? days[days.length - 2].elo
+        : (months.length >= 2 ? months[months.length - 2].elo : elo);
       const games   = s.wins + s.losses;
       return {
         Name:        name,
