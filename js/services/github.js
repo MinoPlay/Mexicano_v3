@@ -1541,10 +1541,22 @@ export async function pushDoodleNow(yearMonth) {
   const key = `doodle_${yearMonth}`;
   const filePath = keyToPath(key);
   if (!filePath) return;
-  const entries = Store.getDoodle(yearMonth);
+  const localEntries = Store.getDoodle(yearMonth);
   let sha;
-  try { const existing = await readFile(filePath); sha = existing?.sha; } catch { sha = undefined; }
-  await writeFile(filePath, entries, sha);
+  let entriesToPush = localEntries;
+  try {
+    const existing = await readFile(filePath);
+    sha = existing?.sha;
+    if (existing?.content && Array.isArray(existing.content)) {
+      // Merge: local entries take priority; preserve remote entries not in local store
+      const localNames = new Set(localEntries.map(e => e.name));
+      const remoteOnly = existing.content.filter(e => !localNames.has(e.name));
+      entriesToPush = [...localEntries, ...remoteOnly];
+      // Update local store so UI reflects merged state
+      localStorage.setItem(`mexicano_doodle_${yearMonth}`, JSON.stringify(entriesToPush));
+    }
+  } catch { sha = undefined; }
+  await writeFile(filePath, entriesToPush, sha);
 }
 
 /**

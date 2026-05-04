@@ -3,7 +3,7 @@ import { Store } from '../store.js';
 import { State } from '../state.js';
 import { showToast } from '../components/toast.js';
 import { calculateAllEloRankings } from '../services/elo.js';
-import { pushDoodleNow, cancelPendingSync, pullDoodleMonth } from '../services/github.js';
+import { pushDoodleNow, cancelPendingSync, pullDoodleMonth, clearSessionTTL } from '../services/github.js';
 
 const WEEKDAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
@@ -403,6 +403,7 @@ export function renderDoodle(container, params = {}) {
     syncDoodleFromLocal(currentYear, currentMonth).catch(() => {});
     const ym = `${currentYear}-${String(currentMonth).padStart(2, '0')}`;
     if (Store.getGitHubConfig()?.pat) {
+      clearSessionTTL(`doodle_${ym}`);
       pullDoodleMonth(ym).then(({ content, updated }) => {
         if (updated && content) {
           Store.setDoodle(ym, content);
