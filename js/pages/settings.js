@@ -220,11 +220,24 @@ export function renderSettings(container, params) {
   // Avatar ref
   const avatarEl = container.querySelector('#settings-avatar');
 
+  // ─── Mino-only section visibility ─────────────────────────────────────────
+  // Only Members has no GitHub gate — controlled directly here.
+  // All other Mino-only sections are gated by their own refresh functions
+  // (refreshRemoteDataSection, refreshSummariesSection, etc.) which check isMino().
+  const membersSection = container.querySelector('.members-collapsible')?.closest('.settings-section');
+
+  function refreshMinoVisibility() {
+    const isMino = Store.isMino();
+    if (membersSection) membersSection.style.display = isMino ? '' : 'none';
+  }
+  refreshMinoVisibility();
+
   // Current user select
   const userSelect = container.querySelector('#settings-user-select');
   userSelect.addEventListener('change', () => {
     Store.setCurrentUser(userSelect.value);
     updateAvatar(avatarEl);
+    refreshMinoVisibility();
     showToast(userSelect.value ? `Switched to ${userSelect.value}` : 'User cleared');
   });
 
@@ -351,7 +364,7 @@ export function renderSettings(container, params) {
 
   function refreshSummariesSection() {
     const hasGitHub = !!Store.getGitHubConfig()?.pat;
-    summariesSection.style.display = hasGitHub ? '' : 'none';
+    summariesSection.style.display = (hasGitHub && Store.isMino()) ? '' : 'none';
     if (!hasGitHub) { setSummariesMsg(''); return; }
     updateSummariesBtn();
   }
@@ -370,7 +383,10 @@ export function renderSettings(container, params) {
   refreshSummariesSection();
 
   // Keep button label in sync when user changes
-  userSelect.addEventListener('change', updateSummariesBtn);
+  userSelect.addEventListener('change', () => {
+    refreshSummariesSection();
+    refreshRemoteDataSection();
+  });
 
   summariesBtn.addEventListener('click', async () => {
     const user = Store.getCurrentUser();
@@ -422,7 +438,7 @@ export function renderSettings(container, params) {
   }
 
   function refreshRemoteDataSection() {
-    remoteDataSection.style.display = Store.getGitHubConfig()?.pat ? '' : 'none';
+    remoteDataSection.style.display = (Store.getGitHubConfig()?.pat && Store.isMino()) ? '' : 'none';
   }
   refreshRemoteDataSection();
 
@@ -507,7 +523,7 @@ export function renderSettings(container, params) {
   }
 
   function refreshAzureSection() {
-    azureSection.style.display = Store.getGitHubConfig()?.pat ? '' : 'none';
+    azureSection.style.display = (Store.getGitHubConfig()?.pat && Store.isMino()) ? '' : 'none';
   }
   refreshAzureSection();
 
@@ -581,7 +597,7 @@ export function renderSettings(container, params) {
   }
 
   function refreshAzureDoodleSection() {
-    azureDoodleSection.style.display = Store.getGitHubConfig()?.pat ? '' : 'none';
+    azureDoodleSection.style.display = (Store.getGitHubConfig()?.pat && Store.isMino()) ? '' : 'none';
   }
   refreshAzureDoodleSection();
 
@@ -624,4 +640,10 @@ export function renderSettings(container, params) {
   container.querySelector('#github-clear-btn').addEventListener('click', () => {
     azureDoodleSection.style.display = 'none';
   }, { capture: true });
+
+  // Re-evaluate all GitHub+Mino-gated sections when user switches
+  userSelect.addEventListener('change', () => {
+    refreshAzureSection();
+    refreshAzureDoodleSection();
+  });
 }
