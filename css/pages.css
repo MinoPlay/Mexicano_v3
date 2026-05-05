@@ -959,3 +959,88 @@ details[open] > .members-summary {
   font-weight: var(--font-weight-bold);
   font-size: var(--font-size-sm);
 }
+
+/* ─── Doodle Edit Session ─── */
+.doodle-pending {
+  opacity: 0.6;
+  border-width: 2px !important;
+  border-color: var(--color-warning, #f59e0b) !important;
+  border-style: dashed !important;
+}
+
+.doodle-footer {
+  position: fixed;
+  bottom: var(--nav-height);
+  left: 0;
+  right: 0;
+  background: var(--bg-card);
+  border-top: 1px solid var(--border);
+  padding: var(--space-md);
+  display: flex;
+  gap: var(--space-sm);
+  justify-content: flex-end;
+  box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.1);
+  z-index: 40;
+}
+
+.doodle-footer .btn {
+  min-width: 120px;
+}
+
+.doodle-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 200;
+}
+
+.doodle-modal {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-lg);
+  max-width: 400px;
+  box-shadow: var(--shadow-lg);
+  animation: slideUp 0.2s ease-out;
+}
+
+.doodle-modal h3 {
+  margin: 0 0 var(--space-sm) 0;
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-semibold);
+}
+
+.doodle-modal p {
+  margin: 0 0 var(--space-md) 0;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.modal-buttons {
+  display: flex;
+  gap: var(--space-sm);
+  justify-content: center;
+}
+
+.modal-buttons .btn {
+  flex: 1;
+  min-width: 100px;
+  max-width: 150px;
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
