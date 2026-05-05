@@ -101,6 +101,10 @@ export const Store = {
     this.set('current_user', name);
   },
 
+  isMino() {
+    return this.getCurrentUser().toLowerCase() === 'mino';
+  },
+
   // ─── GitHub Backend config ───
 
   getGitHubConfig() {

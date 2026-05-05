@@ -83,6 +83,12 @@
   box-shadow: var(--shadow-md);
 }
 
+.tournament-list-item--locked {
+  opacity: 0.4;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
 .tournament-list-date {
   font-weight: var(--font-weight-semibold);
 }
