@@ -40,6 +40,10 @@ export async function writeDoodle(year, month, entries) {
   await writeLocal(`${year}/${ym}/doodle_${ym}.json`, entries);
 }
 
+export async function writeTournamentsIndex(entries) {
+  await writeLocal('tournaments.json', entries);
+}
+
 export async function writeTournamentDay(date, matches) {
   const year = date.slice(0, 4);
   const ym = date.slice(0, 7);
