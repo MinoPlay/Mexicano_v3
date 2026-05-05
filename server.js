@@ -184,6 +184,7 @@ const server = http.createServer((req, res) => {
       /^\d{4}\/\d{4}-\d{2}\/doodle_\d{4}-\d{2}\.json$/,     // doodle
       /^\d{4}\/\d{4}-\d{2}\/\d{4}-\d{2}-\d{2}\.json$/,       // tournament day
       /^data\/active_tournament\.json$/,                         // active tournament
+      /^tournaments\.json$/,                                     // tournaments index
     ];
     const MAX_BODY = 512 * 1024; // 512 KB
 

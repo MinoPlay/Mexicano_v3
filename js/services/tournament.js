@@ -318,14 +318,52 @@ export function completeTournament(tournament) {
   Store.clearActiveTournament();
   State.emit('tournament-changed', tournament);
 
-  // Write completed tournament day to local dev server
-  import('./local.js').then(({ writeTournamentDay }) => {
+  // Compute tournament index entry before async operations so it can be used
+  // in both the GitHub write and the local backup write.
+  const indexPlayers = new Set();
+  const indexRoundNums = new Set();
+  let indexMatchCount = 0;
+  let indexCompletedCount = 0;
+  for (const round of tournament.rounds) {
+    for (const m of round.matches) {
+      if (m.player1?.name) indexPlayers.add(m.player1.name);
+      if (m.player2?.name) indexPlayers.add(m.player2.name);
+      if (m.player3?.name) indexPlayers.add(m.player3.name);
+      if (m.player4?.name) indexPlayers.add(m.player4.name);
+      indexRoundNums.add(round.roundNumber);
+      indexMatchCount++;
+      if (isMatchComplete(m)) indexCompletedCount++;
+    }
+  }
+  const indexEntry = {
+    date: tournament.tournamentDate,
+    playerCount: indexPlayers.size,
+    roundCount: indexRoundNums.size,
+    matchCount: indexMatchCount,
+    completedCount: indexCompletedCount,
+    isComplete: indexMatchCount > 0 && indexCompletedCount === indexMatchCount,
+  };
+
+  // Write completed tournament day + tournaments index to local dev server
+  import('./local.js').then(({ writeTournamentDay, writeTournamentsIndex }) => {
     const dateMatches = allMatches.filter(m => m.date === tournament.tournamentDate);
     writeTournamentDay(tournament.tournamentDate, dateMatches)
       .catch(e => console.warn('[local] tournament write failed:', e));
+
+    const currentEntries = Store.getTournamentsIndex();
+    const idx = currentEntries.findIndex(e => e.date === indexEntry.date);
+    const updatedEntries = [...currentEntries];
+    if (idx >= 0) {
+      updatedEntries[idx] = { ...updatedEntries[idx], ...indexEntry };
+    } else {
+      updatedEntries.push(indexEntry);
+    }
+    updatedEntries.sort((a, b) => a.date.localeCompare(b.date));
+    writeTournamentsIndex(updatedEntries)
+      .catch(e => console.warn('[local] tournaments index write failed:', e));
   }).catch(() => {});
 
-  // Immediately sync completed tournament to GitHub + local dev server
+  // Immediately sync completed tournament to GitHub
   import('./github.js').then(({ flushPush, markMatchDateDirty, keyToPath, readFile, deleteFile, updateTournamentIndexEntry, generateMonthlyOverviews, generatePlayersJson }) => {
     markMatchDateDirty(tournament.tournamentDate);
     // Delete active_tournament.json from GitHub since the tournament is done
@@ -350,30 +388,7 @@ export function completeTournament(tournament) {
       .then(() => generatePlayersJson())
       .catch(e => console.warn('[tournament] post-complete generation failed:', e));
 
-    // Compute full metadata and update tournaments.json index
-    const players = new Set();
-    const roundNums = new Set();
-    let matchCount = 0;
-    let completedCount = 0;
-    for (const round of tournament.rounds) {
-      for (const m of round.matches) {
-        if (m.player1?.name) players.add(m.player1.name);
-        if (m.player2?.name) players.add(m.player2.name);
-        if (m.player3?.name) players.add(m.player3.name);
-        if (m.player4?.name) players.add(m.player4.name);
-        roundNums.add(round.roundNumber);
-        matchCount++;
-        if (isMatchComplete(m)) completedCount++;
-      }
-    }
-    updateTournamentIndexEntry({
-      date: tournament.tournamentDate,
-      playerCount: players.size,
-      roundCount: roundNums.size,
-      matchCount,
-      completedCount,
-      isComplete: matchCount > 0 && completedCount === matchCount,
-    }).catch(() => {});
+    updateTournamentIndexEntry(indexEntry).catch(() => {});
   }).catch(() => {});
 
   return tournament;

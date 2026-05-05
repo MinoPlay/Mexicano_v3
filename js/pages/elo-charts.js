@@ -403,27 +403,7 @@ function eloHistoryForDateRange(eloData, fromStr, toStr) {
   return { players, dates };
 }
 
-function eloHistoryForLatestTournament(eloData, playerNames) {
-  if (!eloData || !eloData.dates || eloData.dates.length === 0) return { players: {}, rounds: [] };
-  let latestDate;
-  if (playerNames && playerNames.length > 0) {
-    const playerSet = new Set(playerNames.map(n => n.toLowerCase()));
-    for (let i = eloData.dates.length - 1; i >= 0; i--) {
-      const d = eloData.dates[i];
-      const hasPlayer = Object.entries(eloData.players).some(([name, pts]) =>
-        playerSet.has(name.toLowerCase()) && pts.some(p => p.date === d)
-      );
-      if (hasPlayer) { latestDate = d; break; }
-    }
-  }
-  if (!latestDate) latestDate = eloData.dates[eloData.dates.length - 1];
-  const players = {};
-  for (const [name, points] of Object.entries(eloData.players)) {
-    const pt = points.find(p => p.date === latestDate);
-    if (pt) players[name] = [{ round: 1, elo: pt.elo, delta: pt.delta ?? 0 }];
-  }
-  return { players, rounds: [1] };
-}
+
 
 // ─── localStorage helpers ───
 
@@ -542,9 +522,19 @@ export function renderEloCharts(container, params = {}) {
   let allMatches = Store.getMatches();
   let eloHistoryData = cachedEloHistory;
   let _chartCleanup = null;
+  const tournamentChartRef = { render: null };
 
   if (eloHistoryData) {
     _chartCleanup = renderChartContent();
+    // Lazy-load all matches so the tournament chart can show round-by-round progression
+    if (Store.getGitHubConfig()?.pat) {
+      import('../services/github.js').then(({ ensureAllMatchesLoaded }) =>
+        ensureAllMatchesLoaded()
+      ).then(matches => {
+        allMatches = matches;
+        tournamentChartRef.render?.();
+      }).catch(() => {});
+    }
     return () => { if (_chartCleanup) _chartCleanup(); };
   }
 
@@ -775,9 +765,7 @@ export function renderEloCharts(container, params = {}) {
       if (tCleanupTooltip) { tCleanupTooltip(); tCleanupTooltip = null; }
       if (tResizeHandler) { window.removeEventListener('resize', tResizeHandler); tResizeHandler = null; }
 
-      const history = eloHistoryData
-        ? eloHistoryForLatestTournament(eloHistoryData, [...selectedMembers])
-        : getEloHistoryForLatestTournament(allMatches, [...selectedMembers]);
+      const history = getEloHistoryForLatestTournament(allMatches, [...selectedMembers]);
       filterHistoryToMembers(history);
       filterHistoryToSelected(history, selectedMembers);
 
@@ -797,6 +785,7 @@ export function renderEloCharts(container, params = {}) {
     }
 
     renderTournamentChart();
+    tournamentChartRef.render = renderTournamentChart;
 
     cleanupFns.push(() => {
       if (tCleanupTooltip) tCleanupTooltip();
