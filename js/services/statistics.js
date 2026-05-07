@@ -97,13 +97,13 @@ export function calculatePlayerStatistics(matches) {
   }
 
   stats.sort((a, b) => {
-    if (b.average !== a.average) return b.average - a.average;
-    return b.winRate - a.winRate;
+    if (b.points !== a.points) return b.points - a.points;
+    return b.wins - a.wins;
   });
 
   let currentRank = 1;
   for (let i = 0; i < stats.length; i++) {
-    if (i > 0 && stats[i].average === stats[i - 1].average && stats[i].winRate === stats[i - 1].winRate) {
+    if (i > 0 && stats[i].points === stats[i - 1].points && stats[i].wins === stats[i - 1].wins) {
       stats[i].rank = stats[i - 1].rank;
     } else {
       currentRank = i + 1;
