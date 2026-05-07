@@ -344,6 +344,18 @@ export function completeTournament(tournament) {
     isComplete: indexMatchCount > 0 && indexCompletedCount === indexMatchCount,
   };
 
+  // Update tournaments index immediately so UI reflects completion status
+  const currentEntries = Store.getTournamentsIndex();
+  const idx = currentEntries.findIndex(e => e.date === indexEntry.date);
+  const updatedEntries = [...currentEntries];
+  if (idx >= 0) {
+    updatedEntries[idx] = { ...updatedEntries[idx], ...indexEntry };
+  } else {
+    updatedEntries.push(indexEntry);
+  }
+  updatedEntries.sort((a, b) => a.date.localeCompare(b.date));
+  Store.setTournamentsIndex(updatedEntries);
+
   // Write completed tournament day + tournaments index to local dev server
   import('./local.js').then(({ writeTournamentDay, writeTournamentsIndex }) => {
     const dateMatches = allMatches.filter(m => m.date === tournament.tournamentDate);

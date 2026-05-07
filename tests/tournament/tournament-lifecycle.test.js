@@ -378,4 +378,22 @@ describe('completeTournament', () => {
     expect(matches.some(m => m.roundNumber === 1)).toBe(true);
     expect(matches.some(m => m.roundNumber === 2)).toBe(true);
   });
+
+  it('updates tournaments index immediately with isComplete=true', () => {
+    const t = makeCompletedTournament();
+
+    // Clear index to start fresh
+    Store.setTournamentsIndex([]);
+    expect(Store.getTournamentsIndex()).toHaveLength(0);
+
+    completeTournament(t);
+
+    // Index should be updated immediately (synchronously)
+    const index = Store.getTournamentsIndex();
+    expect(index).toHaveLength(1);
+    expect(index[0].date).toBe(DATE);
+    expect(index[0].isComplete).toBe(true);
+    expect(index[0].playerCount).toBe(4);
+    expect(index[0].roundCount).toBe(1);
+  });
 });
