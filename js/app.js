@@ -86,7 +86,48 @@ async function loadLocalData() {
   } catch { /* not running on dev server, or no local data */ }
 }
 
+/**
+ * Clear stale localStorage data on page load to ensure fresh data from GitHub.
+ * Preserves: GitHub config, theme, user name, debug log, and dev server flags.
+ */
+function clearStaleLocalStorage() {
+  const PRESERVE = new Set([
+    'mexicano_github_config',
+    'mexicano_theme',
+    'mexicano_current_user',
+    'mexicano_github_log',
+    'mexicano_local_data_loaded', // dev server flag
+  ]);
+
+  const keysToRemove = [];
+  for (let i = 0; i < localStorage.length; i++) {
+    const k = localStorage.key(i);
+    if (k && k.startsWith('mexicano_') && !PRESERVE.has(k)) {
+      keysToRemove.push(k);
+    }
+  }
+  keysToRemove.forEach(k => localStorage.removeItem(k));
+}
+
+/**
+ * Clear session TTL cache to force fresh GitHub fetches on next pull.
+ */
+function clearSessionTTLCache() {
+  const keysToRemove = [];
+  for (let i = 0; i < sessionStorage.length; i++) {
+    const k = sessionStorage.key(i);
+    if (k && k.startsWith('mexicano_gh_ts_')) {
+      keysToRemove.push(k);
+    }
+  }
+  keysToRemove.forEach(k => sessionStorage.removeItem(k));
+}
+
 async function init() {
+  // Clear stale data on page load to ensure fresh GitHub data
+  clearStaleLocalStorage();
+  clearSessionTTLCache();
+
   await loadDevSecrets();
   initInstallPrompt();
 
