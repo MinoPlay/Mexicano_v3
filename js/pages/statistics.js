@@ -152,9 +152,12 @@ function overviewToStats(overview, prevOverview = []) {
 
 function renderSortableTable(container, stats, onPlayerClick, columns = STAT_COLUMNS, defaultSort = 'average') {
   let sortCol = defaultSort;
-  let sortDir = 'desc';
+  let sortDir = defaultSort === 'name' ? 'asc' : 'desc';
+  let hasUserSelectedSort = false;
+  const defaultSortedRows = sortStatisticsRows(stats, sortCol, sortDir);
 
   function sortedData() {
+    if (!hasUserSelectedSort) return defaultSortedRows;
     return sortStatisticsRows(stats, sortCol, sortDir);
   }
 
@@ -191,6 +194,7 @@ function renderSortableTable(container, stats, onPlayerClick, columns = STAT_COL
           const next = getNextStatisticsSortState(sortCol, sortDir, col.key);
           sortCol = next.sortCol;
           sortDir = next.sortDir;
+          hasUserSelectedSort = true;
           render();
         });
       }
