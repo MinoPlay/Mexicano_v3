@@ -697,6 +697,15 @@ function clearDoodleSessionTTL(yearMonth) {
   try { sessionStorage.removeItem(`mexicano_gh_ts_doodle_${yearMonth}`); } catch { /* unavailable */ }
 }
 
+/**
+ * Backward-compatible TTL clear helper used by existing page modules.
+ * Expects key format: doodle_YYYY-MM
+ */
+export function clearSessionTTL(key) {
+  const match = key?.match(/^doodle_(\d{4}-\d{2})$/);
+  if (match) clearDoodleSessionTTL(match[1]);
+}
+
 /** Parse a raw players_overview.json entry (PascalCase) to camelCase. */
 function fromOverview(p) {
   // ELO may be an array [{Date, ELO}, ...] (new format) or a plain number (legacy).
