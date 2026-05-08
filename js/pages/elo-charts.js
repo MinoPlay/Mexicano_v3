@@ -138,6 +138,30 @@ function drawLineChart(canvas, datasets, options = {}) {
   canvas._chartMeta = { pad, plotW, plotH, yMin, yRange, xCount, datasets, xLabels };
 }
 
+function drawEmptyChart(canvas, message) {
+  const ctx = canvas.getContext('2d');
+  const dpr = window.devicePixelRatio || 1;
+  const rect = canvas.getBoundingClientRect();
+  canvas.width = rect.width * dpr;
+  canvas.height = rect.height * dpr;
+  ctx.scale(dpr, dpr);
+
+  const W = rect.width;
+  const H = rect.height;
+  const cssVar = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  const bgColor = cssVar('--bg-card') || '#ffffff';
+  const textColor = cssVar('--text-secondary') || '#64748b';
+
+  ctx.fillStyle = bgColor;
+  ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = textColor;
+  ctx.font = `500 12px ${cssVar('--font-family') || 'sans-serif'}`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(message, W / 2, H / 2);
+  canvas._chartMeta = null;
+}
+
 // ─── Tooltip ───
 
 function setupTooltip(canvas, formatLabel) {
@@ -462,13 +486,23 @@ function buildChartSection({ container, title, metaText, controls, canvasHeight 
   titleRow.appendChild(titleEl);
   header.appendChild(titleRow);
 
+  const meta = document.createElement('span');
+  meta.className = 'elo-section-meta';
+  meta.textContent = metaText || '';
+  meta.style.display = metaText ? '' : 'none';
+  header.appendChild(meta);
+
   if (metaText) {
-    const meta = document.createElement('span');
-    meta.className = 'elo-section-meta';
-    meta.textContent = metaText;
-    header.appendChild(meta);
+    meta.style.display = '';
+  } else {
+    meta.style.display = 'none';
   }
   wrap.appendChild(header);
+
+  function setMetaText(text) {
+    meta.textContent = text || '';
+    meta.style.display = text ? '' : 'none';
+  }
 
   // Collapsible body
   const body = document.createElement('div');
@@ -517,7 +551,23 @@ function buildChartSection({ container, title, metaText, controls, canvasHeight 
     }
   });
 
-  return { canvas };
+  return { canvas, setMetaText };
+}
+
+function getLatestTournamentDateForSelection(allMatches, selectedNames = []) {
+  const validMatches = (allMatches || []).filter(m => !(m.scoreTeam1 === 0 && m.scoreTeam2 === 0));
+  if (!validMatches.length) return null;
+
+  const dates = [...new Set(validMatches.map(m => m.date))].sort();
+  if (!selectedNames.length) return dates[dates.length - 1] || null;
+
+  const selected = new Set(selectedNames.map(n => String(n || '').toLowerCase()));
+  const isInvolved = (m) =>
+    [m.team1Player1Name, m.team1Player2Name, m.team2Player1Name, m.team2Player2Name]
+      .some(n => selected.has(String(n || '').toLowerCase()));
+
+  const involvedDates = dates.filter(d => validMatches.some(m => m.date === d && isInvolved(m)));
+  return (involvedDates[involvedDates.length - 1] || dates[dates.length - 1] || null);
 }
 
 // ─── Main Render ───
@@ -598,6 +648,9 @@ export function renderEloCharts(container, params = {}) {
     const allMemberNames = getMembers();
     const playersSummary = Store.getPlayersSummary();
     const playerByName = new Map(playersSummary.map(p => [String(p.name || '').toLowerCase(), p]));
+    const playerNameById = new Map(playersSummary
+      .filter(p => p && p.id)
+      .map(p => [String(p.id), String(p.name || '')]));
     const colorMap = getMemberColorMap(allMemberNames);
 
     // Load persisted prefs
@@ -739,14 +792,19 @@ export function renderEloCharts(container, params = {}) {
 
     historyControlsWrap.appendChild(intervalRow);
     historyControlsWrap.appendChild(customRangeEl);
+    const historyNoticeEl = document.createElement('div');
+    historyNoticeEl.className = 'text-sm text-secondary';
+    historyNoticeEl.style.cssText = 'padding:4px 0 0;display:none;';
+    historyControlsWrap.appendChild(historyNoticeEl);
 
     // ═══════════════════════════════════════════
     // Section 1: Latest Tournament
     // ═══════════════════════════════════════════
 
-    const { canvas: tCanvas } = buildChartSection({
+    const { canvas: tCanvas, setMetaText: setTournamentMeta } = buildChartSection({
       container: content,
       title: 'Latest Tournament',
+      metaText: '',
       controls: null,
       canvasHeight: 220,
       storageKey: 'tournament',
@@ -762,10 +820,15 @@ export function renderEloCharts(container, params = {}) {
       const history = getEloHistoryForLatestTournament(allMatches, [...selectedMembers]);
       filterHistoryToMembers(history);
       filterHistoryToSelected(history, selectedMembers);
+      const latestDate = getLatestTournamentDateForSelection(allMatches, [...selectedMembers]);
+      setTournamentMeta(latestDate ? `Date: ${latestDate}` : 'Date: —');
 
       const datasets = buildDatasets(history, colorMap, pt => `Round ${pt.round}`);
 
-      if (!datasets.length) return;
+      if (!datasets.length) {
+        drawEmptyChart(tCanvas, 'No tournament data');
+        return;
+      }
 
       function draw() {
         drawLineChart(tCanvas, datasets, { xLabels: history.rounds || [], smooth });
@@ -801,6 +864,13 @@ export function renderEloCharts(container, params = {}) {
     let hCleanupTooltip = null;
     let hResizeHandler = null;
     let historyLoadToken = 0;
+    let missingSelectedNames = [];
+
+    function setHistoryNotice(text, isWarning = false) {
+      historyNoticeEl.textContent = text || '';
+      historyNoticeEl.style.display = text ? '' : 'none';
+      historyNoticeEl.style.color = isWarning ? 'var(--color-warning, #f59e0b)' : 'var(--text-secondary, #64748b)';
+    }
 
     function getHistoryData() {
       if (!eloHistoryData) return { players: {}, dates: [] };
@@ -823,13 +893,18 @@ export function renderEloCharts(container, params = {}) {
       }
 
       try {
-        await pullEloHistoryForPlayerIds(selectedIds);
+        const { missingPlayerIds = [] } = await pullEloHistoryForPlayerIds(selectedIds);
         if (token !== historyLoadToken) return;
         const files = getCachedEloHistoryForPlayerIds(selectedIds);
         eloHistoryData = mergePlayerHistoryFiles(files);
+        missingSelectedNames = missingPlayerIds
+          .map(id => playerNameById.get(String(id)))
+          .filter(Boolean)
+          .sort((a, b) => a.localeCompare(b));
       } catch {
         if (token !== historyLoadToken) return;
         eloHistoryData = { players: {}, dates: [] };
+        missingSelectedNames = [];
       }
       renderHistoryChart();
     }
@@ -844,7 +919,18 @@ export function renderEloCharts(container, params = {}) {
 
       const datasets = buildDatasets(history, colorMap, pt => pt.date ? formatDateShort(pt.date) : `Round ${pt.round}`);
 
-      if (!datasets.length) return;
+      if (missingSelectedNames.length > 0) {
+        setHistoryNotice(`No ELO history file for: ${missingSelectedNames.join(', ')}`, true);
+      } else if (!datasets.length) {
+        setHistoryNotice('No ELO history data for selected player(s). Generate history in Settings.');
+      } else {
+        setHistoryNotice('');
+      }
+
+      if (!datasets.length) {
+        drawEmptyChart(hCanvas, 'No ELO history data');
+        return;
+      }
 
       function draw() {
         drawLineChart(hCanvas, datasets, { xLabels: history.dates || [], smooth });

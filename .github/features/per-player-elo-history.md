@@ -53,4 +53,7 @@ Replace single large `elo_history.json` with one history file per player.
 - ELO tab keeps multi-select.
 - For selected players, app loads matching `elo_history_{playerId}.json` files.
 - App merges selected files into chart datasets.
+- If selected player file is missing, UI shows: `No ELO history file for: <name>`.
+- If chart has no points for selection, UI shows settings hint to generate history.
+- Latest Tournament section shows tournament date label next to title.
 - Legacy `elo_history.json` is not read or written.
