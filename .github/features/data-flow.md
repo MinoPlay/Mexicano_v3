@@ -16,7 +16,8 @@ Every `Store.set()` call automatically schedules a debounced push to GitHub (1.5
 ├── players.json                     ← all-time player stats + ELO (generated)
 ├── players_meta.json                ← last-generated date for incremental updates
 ├── tournaments.json                 ← index of all tournament dates + metadata
-├── elo_history.json                 ← full ELO timeline per player (generated)
+├── elo_history/
+│   └── elo_history_<playerId>.json ← per-player ELO timeline (generated)
 ├── data/
 │   └── active_tournament.json      ← in-progress tournament state
 ├── players_summaries/
@@ -100,7 +101,7 @@ No writes.
 |-----------|-----------------|------|
 | READ | `players.json` | On load (via `pullEloChartsData`) |
 | READ | `tournaments.json` | On load |
-| READ | `elo_history.json` | On load |
+| READ | `elo_history/elo_history_<playerId>.json` | On load + on player selection |
 
 No writes.
 
@@ -122,7 +123,7 @@ No writes.
 |-----------|-----------------|------|
 | READ | `players.json` | On load (via `pullSettingsData`, lightweight) |
 | WRITE | `players.json` + `players_meta.json` | "Generate players.json" button → `generatePlayersJson()` |
-| WRITE | `elo_history.json` | "Generate elo_history.json" button → `generateEloHistory()` |
+| WRITE | `elo_history/elo_history_<playerId>.json` | "Generate per-player ELO history" button → `generateEloHistory()` |
 | WRITE | `YYYY/YYYY-MM/players_overview.json` | "Generate monthly overview" button → `generateMonthlyOverviews()` |
 | WRITE | `players_summaries/summary_<slug>.json` | "Generate / Update Summary" button → `generateOrUpdatePlayerSummary()` |
 
@@ -265,7 +266,7 @@ Read-only data pulled from GitHub is stored in an **ephemeral in-memory Cache** 
 | `tournament_dates` | derived from `tournaments.json` |
 | `tournaments_index` | `tournaments.json` |
 | `monthly_YYYY-MM` | `YYYY/YYYY-MM/players_overview.json` |
-| `elo_history` | `elo_history.json` |
+| `elo_history_player_<id>` | `elo_history/elo_history_<playerId>.json` |
 
 ### Keys kept in localStorage (write paths or user config)
 - `github_config`, `current_user`, `theme`, `changelog` — user preferences

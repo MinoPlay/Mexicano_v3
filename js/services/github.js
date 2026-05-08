@@ -571,6 +571,7 @@ export async function pullAll(onProgress) {
       const playersResult = await readFile(playersPath);
       if (playersResult?.content && Array.isArray(playersResult.content)) {
         const camelPlayers = playersResult.content.map(p => ({
+          id: p.Id ?? null,
           name: p.Name,
           elo: p.ELO,
           previousElo: p.PreviousELO ?? p.ELO,
@@ -676,7 +677,7 @@ export async function pullAll(onProgress) {
 }
 
 // ─── Doodle-only Session TTL helpers ─────────────────────────────────────────
-// Read-only GitHub data (players, tournaments, overviews, elo_history) now uses
+// Read-only GitHub data (players, tournaments, overviews, per-player elo_history files) now uses
 // the in-memory Cache instead of TTL. Doodle data stays in localStorage and
 // still uses a session TTL to avoid hammering the API on repeated doodle visits.
 
@@ -761,6 +762,7 @@ async function pullCoreData() {
     const result = await readFile(playersPath);
     if (result?.content && Array.isArray(result.content)) {
       const camelPlayers = result.content.map(p => ({
+        id: p.Id ?? null,
         name: p.Name,
         elo: p.ELO,
         previousElo: p.PreviousELO ?? p.ELO,
@@ -831,6 +833,7 @@ async function pullTournamentsPage() {
     const result = await readFile(playersPath);
     if (result?.content && Array.isArray(result.content)) {
       const camelPlayers = result.content.map(p => ({
+        id: p.Id ?? null,
         name: p.Name,
         elo: p.ELO,
         previousElo: p.PreviousELO ?? p.ELO,
@@ -891,6 +894,7 @@ async function pullSettingsData() {
     const result = await readFile(playersPath);
     if (result?.content && Array.isArray(result.content)) {
       const camelPlayers = result.content.map(p => ({
+        id: p.Id ?? null,
         name: p.Name,
         elo: p.ELO,
         previousElo: p.PreviousELO ?? p.ELO,
@@ -1002,6 +1006,7 @@ async function pullHomeData() {
     const result = await readFile(playersPath);
     if (result?.content && Array.isArray(result.content)) {
       const camelPlayers = result.content.map(p => ({
+        id: p.Id ?? null,
         name: p.Name,
         elo: p.ELO,
         previousElo: p.PreviousELO ?? p.ELO,
@@ -1063,7 +1068,7 @@ async function pullHomeData() {
 
 /**
  * Pull only what the elo-charts page needs from GitHub.
- * Fetches players.json, tournaments.json, and elo_history.json.
+ * Fetches players.json and tournaments.json.
  *
  * No-op if already fresh in this session.
  * @returns {Promise<boolean>} true if any data was fetched
@@ -1071,7 +1076,7 @@ async function pullHomeData() {
 async function pullEloChartsData() {
   const cfg = getConfig();
   if (!cfg?.owner || !cfg?.repo || !cfg?.pat) return false;
-  if (Cache.has('elo_history')) return false;
+  if (Cache.has('players_summary')) return false;
 
   ghLog('PULL_ELO_CHARTS', '-', 'start');
   const base = matchesBase();
@@ -1082,6 +1087,7 @@ async function pullEloChartsData() {
     const result = await readFile(playersPath);
     if (result?.content && Array.isArray(result.content)) {
       const camelPlayers = result.content.map(p => ({
+        id: p.Id ?? null,
         name: p.Name,
         elo: p.ELO,
         previousElo: p.PreviousELO ?? p.ELO,
@@ -1102,15 +1108,6 @@ async function pullEloChartsData() {
   try {
     await fetchTournamentsIndex({ create: false });
   } catch { /* tournaments.json may not exist */ }
-
-  // ── 3. elo_history.json ──────────────────────────────────────────────────────
-  const eloHistoryPath = base ? `${base}/elo_history.json` : 'elo_history.json';
-  try {
-    const result = await readFile(eloHistoryPath);
-    if (result?.content) {
-      Cache.set('elo_history', result.content);
-    }
-  } catch { /* elo_history.json may not exist yet */ }
 
   ghLog('PULL_ELO_CHARTS', '-', 'done');
   return true;
@@ -1155,7 +1152,7 @@ export async function pullForRoute(hash) {
       return { updated };
     }
 
-    // Elo charts page: fetch players, tournaments, elo_history
+    // Elo charts page: fetch players and tournaments (history loads per selected player)
     if (path === '/elo-charts') {
       const updated = await pullEloChartsData();
       return { updated };
@@ -1195,7 +1192,7 @@ export async function refreshCurrentPage(hash, onStep) {
 
   // Clear in-memory Cache for the data this route needs so pull always re-fetches
   if (path === '/elo-charts') {
-    Cache.del('elo_history');
+    Cache.keys('elo_history_player_').forEach(k => Cache.del(k));
     Cache.del('players_summary');
     Cache.del('members');
   } else if (path === '/settings') {
@@ -1235,7 +1232,7 @@ export async function refreshCurrentPage(hash, onStep) {
 function _getRefreshSteps(path) {
   if (path === '/') return ['players.json', 'tournaments.json', 'Latest match data'];
   if (path === '/tournaments') return ['players.json', 'tournaments.json'];
-  if (path === '/elo-charts') return ['players.json', 'elo_history.json'];
+  if (path === '/elo-charts') return ['players.json', 'Per-player ELO history'];
   if (path === '/statistics') return ['players.json', 'tournaments.json', 'Monthly overviews'];
   if (path === '/doodle') return ['Core data', 'Doodle schedules'];
   if (path === '/settings') return ['players.json'];
@@ -1525,22 +1522,72 @@ export { generatePlayersJson }    from '../scripts/generate-players-json.js';
 export { generateEloHistory }     from '../scripts/generate-elo-history.js';
 export { generateMonthlyOverviews } from '../scripts/generate-monthly-overviews.js';
 
-/**
- * Read elo_history.json from GitHub.
- * @returns {Promise<object|null>} parsed content or null if not found / not configured
- */
-export async function readEloHistory() {
-  const cfg = getConfig();
-  if (!cfg?.owner || !cfg?.repo || !cfg?.pat) return null;
-
+function playerEloHistoryPath(playerId) {
   const base = matchesBase();
-  const eloHistoryPath = base ? `${base}/elo_history.json` : 'elo_history.json';
-  try {
-    const result = await readFile(eloHistoryPath);
-    return result?.content ?? null;
-  } catch {
-    return null;
+  const safeId = encodeURIComponent(String(playerId || '').trim());
+  return base ? `${base}/elo_history/elo_history_${safeId}.json` : `elo_history/elo_history_${safeId}.json`;
+}
+
+function playerEloCacheKey(playerId) {
+  return `elo_history_player_${String(playerId || '').trim()}`;
+}
+
+/**
+ * Pull and cache per-player ELO history files for the provided player IDs.
+ * Missing files are cached as { missing: true } so repeated reads are avoided.
+ *
+ * @param {string[]} playerIds
+ * @returns {Promise<{ loadedPlayerIds: string[], missingPlayerIds: string[] }>}
+ */
+export async function pullEloHistoryForPlayerIds(playerIds = []) {
+  const cfg = getConfig();
+  if (!cfg?.owner || !cfg?.repo || !cfg?.pat) return { loadedPlayerIds: [], missingPlayerIds: [] };
+
+  const ids = [...new Set(playerIds.map(id => String(id || '').trim()).filter(Boolean))];
+  const loadedPlayerIds = [];
+  const missingPlayerIds = [];
+
+  for (const playerId of ids) {
+    const key = playerEloCacheKey(playerId);
+    if (Cache.has(key)) {
+      const cached = Cache.get(key);
+      if (cached?.missing) missingPlayerIds.push(playerId);
+      else loadedPlayerIds.push(playerId);
+      continue;
+    }
+    try {
+      const result = await readFile(playerEloHistoryPath(playerId));
+      if (result?.content) {
+        Cache.set(key, result.content);
+        loadedPlayerIds.push(playerId);
+      } else {
+        Cache.set(key, { missing: true, playerId });
+        missingPlayerIds.push(playerId);
+      }
+    } catch {
+      Cache.set(key, { missing: true, playerId });
+      missingPlayerIds.push(playerId);
+    }
   }
+
+  return { loadedPlayerIds, missingPlayerIds };
+}
+
+/**
+ * Read cached per-player ELO histories for provided player IDs.
+ * Returns only existing cached content (missing markers excluded).
+ *
+ * @param {string[]} playerIds
+ * @returns {object[]} array of per-player elo history payloads
+ */
+export function getCachedEloHistoryForPlayerIds(playerIds = []) {
+  const ids = [...new Set(playerIds.map(id => String(id || '').trim()).filter(Boolean))];
+  const out = [];
+  for (const playerId of ids) {
+    const item = Cache.get(playerEloCacheKey(playerId));
+    if (item && !item.missing) out.push(item);
+  }
+  return out;
 }
 
 

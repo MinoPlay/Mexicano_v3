@@ -1,12 +1,9 @@
 /**
  * generate-elo-history.js
  *
- * Reads all players_overview.json files from GitHub (one per month) and
- * reconstructs elo_history.json from the per-day ELO arrays stored in each
- * overview — no match-file traversal needed.
- *
- * Falls back to loading all match files only if the monthly overviews use
- * the legacy single-number ELO format (no array entries found at all).
+ * Reads monthly players_overview.json files from GitHub and writes per-player
+ * ELO history files:
+ *   backup-data/elo_history/elo_history_{playerId}.json
  */
 
 import {
@@ -18,17 +15,70 @@ import {
   ghLog,
 } from '../services/github.js';
 
+function normalizePlayerKey(name) {
+  return String(name || '').trim().toLowerCase();
+}
+
+function playerEloHistoryPath(base, playerId) {
+  const safeId = encodeURIComponent(playerId);
+  return base ? `${base}/elo_history/elo_history_${safeId}.json` : `elo_history/elo_history_${safeId}.json`;
+}
+
+function normalizeOptions(onProgress, options) {
+  if (typeof onProgress === 'function' || onProgress == null) {
+    return { onProgress, options: options || {} };
+  }
+  return { onProgress: undefined, options: onProgress || {} };
+}
+
 /**
- * Generate elo_history.json from all monthly players_overview.json files.
+ * Generate per-player ELO history files from all monthly players_overview.json files.
  *
- * @param {function} [onProgress] - called with (label, total, index)
- * @returns {Promise<{ written: number }>}
+ * @param {function|object} [onProgress] - callback or options object
+ * @param {object} [options]
+ * @param {string[]} [options.playerIds] - optional subset of player IDs to write
+ * @returns {Promise<{ written: number, playerIds: string[] }>}
  */
-export async function generateEloHistory(onProgress) {
+export async function generateEloHistory(onProgress, options) {
+  const normalized = normalizeOptions(onProgress, options);
+  onProgress = normalized.onProgress;
+  options = normalized.options;
+
   const cfg = getConfig();
   if (!cfg?.owner || !cfg?.repo || !cfg?.pat) throw new Error('GitHub not configured');
 
   const base = matchesBase();
+  const playersPath = base ? `${base}/players.json` : 'players.json';
+
+  onProgress?.('Reading players.json…', 0, 0);
+  const playersResult = await readFile(playersPath);
+  if (!playersResult?.content || !Array.isArray(playersResult.content) || playersResult.content.length === 0) {
+    throw new Error('players.json not found or empty — generate players.json first.');
+  }
+
+  const playerMetaByKey = new Map(); // normalized name -> { id, name }
+  for (const row of playersResult.content) {
+    const key = normalizePlayerKey(row?.Name);
+    if (!key) continue;
+    const id = typeof row?.Id === 'string' && row.Id.trim() ? row.Id.trim() : '';
+    if (!id) throw new Error(`players.json missing Id for "${row?.Name || 'unknown'}". Regenerate players.json first.`);
+    if (!playerMetaByKey.has(key)) {
+      playerMetaByKey.set(key, { id, name: row.Name });
+      continue;
+    }
+    const existing = playerMetaByKey.get(key);
+    if (existing.id !== id) {
+      throw new Error(`players.json contains conflicting Id values for "${row.Name}".`);
+    }
+  }
+
+  const allPlayerIds = [...new Set([...playerMetaByKey.values()].map(p => p.id))];
+  const requested = Array.isArray(options.playerIds)
+    ? [...new Set(options.playerIds.map(id => String(id || '').trim()).filter(Boolean))]
+    : allPlayerIds;
+  const targetIds = requested.filter(id => allPlayerIds.includes(id));
+
+  if (targetIds.length === 0) return { written: 0, playerIds: [] };
 
   // ── 1. Discover all monthly overview files ───────────────────────────────────
   onProgress?.('Listing year directories…', 0, 0);
@@ -50,70 +100,66 @@ export async function generateEloHistory(onProgress) {
   if (overviews.length === 0) throw new Error('No players_overview.json files found — generate monthly overviews first.');
   overviews.sort((a, b) => a.yearMonth.localeCompare(b.yearMonth));
 
-  // Check if overviews use the new array format; fall back to match-file
-  // traversal if all ELO fields are legacy numbers.
-  const hasArrayElo = overviews.some(o => o.rows.some(r => Array.isArray(r.ELO) && r.ELO.length > 0));
+  // ── 2. Build per-player points from monthly overviews ────────────────────────
+  onProgress?.('Computing per-player ELO history…', 1, 1);
+  const pointsById = {}; // playerId -> [{date, elo, delta}]
+  const unknownNames = new Set();
 
-  if (!hasArrayElo) {
-    // Legacy fallback: rebuild from match files (old behaviour)
-    onProgress?.('Monthly overviews use legacy ELO format — loading match files…', 0, 0);
-    const { pullAllMatches } = await import('../services/github.js');
-    const { getEloHistoryAllTime } = await import('../services/elo.js');
-    const allMatches = await pullAllMatches((label, total, idx) => onProgress?.(`Loading: ${label}`, total, idx));
-    onProgress?.('Computing ELO history…', 1, 1);
-    const history = getEloHistoryAllTime(allMatches);
-    const output = { generatedAt: new Date().toISOString(), players: history.players, dates: history.dates };
-    const eloHistoryPath = base ? `${base}/elo_history.json` : 'elo_history.json';
-    onProgress?.('Writing elo_history.json…', 1, 1);
-    const existing = await readFile(eloHistoryPath);
-    await writeFile(eloHistoryPath, output, existing?.sha);
-    const playerCount = Object.keys(output.players).length;
-    ghLog('GENERATE_ELO_HISTORY', eloHistoryPath, `${playerCount} players (legacy rebuild)`);
-    return { written: playerCount };
-  }
-
-  // ── 2. Build history from overview ELO arrays ────────────────────────────────
-  onProgress?.('Computing ELO history from monthly overviews…', 1, 1);
-
-  // players[name] = [{date, elo}] in chronological order (all months)
-  const players = {};
-  const dateSet = new Set();
+  for (const playerId of targetIds) pointsById[playerId] = [];
 
   for (const { rows } of overviews) {
     for (const row of rows) {
-      if (!row.Name || !Array.isArray(row.ELO)) continue;
-      if (!players[row.Name]) players[row.Name] = [];
+      if (!row?.Name || !Array.isArray(row.ELO)) continue;
+      const meta = playerMetaByKey.get(normalizePlayerKey(row.Name));
+      if (!meta) {
+        unknownNames.add(row.Name);
+        continue;
+      }
+      if (!pointsById[meta.id]) continue;
       for (const entry of row.ELO) {
-        if (!entry.Date || entry.ELO == null) continue;
-        players[row.Name].push({ date: entry.Date, elo: entry.ELO });
-        dateSet.add(entry.Date);
+        if (!entry?.Date || entry.ELO == null) continue;
+        pointsById[meta.id].push({ date: entry.Date, elo: entry.ELO });
       }
     }
   }
 
-  // Sort each player's history and compute delta vs previous point
-  const allDates = [...dateSet].sort();
-  for (const pts of Object.values(players)) {
-    pts.sort((a, b) => a.date.localeCompare(b.date));
-    for (let i = 0; i < pts.length; i++) {
-      const prev = pts[i - 1];
-      pts[i].delta = prev ? Math.round((pts[i].elo - prev.elo) * 10) / 10 : 0;
+  if (unknownNames.size > 0) {
+    throw new Error(`players_overview.json has player(s) missing in players.json: ${[...unknownNames].sort().join(', ')}`);
+  }
+
+  for (const playerId of targetIds) {
+    const points = pointsById[playerId] || [];
+    points.sort((a, b) => a.date.localeCompare(b.date));
+    for (let i = 0; i < points.length; i++) {
+      const prev = points[i - 1];
+      points[i].delta = prev ? Math.round((points[i].elo - prev.elo) * 10) / 10 : 0;
     }
   }
 
-  const output = {
-    generatedAt: new Date().toISOString(),
-    players,
-    dates: allDates,
-  };
+  // ── 3. Write per-player files ────────────────────────────────────────────────
+  const byIdToName = new Map([...playerMetaByKey.values()].map(p => [p.id, p.name]));
+  let written = 0;
+  const writtenIds = [];
+  for (let i = 0; i < targetIds.length; i++) {
+    const playerId = targetIds[i];
+    const playerName = byIdToName.get(playerId) || '';
+    const points = pointsById[playerId] || [];
+    const output = {
+      generatedAt: new Date().toISOString(),
+      playerId,
+      playerName,
+      points,
+      dates: points.map(p => p.date),
+    };
 
-  // ── 3. Write elo_history.json ─────────────────────────────────────────────────
-  const eloHistoryPath = base ? `${base}/elo_history.json` : 'elo_history.json';
-  onProgress?.('Writing elo_history.json…', 1, 1);
-  const existing = await readFile(eloHistoryPath);
-  await writeFile(eloHistoryPath, output, existing?.sha);
+    const path = playerEloHistoryPath(base, playerId);
+    onProgress?.(`Writing elo_history_${playerId}.json…`, targetIds.length, i + 1);
+    const existing = await readFile(path).catch(() => null);
+    await writeFile(path, output, existing?.sha);
+    written++;
+    writtenIds.push(playerId);
+  }
 
-  const playerCount = Object.keys(output.players).length;
-  ghLog('GENERATE_ELO_HISTORY', eloHistoryPath, `${playerCount} players`);
-  return { written: playerCount };
+  ghLog('GENERATE_ELO_HISTORY', `${base || '.'}/elo_history`, `${written} player files`);
+  return { written, playerIds: writtenIds };
 }

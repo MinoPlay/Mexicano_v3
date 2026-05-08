@@ -99,9 +99,9 @@ export function renderSettings(container, params) {
           </p>
           <button id="gen-players-btn" class="btn btn-primary" style="width:100%;">Generate players.json</button>
           <p class="text-sm text-secondary" style="margin:0;">
-            Reads all day-match files and replays the full ELO timeline from the beginning. Writes <code>backup-data/elo_history.json</code> with a per-player ELO value for every tournament date. Always a full rebuild.
+            Reads monthly <code>players_overview.json</code> files and writes per-player history files to <code>backup-data/elo_history/elo_history_{playerId}.json</code>. Full rebuild for all players.
           </p>
-          <button id="gen-elo-history-btn" class="btn btn-secondary" style="width:100%;">Generate elo_history.json</button>
+          <button id="gen-elo-history-btn" class="btn btn-secondary" style="width:100%;">Generate per-player ELO history</button>
           <p class="text-sm text-secondary" style="margin:0;">
             Reads day-match files for the selected month (<code>backup-data/YYYY/YYYY-MM/*.json</code>), seeds starting ELO from the previous month's <code>players_overview.json</code>, and writes <code>backup-data/YYYY/YYYY-MM/players_overview.json</code>.
           </p>
@@ -465,15 +465,14 @@ export function renderSettings(container, params) {
 
   genEloHistoryBtn.addEventListener('click', async () => {
     setRemoteBtnsDisabled(true);
-    setRemoteDataMsg('Loading match files…');
+    setRemoteDataMsg('Loading monthly overview files…');
     try {
       const { written } = await generateEloHistory((label) => setRemoteDataMsg(label));
-      localStorage.removeItem('mexicano_elo_history');
-      setRemoteDataMsg(`Done! elo_history.json written with ${written} players.`);
-      showToast('elo_history.json generated');
+      setRemoteDataMsg(`Done! ${written} per-player ELO history files written.`);
+      showToast('Per-player ELO history generated');
     } catch (e) {
       setRemoteDataMsg(`Error: ${e.message}`, true);
-      showToast('Failed to generate elo_history.json', 'error');
+      showToast('Failed to generate per-player ELO history', 'error');
     } finally {
       setRemoteBtnsDisabled(false);
     }

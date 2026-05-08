@@ -162,11 +162,6 @@ export const Store = {
     Cache.set('tournaments_index', entries);
   },
 
-  /** Get the in-memory ELO history fetched from elo_history.json. */
-  getEloHistory() {
-    return Cache.get('elo_history');
-  },
-
   // ─── Import / Export ───
 
   exportAll() {

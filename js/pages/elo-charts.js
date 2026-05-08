@@ -5,6 +5,7 @@ import {
 } from '../services/elo.js';
 import { Store } from '../store.js';
 import { getMembers } from '../services/members.js';
+import { pullEloHistoryForPlayerIds, getCachedEloHistoryForPlayerIds } from '../services/github.js';
 
 // ─── Color Generator ───
 
@@ -371,7 +372,27 @@ function renderMemberPicker(container, { allMembers, selectedMembers, colorMap, 
   }
 }
 
-// ─── ELO History Adapters (from pre-computed elo_history.json) ───
+// ─── ELO History Adapters (from pre-computed per-player files) ───
+
+function mergePlayerHistoryFiles(files) {
+  const players = {};
+  const dateSet = new Set();
+
+  for (const file of files || []) {
+    if (!file?.playerName || !Array.isArray(file.points)) continue;
+    const points = file.points
+      .filter(p => p?.date && p.elo != null)
+      .map(p => ({ date: p.date, elo: p.elo, delta: p.delta ?? 0 }))
+      .sort((a, b) => a.date.localeCompare(b.date));
+    players[file.playerName] = points;
+    points.forEach(p => dateSet.add(p.date));
+  }
+
+  return {
+    players,
+    dates: [...dateSet].sort(),
+  };
+}
 
 function eloHistoryForPeriod(eloData, months) {
   if (!eloData || !eloData.dates) return { players: {}, dates: [] };
@@ -516,23 +537,9 @@ export function renderEloCharts(container, params = {}) {
   container.appendChild(content);
 
   let allMatches = Store.getMatches();
-  let eloHistoryData = Store.getEloHistory();
+  let eloHistoryData = null;
   let _chartCleanup = null;
   const tournamentChartRef = { render: null };
-
-  if (eloHistoryData) {
-    _chartCleanup = renderChartContent();
-    // Lazy-load all matches so the tournament chart can show round-by-round progression
-    if (Store.getGitHubConfig()?.pat) {
-      import('../services/github.js').then(({ ensureAllMatchesLoaded }) =>
-        ensureAllMatchesLoaded()
-      ).then(matches => {
-        allMatches = matches;
-        tournamentChartRef.render?.();
-      }).catch(() => {});
-    }
-    return () => { if (_chartCleanup) _chartCleanup(); };
-  }
 
   const needsFullLoad = !Store.isMatchesFullyLoaded() && Store.getGitHubConfig()?.pat;
 
@@ -551,15 +558,6 @@ export function renderEloCharts(container, params = {}) {
       import('../services/github.js').then(({ pullForRoute }) =>
         pullForRoute('#/elo-charts')
       ).then(() => {
-        const history = Store.getEloHistory();
-        if (history) {
-          eloHistoryData = history;
-          content.innerHTML = '';
-          content.style.paddingLeft = '0';
-          content.style.paddingRight = '0';
-          _chartCleanup = renderChartContent();
-          return;
-        }
         return import('../services/github.js').then(({ ensureAllMatchesLoaded }) =>
           ensureAllMatchesLoaded()
         ).then(matches => {
@@ -598,6 +596,8 @@ export function renderEloCharts(container, params = {}) {
 
   function renderChartContent() {
     const allMemberNames = getMembers();
+    const playersSummary = Store.getPlayersSummary();
+    const playerByName = new Map(playersSummary.map(p => [String(p.name || '').toLowerCase(), p]));
     const colorMap = getMemberColorMap(allMemberNames);
 
     // Load persisted prefs
@@ -646,7 +646,7 @@ export function renderEloCharts(container, params = {}) {
         allMembers: allMemberNames,
         selectedMembers,
         colorMap,
-        onChange: () => { persistMembers(); renderSharedPicker(); renderTournamentChart(); renderHistoryChart(); },
+        onChange: () => { persistMembers(); renderSharedPicker(); renderTournamentChart(); loadSelectedPlayerHistories(); },
       });
     }
 
@@ -800,22 +800,38 @@ export function renderEloCharts(container, params = {}) {
 
     let hCleanupTooltip = null;
     let hResizeHandler = null;
+    let historyLoadToken = 0;
 
     function getHistoryData() {
-      if (eloHistoryData) {
-        if (interval === 'custom') return eloHistoryForDateRange(eloHistoryData, customFrom || null, customTo || null);
-        if (interval === 'all') return eloHistoryForPeriod(eloHistoryData, null);
-        const monthsMap = { '1m': 1, '3m': 3, '6m': 6 };
-        return eloHistoryForPeriod(eloHistoryData, monthsMap[interval] ?? 3);
-      }
-      if (interval === 'custom') {
-        return getEloHistoryForDateRange(allMatches, customFrom || null, customTo || null);
-      }
-      if (interval === 'all') {
-        return getEloHistoryForPeriod(allMatches, null);
-      }
+      if (!eloHistoryData) return { players: {}, dates: [] };
+      if (interval === 'custom') return eloHistoryForDateRange(eloHistoryData, customFrom || null, customTo || null);
+      if (interval === 'all') return eloHistoryForPeriod(eloHistoryData, null);
       const monthsMap = { '1m': 1, '3m': 3, '6m': 6 };
-      return getEloHistoryForPeriod(allMatches, monthsMap[interval] ?? 3);
+      return eloHistoryForPeriod(eloHistoryData, monthsMap[interval] ?? 3);
+    }
+
+    async function loadSelectedPlayerHistories() {
+      const token = ++historyLoadToken;
+      const selectedIds = [...selectedMembers]
+        .map(name => playerByName.get(String(name || '').toLowerCase())?.id)
+        .filter(Boolean);
+
+      if (selectedIds.length === 0) {
+        eloHistoryData = { players: {}, dates: [] };
+        renderHistoryChart();
+        return;
+      }
+
+      try {
+        await pullEloHistoryForPlayerIds(selectedIds);
+        if (token !== historyLoadToken) return;
+        const files = getCachedEloHistoryForPlayerIds(selectedIds);
+        eloHistoryData = mergePlayerHistoryFiles(files);
+      } catch {
+        if (token !== historyLoadToken) return;
+        eloHistoryData = { players: {}, dates: [] };
+      }
+      renderHistoryChart();
     }
 
     function renderHistoryChart() {
@@ -842,7 +858,7 @@ export function renderEloCharts(container, params = {}) {
     }
 
     renderSharedPicker();
-    renderHistoryChart();
+    loadSelectedPlayerHistories();
 
     cleanupFns.push(() => {
       if (hCleanupTooltip) hCleanupTooltip();

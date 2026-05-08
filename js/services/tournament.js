@@ -376,7 +376,7 @@ export function completeTournament(tournament) {
   }).catch(() => {});
 
   // Immediately sync completed tournament to GitHub
-  import('./github.js').then(({ flushPush, markMatchDateDirty, keyToPath, readFile, deleteFile, updateTournamentIndexEntry, generateMonthlyOverviews, generatePlayersJson }) => {
+  import('./github.js').then(({ flushPush, markMatchDateDirty, keyToPath, readFile, deleteFile, updateTournamentIndexEntry, generateMonthlyOverviews, generatePlayersJson, generateEloHistory }) => {
     markMatchDateDirty(tournament.tournamentDate);
     // Delete active_tournament.json from GitHub since the tournament is done
     const atPath = keyToPath('active_tournament');
@@ -387,6 +387,8 @@ export function completeTournament(tournament) {
     }
 
     const yearMonth = tournament.tournamentDate.slice(0, 7);
+    const participantNames = [...new Set((tournament.players || []).map(p => String(p?.name || '').trim()).filter(Boolean))];
+    const normalizeName = name => String(name || '').trim().toLowerCase();
     // Order is critical: overview must be written before players.json.
     // generateMonthlyOverviews seeds ELO from the previous month's overview and
     // writes the current month's players_overview.json.  generatePlayersJson then
@@ -398,6 +400,18 @@ export function completeTournament(tournament) {
     Promise.resolve(flushPush())
       .then(() => generateMonthlyOverviews(yearMonth))
       .then(() => generatePlayersJson())
+      .then(async () => {
+        const base = Store.getGitHubConfig()?.basePath?.trim().replace(/\/$/, '') || '';
+        const playersPath = base ? `${base}/players.json` : 'players.json';
+        const playersResult = await readFile(playersPath);
+        const rows = Array.isArray(playersResult?.content) ? playersResult.content : [];
+        const idByName = new Map(rows.map(r => [normalizeName(r?.Name), r?.Id]).filter(([k, v]) => k && typeof v === 'string' && v.trim()));
+        const participantIds = participantNames.map(name => idByName.get(normalizeName(name))).filter(Boolean);
+        if (participantIds.length === 0) {
+          throw new Error('No participant Id values found in players.json for ELO history update.');
+        }
+        return generateEloHistory(undefined, { playerIds: participantIds });
+      })
       .catch(e => console.warn('[tournament] post-complete generation failed:', e));
 
     updateTournamentIndexEntry(indexEntry).catch(() => {});

@@ -16,6 +16,19 @@ import {
   ghLog,
 } from '../services/github.js';
 
+function normalizePlayerKey(name) {
+  return String(name || '').trim().toLowerCase();
+}
+
+function createRandomPlayerId() {
+  if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+    const r = Math.floor(Math.random() * 16);
+    const v = c === 'x' ? r : ((r & 0x3) | 0x8);
+    return v.toString(16);
+  });
+}
+
 /**
  * Generate players.json by aggregating all monthly players_overview.json files.
  *
@@ -28,6 +41,25 @@ export async function generatePlayersJson(onProgress) {
 
   const base        = matchesBase();
   const playersPath = base ? `${base}/players.json` : 'players.json';
+  const existingPlayersResult = await readFile(playersPath).catch(() => null);
+  const existingPlayers = Array.isArray(existingPlayersResult?.content) ? existingPlayersResult.content : [];
+  const existingIdByKey = new Map();
+
+  for (const row of existingPlayers) {
+    if (!row?.Name) continue;
+    const key = normalizePlayerKey(row.Name);
+    if (!key) continue;
+    const id = typeof row.Id === 'string' && row.Id.trim() ? row.Id.trim() : null;
+    if (!existingIdByKey.has(key)) {
+      existingIdByKey.set(key, id);
+      continue;
+    }
+    const prior = existingIdByKey.get(key);
+    if (prior && id && prior !== id) {
+      throw new Error(`players.json contains conflicting Id values for "${row.Name}".`);
+    }
+    if (!prior && id) existingIdByKey.set(key, id);
+  }
 
   // ── 1. Discover all players_overview.json files ───────────────────────────
   onProgress?.('Listing year directories…', 0, 0);
@@ -77,6 +109,19 @@ export async function generatePlayersJson(onProgress) {
   }
 
   // ── 3. Build result ───────────────────────────────────────────────────────
+  const canonicalNames = new Map();
+  for (const name of Object.keys(playerTotals)) {
+    const key = normalizePlayerKey(name);
+    if (!key) continue;
+    if (!canonicalNames.has(key)) {
+      canonicalNames.set(key, name);
+      continue;
+    }
+    if (canonicalNames.get(key) !== name) {
+      throw new Error(`Player name collision after normalization: "${canonicalNames.get(key)}" and "${name}".`);
+    }
+  }
+
   const result = Object.entries(playerTotals)
     .map(([name, s]) => {
       const months = playerMonths[name];
@@ -88,7 +133,14 @@ export async function generatePlayersJson(onProgress) {
         ? days[days.length - 2].elo
         : (months.length >= 2 ? months[months.length - 2].elo : elo);
       const games   = s.wins + s.losses;
+      const key = normalizePlayerKey(name);
+      let id = existingIdByKey.get(key);
+      if (!id) {
+        id = createRandomPlayerId();
+        existingIdByKey.set(key, id);
+      }
       return {
+        Id:          id,
         Name:        name,
         ELO:         elo,
         PreviousELO: prevElo,
@@ -103,8 +155,7 @@ export async function generatePlayersJson(onProgress) {
 
   // ── 4. Write players.json ─────────────────────────────────────────────────
   onProgress?.('Writing players.json…', 1, 1);
-  const existing = await readFile(playersPath).catch(() => null);
-  await writeFile(playersPath, result, existing?.sha);
+  await writeFile(playersPath, result, existingPlayersResult?.sha);
 
   ghLog('GENERATE_PLAYERS_JSON', playersPath, `${result.length} players`);
   return { written: result.length };
