@@ -251,5 +251,27 @@ Keys that bypass auto-sync:
 - `doodle_*` → pushed immediately via `pushDoodleNow()` (no debounce)
 - `members`, `theme`, `changelog`, `current_user`, `github_config` → **local-only, never synced**
 
-Session TTL (5 min) prevents redundant re-fetches within the same browser session.
-Full re-fetch is forced by the refresh button (`refreshCurrentPage`), which clears TTLs first.
+---
+
+## In-Memory Cache
+
+Read-only data pulled from GitHub is stored in an **ephemeral in-memory Cache** (`js/cache.js`) instead of `localStorage`. This cache is cleared automatically on every page refresh — guaranteeing fresh data on every load with no stale state.
+
+### Keys stored in Cache (never persisted to localStorage)
+| Cache key | Source file |
+|-----------|------------|
+| `players_summary` | `players.json` |
+| `members` | derived from `players.json` |
+| `tournament_dates` | derived from `tournaments.json` |
+| `tournaments_index` | `tournaments.json` |
+| `monthly_YYYY-MM` | `YYYY/YYYY-MM/players_overview.json` |
+| `elo_history` | `elo_history.json` |
+
+### Keys kept in localStorage (write paths or user config)
+- `github_config`, `current_user`, `theme`, `changelog` — user preferences
+- `active_tournament` — written during tournament play
+- `matches` — written during/after tournament play
+- `doodle_*` — written when user marks attendance
+
+### Pull deduplication
+Pull functions guard with `Cache.has(key)` instead of a session TTL. If data is already in Cache (same JS context = same page visit), the pull is skipped. Since Cache is empty on every page refresh, data is always re-fetched from GitHub.

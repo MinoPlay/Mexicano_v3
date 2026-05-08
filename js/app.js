@@ -86,48 +86,7 @@ async function loadLocalData() {
   } catch { /* not running on dev server, or no local data */ }
 }
 
-/**
- * Clear stale localStorage data on page load to ensure fresh data from GitHub.
- * Preserves: GitHub config, theme, user name, debug log, and dev server flags.
- */
-function clearStaleLocalStorage() {
-  const PRESERVE = new Set([
-    'mexicano_github_config',
-    'mexicano_theme',
-    'mexicano_current_user',
-    'mexicano_github_log',
-    'mexicano_local_data_loaded', // dev server flag
-  ]);
-
-  const keysToRemove = [];
-  for (let i = 0; i < localStorage.length; i++) {
-    const k = localStorage.key(i);
-    if (k && k.startsWith('mexicano_') && !PRESERVE.has(k)) {
-      keysToRemove.push(k);
-    }
-  }
-  keysToRemove.forEach(k => localStorage.removeItem(k));
-}
-
-/**
- * Clear session TTL cache to force fresh GitHub fetches on next pull.
- */
-function clearSessionTTLCache() {
-  const keysToRemove = [];
-  for (let i = 0; i < sessionStorage.length; i++) {
-    const k = sessionStorage.key(i);
-    if (k && k.startsWith('mexicano_gh_ts_')) {
-      keysToRemove.push(k);
-    }
-  }
-  keysToRemove.forEach(k => sessionStorage.removeItem(k));
-}
-
 async function init() {
-  // Clear stale data on page load to ensure fresh GitHub data
-  clearStaleLocalStorage();
-  clearSessionTTLCache();
-
   await loadDevSecrets();
   initInstallPrompt();
 
@@ -173,33 +132,19 @@ window.addEventListener('storage', (e) => {
 });
 
 // Auto-pull from GitHub on every page open/refresh if configured.
-// Uses a flag to distinguish our own reload (skip) from a user-initiated refresh (pull).
+// In-memory Cache is empty on every page refresh, so pull always runs fresh.
 async function loadFromGitHub() {
   if (!Store.getGitHubConfig()?.pat) return;
-  if (sessionStorage.getItem('mexicano_github_just_pulled') === 'true') {
-    sessionStorage.removeItem('mexicano_github_just_pulled');
-    const result = sessionStorage.getItem('mexicano_sync_result');
-    sessionStorage.removeItem('mexicano_sync_result');
-    if (result === 'updated') showToast('✅ Data updated');
-    else if (result === 'uptodate') showToast('✓ Up to date');
-    return;
-  }
   setSyncBusy(true);
   try {
-    const { updated } = await pullForRoute(window.location.hash);
-    if (updated) {
-      // Data was actually fetched — reload so the UI renders fresh state
-      sessionStorage.setItem('mexicano_github_just_pulled', 'true');
-      sessionStorage.setItem('mexicano_sync_result', 'updated');
-      location.reload();
-    } else {
-      // Already fresh within TTL — no reload needed, console logs stay intact
-      setSyncBusy(false);
-    }
+    await pullForRoute(window.location.hash);
+    // Re-render the current page with freshly pulled data
+    router.resolve();
   } catch (e) {
-    setSyncBusy(false);
     console.warn('GitHub auto-pull failed:', e);
     showToast(`⚠️ Sync failed: ${e.message}`);
+  } finally {
+    setSyncBusy(false);
   }
 }
 

@@ -2,9 +2,15 @@
  * localStorage wrapper for persistent data.
  * All data keyed with 'mexicano_' prefix.
  *
+ * Read-only GitHub data (players_summary, tournament_dates, monthly_*,
+ * elo_history, tournaments_index) is stored in the ephemeral in-memory Cache
+ * instead of localStorage so it is always pulled fresh on every page refresh.
+ *
  * When a GitHub config is present, every set() call schedules a debounced
  * push via the GitHub service (imported lazily to avoid circular deps).
  */
+
+import { Cache } from './cache.js';
 
 const PREFIX = 'mexicano_';
 
@@ -58,11 +64,12 @@ export const Store = {
   },
 
   getMembers() {
-    return this.get('members') || [];
+    return Cache.get('members') || this.get('members') || [];
   },
 
   setMembers(members) {
     this.set('members', members);
+    Cache.set('members', members);
   },
 
   getActiveTournament() {
@@ -123,19 +130,19 @@ export const Store = {
   // ─── Summary data (pre-computed from Python scripts, read-only) ───
 
   getPlayersSummary() {
-    return this.get('players_summary') || [];
+    return Cache.get('players_summary') || [];
   },
 
   getTournamentDates() {
-    return this.get('tournament_dates') || [];
+    return Cache.get('tournament_dates') || [];
   },
 
   getMonthlyOverview(yearMonth) {
-    return this.get(`monthly_${yearMonth}`) || [];
+    return Cache.get(`monthly_${yearMonth}`) || [];
   },
 
   getMonthlyOverviewMonths() {
-    return this.keys('monthly_')
+    return Cache.keys('monthly_')
       .map(k => k.replace('monthly_', ''))
       .filter(k => /^\d{4}-\d{2}$/.test(k))
       .sort();
@@ -146,17 +153,18 @@ export const Store = {
   },
 
   getTournamentsIndex() {
-    return this.get('tournaments_index') || [];
+    return Cache.get('tournaments_index') || [];
   },
 
-  /** Write tournaments index without triggering an auto-push (this file is
-   *  managed explicitly via updateTournamentIndexEntry in github.js). */
+  /** Write tournaments index to in-memory cache only (managed explicitly via
+   *  updateTournamentIndexEntry in github.js). */
   setTournamentsIndex(entries) {
-    try {
-      localStorage.setItem('mexicano_tournaments_index', JSON.stringify(entries));
-    } catch (e) {
-      console.error('Store.setTournamentsIndex error:', e);
-    }
+    Cache.set('tournaments_index', entries);
+  },
+
+  /** Get the in-memory ELO history fetched from elo_history.json. */
+  getEloHistory() {
+    return Cache.get('elo_history');
   },
 
   // ─── Import / Export ───

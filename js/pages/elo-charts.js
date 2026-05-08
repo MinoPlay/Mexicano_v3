@@ -515,12 +515,8 @@ export function renderEloCharts(container, params = {}) {
   content.style.paddingRight = '0';
   container.appendChild(content);
 
-  const cachedEloHistory = (() => {
-    try { return JSON.parse(localStorage.getItem('mexicano_elo_history') || 'null'); } catch { return null; }
-  })();
-
   let allMatches = Store.getMatches();
-  let eloHistoryData = cachedEloHistory;
+  let eloHistoryData = Store.getEloHistory();
   let _chartCleanup = null;
   const tournamentChartRef = { render: null };
 
@@ -555,11 +551,9 @@ export function renderEloCharts(container, params = {}) {
       import('../services/github.js').then(({ pullForRoute }) =>
         pullForRoute('#/elo-charts')
       ).then(() => {
-        const cached = (() => {
-          try { return JSON.parse(localStorage.getItem('mexicano_elo_history') || 'null'); } catch { return null; }
-        })();
-        if (cached) {
-          eloHistoryData = cached;
+        const history = Store.getEloHistory();
+        if (history) {
+          eloHistoryData = history;
           content.innerHTML = '';
           content.style.paddingLeft = '0';
           content.style.paddingRight = '0';

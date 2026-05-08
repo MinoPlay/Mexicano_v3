@@ -13,6 +13,7 @@
  */
 
 import { Store } from '../store.js';
+import { Cache } from '../cache.js';
 
 const API_BASE = 'https://api.github.com';
 
@@ -395,7 +396,7 @@ export async function fetchTournamentsIndex({ create = false } = {}) {
     const entries = Array.isArray(result.content) ? result.content : [];
     Store.setTournamentsIndex(entries);
     const dates = entries.map(e => e.date).sort();
-    localStorage.setItem('mexicano_tournament_dates', JSON.stringify(dates));
+    Cache.set('tournament_dates', dates);
     ghLog('TOURNAMENTS_INDEX_LOADED', path, `${entries.length} entries`);
     return entries;
   }
@@ -465,7 +466,7 @@ export async function fetchTournamentsIndex({ create = false } = {}) {
 
   Store.setTournamentsIndex(entries);
   const dates = entries.map(e => e.date).sort();
-  localStorage.setItem('mexicano_tournament_dates', JSON.stringify(dates));
+  Cache.set('tournament_dates', dates);
   return entries;
 }
 
@@ -511,7 +512,7 @@ export async function updateTournamentIndexEntry(entry) {
 
   Store.setTournamentsIndex(entries);
   const dates = entries.map(e => e.date).sort();
-  localStorage.setItem('mexicano_tournament_dates', JSON.stringify(dates));
+  Cache.set('tournament_dates', dates);
 }
 
 /**
@@ -579,10 +580,11 @@ export async function pullAll(onProgress) {
           average: p.Average ?? null,
           tournaments: p.Tournaments ?? null,
         }));
-        localStorage.setItem('mexicano_players_summary', JSON.stringify(camelPlayers));
+        Cache.set('players_summary', camelPlayers);
         // Update members list from the authoritative players.json
         const playerNames = camelPlayers.map(p => p.name).sort();
-        localStorage.setItem('mexicano_members', JSON.stringify(playerNames));
+        Cache.set('members', playerNames);
+        Store.setMembers(playerNames);
       }
     } catch { /* players.json may not exist yet */ }
     onProgress?.('players.json', 0, 0);
@@ -592,7 +594,7 @@ export async function pullAll(onProgress) {
     onProgress?.('tournaments.json', 0, 0);
 
     // ── 3. Read monthly overview + doodle files (derived from index dates) ──
-    const allDates = JSON.parse(localStorage.getItem('mexicano_tournament_dates') || '[]');
+    const allDates = Cache.get('tournament_dates') || [];
     const uniqueMonths = [...new Set(allDates.map(d => d.slice(0, 7)))].sort();
     const total = uniqueMonths.length;
     for (let i = 0; i < uniqueMonths.length; i++) {
@@ -611,7 +613,7 @@ export async function pullAll(onProgress) {
             average: p.Average,
             elo: p.ELO,
           }));
-          localStorage.setItem(`mexicano_monthly_${ym}`, JSON.stringify(camelOverview));
+          Cache.set(`monthly_${ym}`, camelOverview);
         }
       } catch { /* overview may not exist */ }
 
@@ -673,24 +675,26 @@ export async function pullAll(onProgress) {
   return { updated: true };
 }
 
-// ─── Session TTL helpers ──────────────────────────────────────────────────────
+// ─── Doodle-only Session TTL helpers ─────────────────────────────────────────
+// Read-only GitHub data (players, tournaments, overviews, elo_history) now uses
+// the in-memory Cache instead of TTL. Doodle data stays in localStorage and
+// still uses a session TTL to avoid hammering the API on repeated doodle visits.
 
 const SESSION_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
-function markFetched(key) {
-  try { sessionStorage.setItem(`mexicano_gh_ts_${key}`, Date.now().toString()); } catch { /* storage unavailable */ }
+function markDoodleFetched(yearMonth) {
+  try { sessionStorage.setItem(`mexicano_gh_ts_doodle_${yearMonth}`, Date.now().toString()); } catch { /* unavailable */ }
 }
 
-function isFreshInSession(key) {
+function isDoodleFreshInSession(yearMonth) {
   try {
-    const ts = parseInt(sessionStorage.getItem(`mexicano_gh_ts_${key}`) || '0', 10);
+    const ts = parseInt(sessionStorage.getItem(`mexicano_gh_ts_doodle_${yearMonth}`) || '0', 10);
     return Date.now() - ts < SESSION_TTL_MS;
   } catch { return false; }
 }
 
-/** Clear the session TTL for a key so the next pull always re-fetches. */
-export function clearSessionTTL(key) {
-  try { sessionStorage.removeItem(`mexicano_gh_ts_${key}`); } catch { /* unavailable */ }
+function clearDoodleSessionTTL(yearMonth) {
+  try { sessionStorage.removeItem(`mexicano_gh_ts_doodle_${yearMonth}`); } catch { /* unavailable */ }
 }
 
 /** Parse a raw players_overview.json entry (PascalCase) to camelCase. */
@@ -721,7 +725,7 @@ async function _fetchOverview(base, yearMonth) {
   try {
     const result = await readFile(path);
     if (result?.content && Array.isArray(result.content)) {
-      localStorage.setItem(`mexicano_monthly_${yearMonth}`, JSON.stringify(result.content.map(fromOverview)));
+      Cache.set(`monthly_${yearMonth}`, result.content.map(fromOverview));
     }
   } catch { /* overview may not exist for this month */ }
 }
@@ -737,7 +741,7 @@ async function _fetchOverview(base, yearMonth) {
 async function pullCoreData() {
   const cfg = getConfig();
   if (!cfg?.owner || !cfg?.repo || !cfg?.pat) return false;
-  if (isFreshInSession('core')) return false;
+  if (Cache.has('players_summary')) return false;
 
   ghLog('PULL_CORE', '-', 'start');
   const base = matchesBase();
@@ -757,8 +761,10 @@ async function pullCoreData() {
         average: p.Average ?? null,
         tournaments: p.Tournaments ?? null,
       }));
-      localStorage.setItem('mexicano_players_summary', JSON.stringify(camelPlayers));
-      localStorage.setItem('mexicano_members', JSON.stringify(camelPlayers.map(p => p.name).sort()));
+      Cache.set('players_summary', camelPlayers);
+      const memberNames = camelPlayers.map(p => p.name).sort();
+      Cache.set('members', memberNames);
+      Store.setMembers(memberNames);
     }
   } catch { /* players.json may not exist yet */ }
 
@@ -790,10 +796,8 @@ async function pullCoreData() {
     const d = new Date(now.getFullYear(), now.getMonth() + offset, 1);
     const ym = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
     await _fetchOverview(base, ym);
-    markFetched(`overview_${ym}`);
   }
 
-  markFetched('core');
   ghLog('PULL_CORE', '-', 'done');
   return true;
 }
@@ -807,7 +811,7 @@ async function pullCoreData() {
 async function pullTournamentsPage() {
   const cfg = getConfig();
   if (!cfg?.owner || !cfg?.repo || !cfg?.pat) return false;
-  if (isFreshInSession('tournaments_page')) return false;
+  if (Cache.has('players_summary')) return false;
 
   ghLog('PULL_TOURNAMENTS_PAGE', '-', 'start');
   const base = matchesBase();
@@ -827,8 +831,10 @@ async function pullTournamentsPage() {
         average: p.Average ?? null,
         tournaments: p.Tournaments ?? null,
       }));
-      localStorage.setItem('mexicano_players_summary', JSON.stringify(camelPlayers));
-      localStorage.setItem('mexicano_members', JSON.stringify(camelPlayers.map(p => p.name).sort()));
+      Cache.set('players_summary', camelPlayers);
+      const memberNames = camelPlayers.map(p => p.name).sort();
+      Cache.set('members', memberNames);
+      Store.setMembers(memberNames);
     }
   } catch { /* players.json may not exist yet */ }
 
@@ -854,7 +860,6 @@ async function pullTournamentsPage() {
     }
   } catch { /* data/ may not exist yet */ }
 
-  markFetched('tournaments_page');
   ghLog('PULL_TOURNAMENTS_PAGE', '-', 'done');
   return true;
 }
@@ -867,12 +872,11 @@ async function pullTournamentsPage() {
 async function pullSettingsData() {
   const cfg = getConfig();
   if (!cfg?.owner || !cfg?.repo || !cfg?.pat) return false;
-  if (isFreshInSession('settings')) return false;
+  if (Cache.has('players_summary')) return false;
 
   ghLog('PULL_SETTINGS', '-', 'start');
   const base = matchesBase();
 
-  // Fetch only players.json
   const playersPath = base ? `${base}/players.json` : 'players.json';
   try {
     const result = await readFile(playersPath);
@@ -887,12 +891,13 @@ async function pullSettingsData() {
         average: p.Average ?? null,
         tournaments: p.Tournaments ?? null,
       }));
-      localStorage.setItem('mexicano_players_summary', JSON.stringify(camelPlayers));
-      localStorage.setItem('mexicano_members', JSON.stringify(camelPlayers.map(p => p.name).sort()));
+      Cache.set('players_summary', camelPlayers);
+      const memberNames = camelPlayers.map(p => p.name).sort();
+      Cache.set('members', memberNames);
+      Store.setMembers(memberNames);
     }
   } catch { /* players.json may not exist yet */ }
 
-  markFetched('settings');
   ghLog('PULL_SETTINGS', '-', 'done');
   return true;
 }
@@ -906,36 +911,32 @@ async function pullSettingsData() {
 export async function pullMonthlyOverview(yearMonth) {
   const cfg = getConfig();
   if (!cfg?.owner || !cfg?.repo || !cfg?.pat) return { updated: false };
-  if (isFreshInSession(`overview_${yearMonth}`)) return { updated: false };
 
   const base = matchesBase();
-  const hadData = !!localStorage.getItem(`mexicano_monthly_${yearMonth}`);
+  const hadData = Cache.has(`monthly_${yearMonth}`);
   await _fetchOverview(base, yearMonth);
-  markFetched(`overview_${yearMonth}`);
-  const hasData = !!localStorage.getItem(`mexicano_monthly_${yearMonth}`);
+  const hasData = Cache.has(`monthly_${yearMonth}`);
   return { updated: !hadData && hasData };
 }
 
 /**
  * Pull all monthly overviews from GitHub (one per unique YYYY-MM in tournament_dates).
- * Skips months already fresh in this session.
+ * Skips months already loaded in the current page session (in-memory Cache).
  * @returns {Promise<{ updated: boolean }>}
  */
 export async function pullAllOverviews() {
   const cfg = getConfig();
   if (!cfg?.owner || !cfg?.repo || !cfg?.pat) return { updated: false };
 
-  const dates = JSON.parse(localStorage.getItem('mexicano_tournament_dates') || '[]');
+  const dates = Cache.get('tournament_dates') || [];
   const months = [...new Set(dates.map(d => d.slice(0, 7)))].sort();
   const base = matchesBase();
   let updated = false;
 
   for (const ym of months) {
-    if (isFreshInSession(`overview_${ym}`)) continue;
-    const hadData = !!localStorage.getItem(`mexicano_monthly_${ym}`);
+    if (Cache.has(`monthly_${ym}`)) continue;
     await _fetchOverview(base, ym);
-    markFetched(`overview_${ym}`);
-    if (!hadData && localStorage.getItem(`mexicano_monthly_${ym}`)) updated = true;
+    if (Cache.has(`monthly_${ym}`)) updated = true;
   }
   return { updated };
 }
@@ -951,7 +952,7 @@ export async function pullAllOverviews() {
 export async function pullDoodleMonth(yearMonth) {
   const cfg = getConfig();
   if (!cfg?.owner || !cfg?.repo || !cfg?.pat) return { content: null, updated: false };
-  if (isFreshInSession(`doodle_${yearMonth}`)) return { content: null, updated: false };
+  if (isDoodleFreshInSession(yearMonth)) return { content: null, updated: false };
 
   const base = matchesBase();
   const year = yearMonth.slice(0, 4);
@@ -959,13 +960,13 @@ export async function pullDoodleMonth(yearMonth) {
   const path = `${prefix}${year}/${yearMonth}/doodle_${yearMonth}.json`;
   try {
     const result = await readFile(path);
-    markFetched(`doodle_${yearMonth}`);
+    markDoodleFetched(yearMonth);
     if (!result?.content) return { content: null, updated: false };
     const existing = localStorage.getItem(`mexicano_doodle_${yearMonth}`);
     const newJson = JSON.stringify(result.content);
     return { content: result.content, updated: existing !== newJson };
   } catch {
-    markFetched(`doodle_${yearMonth}`);
+    markDoodleFetched(yearMonth);
     return { content: null, updated: false };
   }
 }
@@ -981,7 +982,7 @@ export async function pullDoodleMonth(yearMonth) {
 async function pullHomeData() {
   const cfg = getConfig();
   if (!cfg?.owner || !cfg?.repo || !cfg?.pat) return false;
-  if (isFreshInSession('home')) return false;
+  if (Cache.has('players_summary')) return false;
 
   ghLog('PULL_HOME', '-', 'start');
   const base = matchesBase();
@@ -1001,13 +1002,14 @@ async function pullHomeData() {
         average: p.Average ?? null,
         tournaments: p.Tournaments ?? null,
       }));
-      localStorage.setItem('mexicano_players_summary', JSON.stringify(camelPlayers));
-      localStorage.setItem('mexicano_members', JSON.stringify(camelPlayers.map(p => p.name).sort()));
+      Cache.set('players_summary', camelPlayers);
+      const memberNames = camelPlayers.map(p => p.name).sort();
+      Cache.set('members', memberNames);
+      Store.setMembers(memberNames);
     }
   } catch { /* players.json may not exist yet */ }
 
   // ── 2. Tournament dates — read tournaments.json (no create, no dir-walk) ─────
-  // Must come before active_tournament check so the index is available for the stale-entry guard.
   await fetchTournamentsIndex({ create: false });
 
   // ── 3. active_tournament.json ────────────────────────────────────────────────
@@ -1030,7 +1032,7 @@ async function pullHomeData() {
   } catch { /* data/ may not exist yet */ }
 
   // ── 4. Latest date's matches — only if not already in localStorage ───────────
-  const allDates = JSON.parse(localStorage.getItem('mexicano_tournament_dates') || '[]');
+  const allDates = Cache.get('tournament_dates') || [];
   if (allDates.length > 0) {
     const latestDate = allDates[allDates.length - 1];
     const cached = JSON.parse(localStorage.getItem('mexicano_matches') || '[]');
@@ -1046,7 +1048,6 @@ async function pullHomeData() {
     }
   }
 
-  markFetched('home');
   ghLog('PULL_HOME', '-', 'done');
   return true;
 }
@@ -1061,7 +1062,7 @@ async function pullHomeData() {
 async function pullEloChartsData() {
   const cfg = getConfig();
   if (!cfg?.owner || !cfg?.repo || !cfg?.pat) return false;
-  if (isFreshInSession('elo_charts')) return false;
+  if (Cache.has('elo_history')) return false;
 
   ghLog('PULL_ELO_CHARTS', '-', 'start');
   const base = matchesBase();
@@ -1081,8 +1082,10 @@ async function pullEloChartsData() {
         average: p.Average ?? null,
         tournaments: p.Tournaments ?? null,
       }));
-      localStorage.setItem('mexicano_players_summary', JSON.stringify(camelPlayers));
-      localStorage.setItem('mexicano_members', JSON.stringify(camelPlayers.map(p => p.name).sort()));
+      Cache.set('players_summary', camelPlayers);
+      const memberNames = camelPlayers.map(p => p.name).sort();
+      Cache.set('members', memberNames);
+      Store.setMembers(memberNames);
     }
   } catch { /* players.json may not exist yet */ }
 
@@ -1096,11 +1099,10 @@ async function pullEloChartsData() {
   try {
     const result = await readFile(eloHistoryPath);
     if (result?.content) {
-      localStorage.setItem('mexicano_elo_history', JSON.stringify(result.content));
+      Cache.set('elo_history', result.content);
     }
   } catch { /* elo_history.json may not exist yet */ }
 
-  markFetched('elo_charts');
   ghLog('PULL_ELO_CHARTS', '-', 'done');
   return true;
 }
@@ -1182,22 +1184,25 @@ export async function refreshCurrentPage(hash, onStep) {
 
   const path = (hash || '').replace(/^#/, '').split('?')[0] || '/';
 
-  // Clear TTLs so next pull always re-fetches
-  if (path === '/') {
-    clearSessionTTL('home');
-  } else if (path === '/tournaments') {
-    clearSessionTTL('tournaments_page');
-  } else if (path === '/elo-charts') {
-    clearSessionTTL('elo_charts');
+  // Clear in-memory Cache for the data this route needs so pull always re-fetches
+  if (path === '/elo-charts') {
+    Cache.del('elo_history');
+    Cache.del('players_summary');
+    Cache.del('members');
   } else if (path === '/settings') {
-    clearSessionTTL('settings');
+    Cache.del('players_summary');
+    Cache.del('members');
   } else {
-    clearSessionTTL('core');
+    // home, tournaments, statistics, doodle, tournament detail
+    Cache.del('players_summary');
+    Cache.del('members');
+    Cache.del('tournaments_index');
+    Cache.del('tournament_dates');
     const now = new Date();
     for (const offset of [-1, 0]) {
       const d = new Date(now.getFullYear(), now.getMonth() + offset, 1);
       const ym = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-      clearSessionTTL(`overview_${ym}`);
+      Cache.del(`monthly_${ym}`);
     }
   }
   if (path === '/doodle') {
@@ -1205,7 +1210,7 @@ export async function refreshCurrentPage(hash, onStep) {
     for (const offset of [0, 1]) {
       const d = new Date(now.getFullYear(), now.getMonth() + offset, 1);
       const ym = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-      clearSessionTTL(`doodle_${ym}`);
+      clearDoodleSessionTTL(ym);
     }
   }
 
@@ -1270,10 +1275,10 @@ export async function pullAllMatches(onProgress) {
   const cfg = getConfig();
   if (!cfg?.owner || !cfg?.repo || !cfg?.pat) throw new Error('GitHub not configured');
 
-  // Prefer tournaments index; fall back to tournament_dates; last resort: dir-walk
+  // Prefer tournaments index; fall back to Cache tournament_dates; last resort: dir-walk
   let dates = Store.getTournamentsIndex().map(e => e.date);
   if (dates.length === 0) {
-    dates = JSON.parse(localStorage.getItem('mexicano_tournament_dates') || '[]');
+    dates = Cache.get('tournament_dates') || [];
   }
 
   // If still no dates, fetch tournaments.json (create if needed) to populate them
