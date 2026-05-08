@@ -45,6 +45,15 @@ When a specific date is selected from the "Pick date…" dropdown:
 
 ---
 
+## Table Sorting
+
+- Default sorting for all statistics filters (**All Time**, **Latest**, **Monthly**, and specific **date**) is:
+  1. `AVG` descending
+  2. `Wins` descending (tie-break)
+  3. `Name` ascending (final tie-break)
+
+---
+
 ## File References
 
 - **Page logic**: `js/pages/statistics.js` — `renderTable()` function

@@ -49,6 +49,41 @@ function truncateName(name, maxLength = 15) {
   return name;
 }
 
+function compareValues(a, b, direction = 'desc') {
+  let av = a;
+  let bv = b;
+  const aNull = av == null;
+  const bNull = bv == null;
+  if (aNull && bNull) return 0;
+  if (aNull) return 1;
+  if (bNull) return -1;
+  if (typeof av === 'string') av = av.toLowerCase();
+  if (typeof bv === 'string') bv = bv.toLowerCase();
+  if (av < bv) return direction === 'asc' ? -1 : 1;
+  if (av > bv) return direction === 'asc' ? 1 : -1;
+  return 0;
+}
+
+export function sortStatisticsRows(stats, sortCol = 'average', sortDir = 'desc') {
+  const rows = stats.map((s, i) => ({ ...s, rank: i + 1 }));
+  rows.sort((a, b) => {
+    const primary = compareValues(a[sortCol], b[sortCol], sortDir);
+    if (primary !== 0) return primary;
+    const winsTieBreak = compareValues(a.wins, b.wins, 'desc');
+    if (winsTieBreak !== 0) return winsTieBreak;
+    return compareValues(a.name, b.name, 'asc');
+  });
+  rows.forEach((r, i) => r.rank = i + 1);
+  return rows;
+}
+
+export function getNextStatisticsSortState(currentCol, currentDir, clickedCol) {
+  if (currentCol === clickedCol) {
+    return { sortCol: currentCol, sortDir: currentDir === 'asc' ? 'desc' : 'asc' };
+  }
+  return { sortCol: clickedCol, sortDir: clickedCol === 'name' ? 'asc' : 'desc' };
+}
+
 // ─── Column definitions ───
 
 const STAT_COLUMNS = [
@@ -115,22 +150,12 @@ function overviewToStats(overview, prevOverview = []) {
 
 // ─── Sortable Table Renderer ───
 
-function renderSortableTable(container, stats, onPlayerClick, columns = STAT_COLUMNS, defaultSort = 'elo') {
+function renderSortableTable(container, stats, onPlayerClick, columns = STAT_COLUMNS, defaultSort = 'average') {
   let sortCol = defaultSort;
   let sortDir = 'desc';
 
   function sortedData() {
-    const rows = stats.map((s, i) => ({ ...s, rank: i + 1 }));
-    rows.sort((a, b) => {
-      let av = a[sortCol], bv = b[sortCol];
-      if (typeof av === 'string') av = av.toLowerCase();
-      if (typeof bv === 'string') bv = bv.toLowerCase();
-      if (av < bv) return sortDir === 'asc' ? -1 : 1;
-      if (av > bv) return sortDir === 'asc' ? 1 : -1;
-      return 0;
-    });
-    rows.forEach((r, i) => r.rank = i + 1);
-    return rows;
+    return sortStatisticsRows(stats, sortCol, sortDir);
   }
 
   function render() {
@@ -163,12 +188,9 @@ function renderSortableTable(container, stats, onPlayerClick, columns = STAT_COL
       }
       if (col.key !== 'rank') {
         th.addEventListener('click', () => {
-          if (sortCol === col.key) {
-            sortDir = sortDir === 'asc' ? 'desc' : 'asc';
-          } else {
-            sortCol = col.key;
-            sortDir = col.key === 'name' ? 'asc' : 'desc';
-          }
+          const next = getNextStatisticsSortState(sortCol, sortDir, col.key);
+          sortCol = next.sortCol;
+          sortDir = next.sortDir;
           render();
         });
       }
