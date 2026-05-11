@@ -549,37 +549,82 @@ export function renderDoodle(container, params = {}) {
     const changelog = getChangelog(currentYear, currentMonth);
     if (!changelog || !changelog.length) return;
 
-    const title = document.createElement('h3');
-    title.className = 'card-title mb-sm';
-    title.textContent = 'Recent Changes';
-    changelogSection.appendChild(title);
+    // Reusable dialog for full entry details
+    let dialog = document.getElementById('doodle-changelog-dialog');
+    if (!dialog) {
+      dialog = document.createElement('dialog');
+      dialog.id = 'doodle-changelog-dialog';
+      dialog.style.cssText = 'border:none;border-radius:var(--radius-md);padding:var(--space-lg);max-width:360px;width:90%;box-shadow:var(--shadow-lg);background:var(--color-surface);color:var(--color-text);';
+      dialog.innerHTML = `
+        <div id="doodle-dialog-body" style="font-size:var(--font-size-sm);display:flex;flex-direction:column;gap:var(--space-sm);"></div>
+        <div style="margin-top:var(--space-md);text-align:right;">
+          <button class="btn btn-ghost btn-sm" id="doodle-dialog-close">Close</button>
+        </div>
+      `;
+      document.body.appendChild(dialog);
+      dialog.addEventListener('click', e => { if (e.target === dialog) dialog.close(); });
+      dialog.querySelector('#doodle-dialog-close').addEventListener('click', () => dialog.close());
+    }
+
+    let collapsed = true;
+
+    const header = document.createElement('div');
+    header.style.cssText = 'display:flex;align-items:center;gap:var(--space-xs);cursor:pointer;user-select:none;';
+    header.innerHTML = `<h3 class="card-title mb-0" style="margin:0;">Recent Changes</h3><span id="changelog-arrow">▶</span>`;
+    changelogSection.appendChild(header);
 
     const list = document.createElement('div');
-    list.style.cssText = 'display:flex;flex-direction:column;gap:var(--space-xs);';
+    list.style.cssText = 'display:flex;flex-direction:column;gap:2px;margin-top:var(--space-xs);';
+    changelogSection.appendChild(list);
 
-    changelog.slice(0, 20).forEach(entry => {
-      const item = document.createElement('div');
-      item.className = 'card';
-      item.style.padding = 'var(--space-sm) var(--space-md)';
-      item.style.fontSize = 'var(--font-size-xs)';
+    function buildRows(entries) {
+      list.innerHTML = '';
+      entries.forEach(entry => {
+        const name = entry.playerName || 'Unknown';
+        const month = entry.yearMonth || (entry.month ? `${entry.year}-${String(entry.month).padStart(2, '0')}` : '');
+        const added = (entry.selectedAdded || []);
+        const removed = (entry.selectedRemoved || []);
+        const ts = entry.timestamp ? new Date(entry.timestamp).toLocaleString() : '';
 
-      const label = entry.playerName || 'Unknown';
-      const month = entry.yearMonth || (entry.month ? `${entry.year}-${String(entry.month).padStart(2, '0')}` : '');
-      const selected = (entry.selectedAdded || []).join(', ');
-      const removed = (entry.selectedRemoved || []).join(', ');
-      const timestamp = entry.timestamp ? new Date(entry.timestamp).toLocaleString() : '';
+        const row = document.createElement('div');
+        row.className = 'card';
+        row.style.cssText = 'display:flex;justify-content:space-between;align-items:center;padding:var(--space-xs) var(--space-md);font-size:var(--font-size-xs);cursor:pointer;';
+        row.innerHTML = `<span class="text-medium">${name}</span><span class="text-secondary">${ts}</span>`;
 
-      item.innerHTML = `
-        <span class="text-medium">${label}</span>
-        <span class="text-secondary"> updated for ${month}</span>
-        ${selected ? `<div class="text-secondary mt-xs">Selected: ${selected}</div>` : ''}
-        ${removed ? `<div class="text-secondary mt-xs">Removed: ${removed}</div>` : ''}
-        ${timestamp ? `<div class="text-secondary mt-xs">${timestamp}</div>` : ''}
-      `;
-      list.appendChild(item);
+        row.addEventListener('click', () => {
+          const body = dialog.querySelector('#doodle-dialog-body');
+          body.innerHTML = `
+            <div><span class="text-secondary">Player: </span><strong>${name}</strong></div>
+            <div><span class="text-secondary">Month: </span>${month}</div>
+            ${added.length ? `<div><span class="text-secondary">Added: </span>${added.join(', ')}</div>` : ''}
+            ${removed.length ? `<div><span class="text-secondary">Removed: </span>${removed.join(', ')}</div>` : ''}
+            <div><span class="text-secondary">Time: </span>${ts}</div>
+          `;
+          dialog.showModal();
+        });
+
+        list.appendChild(row);
+      });
+    }
+
+    function applyCollapsed() {
+      buildRows(changelog.slice(0, 5));
+      list.style.display = '';
+      header.querySelector('#changelog-arrow').textContent = '▶';
+    }
+
+    function applyExpanded() {
+      buildRows(changelog.slice(0, 20));
+      list.style.display = '';
+      header.querySelector('#changelog-arrow').textContent = '▼';
+    }
+
+    header.addEventListener('click', () => {
+      collapsed = !collapsed;
+      collapsed ? applyCollapsed() : applyExpanded();
     });
 
-    changelogSection.appendChild(list);
+    applyCollapsed();
   }
 
   function setupFooterButtons() {
