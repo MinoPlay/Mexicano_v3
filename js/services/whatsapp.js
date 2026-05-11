@@ -139,10 +139,10 @@ async function dispatchAlert(url, meta) {
     log('info', `Waiting ${waitMs}ms before send (rate limit gap).`, meta);
     await sleep(waitMs);
   }
-  log('info', 'Dispatching CallMeBot request.', meta);
+  log('info', 'Dispatching CallMeBot request.', { ...meta, url });
   await fetch(url, { mode: 'no-cors' });
   lastSentAt = Date.now();
-  log('info', 'Request dispatched. no-cors means delivery cannot be confirmed in browser.', meta);
+  log('info', 'Request dispatched.', { ...meta, url });
 }
 
 function queueAlert(url, meta) {
