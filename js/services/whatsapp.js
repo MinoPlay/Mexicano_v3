@@ -186,7 +186,8 @@ export async function sendDoodleAlert(playerName, yearMonth, selectedAdded = [],
   const removed = selectedRemoved.length ? selectedRemoved.join(', ') : 'none';
   const text    = `🎾 Doodle update — ${playerName} (${yearMonth})\n✅ Added: ${added}\n❌ Removed: ${removed}`;
 
-  const url = `https://api.callmebot.com/whatsapp.php?phone=${encodeURIComponent(phone)}&text=${encodeURIComponent(text)}&apikey=${encodeURIComponent(apiKey)}`;
+  const cleanPhone = phone.replace(/\s/g, '');
+  const url = `https://api.callmebot.com/whatsapp.php?phone=${cleanPhone}&text=${encodeURIComponent(text)}&apikey=${apiKey}`;
   const meta = { ...baseMeta, kind: 'doodle' };
   return queueAlert(url, meta);
 }
@@ -200,7 +201,8 @@ export async function sendWhatsAppTestAlert() {
 
   const currentUser = Store.getCurrentUser() || 'unknown';
   const timestamp = new Date().toISOString();
+  const cleanPhone = phone.replace(/\s/g, '');
   const text = `📞 Mexicano test alert\nUser: ${currentUser}\nTime: ${timestamp}`;
-  const url = `https://api.callmebot.com/whatsapp.php?phone=${encodeURIComponent(phone)}&text=${encodeURIComponent(text)}&apikey=${encodeURIComponent(apiKey)}`;
+  const url = `https://api.callmebot.com/whatsapp.php?phone=${cleanPhone}&text=${encodeURIComponent(text)}&apikey=${apiKey}`;
   return queueAlert(url, { kind: 'test', user: currentUser, timestamp });
 }
