@@ -73,7 +73,6 @@ async function readWhatsAppConfigFromGitHub(gh) {
   const owner = encodeURIComponent(gh.owner);
   const repo = encodeURIComponent(gh.repo);
   const url = `${GH_API}/repos/${owner}/${repo}/contents/${safePath}`;
-  log('info', 'Reading WhatsApp config from GitHub.', { owner: gh.owner, repo: gh.repo, path });
   const res = await fetch(url, { headers: getHeaders(gh.pat) });
 
   if (res.status === 404) {
@@ -91,8 +90,6 @@ async function readWhatsAppConfigFromGitHub(gh) {
       hasPhone: !!parsed.phone,
       hasApiKey: !!parsed.apiKey,
     });
-  } else {
-    log('info', 'WhatsApp config loaded.', { path });
   }
   return parsed;
 }
@@ -101,12 +98,10 @@ export async function getWhatsAppConfig({ force = false } = {}) {
   const gh = Store.getGitHubConfig();
   const key = getConfigIdentity(gh);
   if (!force && key === cachedKey && Date.now() - cachedAt < CACHE_MS) {
-    log('info', 'Using cached WhatsApp config.');
     return cached;
   }
 
   if (!force && key === configLoadKey && configLoadPromise) {
-    log('info', 'Using in-flight WhatsApp config request.');
     return configLoadPromise;
   }
 
@@ -135,30 +130,24 @@ export async function getWhatsAppConfig({ force = false } = {}) {
 async function dispatchAlert(url, meta) {
   const elapsed = Date.now() - lastSentAt;
   const waitMs = Math.max(0, MIN_SEND_GAP_MS - elapsed);
-  if (waitMs > 0) {
-    log('info', `Waiting ${waitMs}ms before send (rate limit gap).`, meta);
-    await sleep(waitMs);
-  }
-  log('info', 'Dispatching CallMeBot request.', { ...meta, url });
+  if (waitMs > 0) await sleep(waitMs);
+  log('info', 'Sending WhatsApp alert.', { kind: meta.kind, url });
   await fetch(url, { mode: 'no-cors' });
   lastSentAt = Date.now();
-  log('info', 'Request dispatched.', { ...meta, url });
 }
 
 function queueAlert(url, meta) {
   const seq = ++sendSequence;
   queueDepth += 1;
   const runMeta = { ...meta, seq, queueDepth };
-  log('info', 'Queued WhatsApp alert.', runMeta);
 
   sendQueue = sendQueue.then(async () => {
     try {
       await dispatchAlert(url, runMeta);
     } catch (err) {
-      log('warn', 'Alert dispatch failed.', { ...runMeta, error: err?.message || String(err) });
+      log('warn', 'Alert dispatch failed.', { kind: meta.kind, error: err?.message || String(err) });
     } finally {
       queueDepth = Math.max(0, queueDepth - 1);
-      log('info', 'Alert queue slot released.', { seq, queueDepth });
     }
   });
 
