@@ -111,22 +111,3 @@ export function getChangelog(year, month) {
   return Store.getDoodleChangelog(yearMonth);
 }
 
-/**
- * Load doodle data for a given month from the local dev server (if available)
- * and update Store + emit doodle-changed so the UI re-renders.
- * No-op when not running on the local dev server.
- */
-export async function syncDoodleFromLocal(year, month) {
-  const ym = `${year}-${String(month).padStart(2, '0')}`;
-  try {
-    const r = await fetch(`/api/local-data/doodle?yearMonth=${ym}`);
-    if (!r.ok) return;
-    const data = await r.json();
-    if (!Array.isArray(data)) return;
-    const current = Store.getDoodle(ym);
-    if (JSON.stringify(current) !== JSON.stringify(data)) {
-      Store.setDoodle(ym, data);
-      State.emit('doodle-changed', { year, month });
-    }
-  } catch { /* not on local dev server */ }
-}

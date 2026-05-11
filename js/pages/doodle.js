@@ -1,4 +1,4 @@
-import { getDoodle, saveDoodle, deleteDoodle, getChangelog, getAllDatesInMonth, syncDoodleFromLocal } from '../services/doodle.js';
+import { getDoodle, saveDoodle, deleteDoodle, getChangelog, getAllDatesInMonth } from '../services/doodle.js';
 import { Store } from '../store.js';
 import { State } from '../state.js';
 import { showToast } from '../components/toast.js';
@@ -789,7 +789,6 @@ export function renderDoodle(container, params = {}) {
     renderMatrix();
     renderChangelog();
     updateFooter();
-    syncDoodleFromLocal(currentYear, currentMonth).catch(() => {});
     const ym = `${currentYear}-${String(currentMonth).padStart(2, '0')}`;
     if (Store.getGitHubConfig()?.pat) {
       clearSessionTTL(`doodle_${ym}`);

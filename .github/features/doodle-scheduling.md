@@ -60,7 +60,6 @@ doodle_changelog[yearMonth] = [
 - `saveDoodle(playerName, year, month, selectedDates)` → validates, updates Store, persists, emits event
 - `deleteDoodle(playerName, year, month)` → removes player entry
 - `logDoodleChange(playerName, year, month, selectedAdded, selectedRemoved)` → appends month changelog entry when diff exists
-- `syncDoodleFromLocal(year, month)` → dev-server only, pulls local JSON and updates Store if changed
 - `writeDoodle(year, month, entries)` → local persistence API call (no-op on deployed)
 
 ## Edge Cases
@@ -80,7 +79,7 @@ doodle_changelog[yearMonth] = [
 - **Current user edit check** — enforced in `getDoodle()` + UI disable for readonly cells
 - **Per-month changelog scope** — each month has own backend changelog file, UI reads only active month
 - **Unlimited month changelog entries** — no cap trimming in service
-- **Dev-server only** — `writeDoodle()` + `syncDoodleFromLocal()` silent no-op on deployed (GitHub Pages)
+- **Dev-server only** — `writeDoodle()` silent no-op on deployed (GitHub Pages)
 
 ## File References
 - **Core**: `js/services/doodle.js` (logic, validation, events)

@@ -45,26 +45,6 @@ async function loadLocalData() {
     });
     if (!status.available) return;
 
-    // ─── Doodle: always reload from local file (current + next month) ───
-    const now = new Date();
-    const doodleMonths = [0, 1].map(offset => {
-      const d = new Date(now.getFullYear(), now.getMonth() + offset, 1);
-      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-    });
-    const doodleResults = await Promise.all(
-      doodleMonths.map(ym =>
-        fetch(`/api/local-data/doodle?yearMonth=${ym}`).then(r => r.ok ? r.json() : null).catch(() => null)
-      )
-    );
-    doodleMonths.forEach((ym, i) => {
-      if (Array.isArray(doodleResults[i]) && doodleResults[i].length > 0) {
-        Store.setDoodle(ym, doodleResults[i]);
-        const [y, m] = ym.split('-').map(Number);
-        State.emit('doodle-changed', { year: y, month: m });
-        console.log(`Loaded doodle for ${ym} (${doodleResults[i].length} entries)`);
-      }
-    });
-
     // ─── Matches + players: only on first load ───
     if (localStorage.getItem('mexicano_local_data_loaded') === 'true') return;
     console.log('Loading local test data…');
