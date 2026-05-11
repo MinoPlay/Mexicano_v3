@@ -5,6 +5,7 @@
 import { Store } from '../store.js';
 import { State } from '../state.js';
 import { writeDoodle } from './local.js';
+import { sendDoodleAlert } from './whatsapp.js';
 
 export function getAllDatesInMonth(year, month) {
   const dates = [];
@@ -72,6 +73,7 @@ export function saveDoodle(playerName, year, month, selectedDates) {
   const selectedAdded = normalizedSelectedDates.filter(d => !previousSet.has(d));
   const selectedRemoved = previousDates.filter(d => !nextSet.has(d)).sort();
   logDoodleChange(playerName, year, month, selectedAdded, selectedRemoved);
+  sendDoodleAlert(playerName, yearMonth, selectedAdded, selectedRemoved);
   State.emit('doodle-changed', { year, month });
 }
 
@@ -83,6 +85,7 @@ export function deleteDoodle(playerName, year, month) {
   Store.setDoodle(yearMonth, filtered);
   const selectedRemoved = Array.isArray(removedEntry?.selectedDates) ? [...removedEntry.selectedDates].sort() : [];
   logDoodleChange(playerName, year, month, [], selectedRemoved);
+  sendDoodleAlert(playerName, yearMonth, [], selectedRemoved);
   State.emit('doodle-changed', { year, month });
 }
 
