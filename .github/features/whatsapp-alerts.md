@@ -33,17 +33,21 @@ Notify a WhatsApp number via CallMeBot whenever a doodle entry is saved or delet
 - Visible to all users (not gated by isMino)
 - Phone input (text, read-only) + API Key input (password, read-only)
 - Reload button → re-fetches config from GitHub
+- Test button with call icon (`📞 Send Test Alert`) sends a manual WhatsApp test message
 - Shows explicit error when config values are missing or config read fails
 - Alert fires only when both values are present and non-empty
 
 ## Behavior
 - Fire-and-forget: failures log to console, never throw
-- Silent no-op when phone or apiKey missing
-- Silent no-op when both `selectedAdded` and `selectedRemoved` are empty
+- Console logs when config load starts/ends, when queueing alerts, and when dispatching requests
+- Logs explicit skip reason when phone/apiKey missing
+- Logs explicit skip reason when both `selectedAdded` and `selectedRemoved` are empty
 - Only fires on explicit user saves (not background syncs like syncDoodleFromAzure)
 - Trigger happens post-commit: alerts start only after GitHub write of monthly doodle + changelog succeeds
 - Alerts are serialized client-side (single queue) to preserve commit/change order
 - Alerts enforce minimum send gap (6.5s) to avoid CallMeBot batching multiple changes into one WhatsApp message
+- Dispatch uses `fetch(..., { mode: 'no-cors' })`, so browser logs request dispatch but cannot confirm delivery response
+- Test alert forces a fresh config fetch before send and reports missing config as UI error
 
 ## File References
 - **Service**: `js/services/whatsapp.js`

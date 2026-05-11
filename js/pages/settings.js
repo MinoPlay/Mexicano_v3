@@ -11,7 +11,7 @@ import { generateOrUpdatePlayerSummary } from '../scripts/generate-player-summar
 import { uploadToAzure } from '../scripts/azure-upload.js';
 import { syncDoodleFromAzure } from '../scripts/azure-doodle-sync.js';
 import { canInstall, triggerInstall } from '../components/install-prompt.js';
-import { getWhatsAppConfig } from '../services/whatsapp.js';
+import { getWhatsAppConfig, sendWhatsAppTestAlert } from '../services/whatsapp.js';
 
 function renderMembersList(listEl) {
   const members = getMembers();
@@ -183,7 +183,10 @@ export function renderSettings(container, params) {
           <input type="text"     id="wa-phone"  placeholder="Phone from config.json" autocomplete="off" readonly />
           <input type="password" id="wa-apikey" placeholder="API key from config.json" autocomplete="off" readonly />
         </div>
-        <button id="wa-reload-btn" class="btn btn-secondary mt-sm" style="width:100%;">Reload from GitHub</button>
+        <div class="flex gap-sm mt-sm">
+          <button id="wa-reload-btn" class="btn btn-secondary" style="flex:1;">Reload from GitHub</button>
+          <button id="wa-test-btn" class="btn btn-primary" style="flex:1;">📞 Send Test Alert</button>
+        </div>
         <div id="wa-status-msg" class="text-sm mt-sm" style="min-height:1.25rem;"></div>
       </div>
 
@@ -667,6 +670,7 @@ export function renderSettings(container, params) {
   const waPhone    = container.querySelector('#wa-phone');
   const waApiKey   = container.querySelector('#wa-apikey');
   const waReloadBtn = container.querySelector('#wa-reload-btn');
+  const waTestBtn  = container.querySelector('#wa-test-btn');
   const waStatus   = container.querySelector('#wa-status-msg');
 
   function setWaStatus(msg, isError = false) {
@@ -681,11 +685,14 @@ export function renderSettings(container, params) {
       waPhone.value = wa.phone || '';
       waApiKey.value = wa.apiKey || '';
       if (!wa.phone || !wa.apiKey) {
+        waTestBtn.disabled = true;
         setWaStatus('Missing whatsapp_alerts.phone_number or whatsapp_alerts.api_key in config.json.', true);
         return;
       }
+      waTestBtn.disabled = false;
       setWaStatus('Loaded from config.json.');
     } catch (err) {
+      waTestBtn.disabled = true;
       setWaStatus(`Failed to read config.json: ${err.message}`, true);
     }
   }
@@ -693,5 +700,20 @@ export function renderSettings(container, params) {
   loadWaFromGitHub();
   waReloadBtn.addEventListener('click', () => {
     loadWaFromGitHub(true);
+  });
+  waTestBtn.addEventListener('click', async () => {
+    waTestBtn.disabled = true;
+    setWaStatus('Sending WhatsApp test alert…');
+    try {
+      await sendWhatsAppTestAlert();
+      setWaStatus('Test alert request sent. Check WhatsApp.');
+      showToast('WhatsApp test alert sent');
+    } catch (err) {
+      setWaStatus(`Test alert failed: ${err.message}`, true);
+      showToast('WhatsApp test alert failed', 'error');
+    } finally {
+      const wa = await getWhatsAppConfig().catch(() => ({ phone: '', apiKey: '' }));
+      waTestBtn.disabled = !wa.phone || !wa.apiKey;
+    }
   });
 }
