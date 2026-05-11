@@ -1,9 +1,14 @@
 import { Store } from '../store.js';
 
-let cached = { phone: '', apiKey: '' };
+const EMPTY = Object.freeze({ phone: '', apiKey: '' });
+const GH_API = 'https://api.github.com';
+const GH_ACCEPT = 'application/vnd.github+json';
+const GH_API_VERSION = '2022-11-28';
+const CACHE_MS = 30000;
+
+let cached = EMPTY;
 let cachedAt = 0;
 let cachedKey = '';
-const CACHE_MS = 30000;
 
 function decodeBase64Json(content) {
   const bytes = Uint8Array.from(atob(content.replace(/\n/g, '')), c => c.charCodeAt(0));
@@ -21,30 +26,38 @@ function getConfigIdentity(gh) {
   return `${gh?.owner || ''}|${gh?.repo || ''}|${gh?.basePath || ''}|${gh?.pat || ''}`;
 }
 
-async function readWhatsAppConfigFromGitHub(gh) {
-  if (!gh?.owner || !gh?.repo || !gh?.pat) return { phone: '', apiKey: '' };
+function getHeaders(pat) {
+  return {
+    Authorization: `Bearer ${pat}`,
+    Accept: GH_ACCEPT,
+    'X-GitHub-Api-Version': GH_API_VERSION,
+  };
+}
 
-  const path = getConfigPath(gh.basePath);
-  const safePath = path.split('/').map(encodeURIComponent).join('/');
-  const url = `https://api.github.com/repos/${encodeURIComponent(gh.owner)}/${encodeURIComponent(gh.repo)}/contents/${safePath}`;
-  const res = await fetch(url, {
-    headers: {
-      Authorization: `Bearer ${gh.pat}`,
-      Accept: 'application/vnd.github+json',
-      'X-GitHub-Api-Version': '2022-11-28',
-    },
-  });
-
-  if (res.status === 404) return { phone: '', apiKey: '' };
-  if (!res.ok) throw new Error(`GitHub config read failed (${res.status}): ${path}`);
-
-  const file = await res.json();
-  const cfg = decodeBase64Json(file.content || '');
+function parseWaConfig(cfg) {
   const wa = cfg?.whatsapp_alerts || {};
   return {
     phone: typeof wa.phone_number === 'string' ? wa.phone_number.trim() : '',
     apiKey: typeof wa.api_key === 'string' ? wa.api_key.trim() : '',
   };
+}
+
+async function readWhatsAppConfigFromGitHub(gh) {
+  if (!gh?.owner || !gh?.repo || !gh?.pat) return EMPTY;
+
+  const path = getConfigPath(gh.basePath);
+  const safePath = path.split('/').map(encodeURIComponent).join('/');
+  const owner = encodeURIComponent(gh.owner);
+  const repo = encodeURIComponent(gh.repo);
+  const url = `${GH_API}/repos/${owner}/${repo}/contents/${safePath}`;
+  const res = await fetch(url, { headers: getHeaders(gh.pat) });
+
+  if (res.status === 404) return EMPTY;
+  if (!res.ok) throw new Error(`GitHub config read failed (${res.status}): ${path}`);
+
+  const file = await res.json();
+  const cfg = decodeBase64Json(file.content || '');
+  return parseWaConfig(cfg);
 }
 
 export async function getWhatsAppConfig({ force = false } = {}) {
