@@ -319,6 +319,14 @@
 }
 
 /* ─── Dialog / Modal ─── */
+dialog#doodle-changelog-dialog {
+  margin: auto;
+}
+
+dialog#doodle-changelog-dialog::backdrop {
+  background: var(--bg-overlay);
+}
+
 .dialog-overlay {
   position: fixed;
   inset: 0;
