@@ -21,6 +21,7 @@ export function clearWhatsAppConfig() {
 export async function sendDoodleAlert(playerName, yearMonth, selectedAdded = [], selectedRemoved = []) {
   const { phone, apiKey } = getWhatsAppConfig();
   if (!phone || !apiKey) return;
+  if (!selectedAdded.length && !selectedRemoved.length) return;
 
   const added   = selectedAdded.length   ? selectedAdded.join(', ')   : 'none';
   const removed = selectedRemoved.length ? selectedRemoved.join(', ') : 'none';
@@ -29,8 +30,7 @@ export async function sendDoodleAlert(playerName, yearMonth, selectedAdded = [],
   const url = `https://api.callmebot.com/whatsapp.php?phone=${encodeURIComponent(phone)}&text=${encodeURIComponent(text)}&apikey=${encodeURIComponent(apiKey)}`;
 
   try {
-    const res = await fetch(url);
-    if (!res.ok) console.warn('[whatsapp] alert failed:', res.status);
+    await fetch(url, { mode: 'no-cors' });
   } catch (err) {
     console.warn('[whatsapp] alert error:', err);
   }

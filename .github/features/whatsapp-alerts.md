@@ -36,6 +36,7 @@ Notify a WhatsApp number via CallMeBot whenever a doodle entry is saved or delet
 ## Behavior
 - Fire-and-forget: failures log to console, never throw
 - Silent no-op when phone or apiKey missing
+- Silent no-op when both `selectedAdded` and `selectedRemoved` are empty
 - Only fires on explicit user saves (not background syncs like syncDoodleFromAzure)
 
 ## File References
