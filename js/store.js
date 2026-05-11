@@ -92,6 +92,14 @@ export const Store = {
     this.set(`doodle_${yearMonth}`, entries);
   },
 
+  getDoodleChangelog(yearMonth) {
+    return this.get(`doodle_changelog_${yearMonth}`) || [];
+  },
+
+  setDoodleChangelog(yearMonth, entries) {
+    this.set(`doodle_changelog_${yearMonth}`, entries);
+  },
+
   getChangelog() {
     return this.get('changelog') || [];
   },

@@ -9,7 +9,7 @@
  *   active_tournament  → <basePath>/data/active_tournament.json
  *   doodle_YYYY-MM     → <basePath>/YYYY/YYYY-MM/doodle_YYYY-MM.json
  *
- * Members, theme, and changelog are local-only and are never synced to GitHub.
+ * Members and theme are local-only and are never synced to GitHub.
  */
 
 import { Store } from '../store.js';
@@ -142,6 +142,13 @@ export function keyToPath(key) {
   const base = getConfig()?.basePath?.trim().replace(/\/$/, '') || '';
   const prefix = base ? `${base}/` : '';
 
+  const doodleChangelogMatch = key.match(/^doodle_changelog_(\d{4})-(\d{2})$/);
+  if (doodleChangelogMatch) {
+    const year = doodleChangelogMatch[1];
+    const yearMonth = `${year}-${doodleChangelogMatch[2]}`;
+    return `${prefix}${year}/${yearMonth}/${key}.json`;
+  }
+
   // Doodle files live next to that month's tournament data: YYYY/YYYY-MM/doodle_YYYY-MM.json
   const doodleMatch = key.match(/^doodle_(\d{4})-(\d{2})$/);
   if (doodleMatch) {
@@ -150,7 +157,7 @@ export function keyToPath(key) {
     return `${prefix}${year}/${yearMonth}/${key}.json`;
   }
 
-  // Only these data-folder keys are synced (changelog is local-only UI state)
+  // Only these data-folder keys are synced.
   const SYNCED_DATA_KEYS = ['active_tournament'];
   if (SYNCED_DATA_KEYS.includes(key)) {
     return `${prefix}data/${key}.json`;
@@ -529,7 +536,9 @@ export async function fetchTournamentsIndexPublic() {
  * discovers tournament dates via tournaments.json (creating it if missing).
  *
  * Doodle files are read from YYYY/YYYY-MM/doodle_YYYY-MM.json alongside
- * tournament data. Other data (changelog, active_tournament) is read from data/.
+ * tournament data, and monthly doodle changelog is read from
+ * YYYY/YYYY-MM/doodle_changelog_YYYY-MM.json. Other data (active_tournament)
+ * is read from data/.
  *
  * @param {function} [onProgress] - called with (label, total, index)
  */
@@ -624,6 +633,13 @@ export async function pullAll(onProgress) {
           localStorage.setItem(`mexicano_doodle_${ym}`, JSON.stringify(doodleResult.content));
         }
       } catch { /* doodle may not exist */ }
+
+      try {
+        const changelogResult = await readFile(`${monthPath}/doodle_changelog_${ym}.json`);
+        if (changelogResult?.content) {
+          localStorage.setItem(`mexicano_doodle_changelog_${ym}`, JSON.stringify(changelogResult.content));
+        }
+      } catch { /* doodle changelog may not exist */ }
 
       onProgress?.(ym, total, i + 1);
     }
@@ -957,31 +973,48 @@ export async function pullAllOverviews() {
 /**
  * Pull a single doodle month from GitHub.
  * No-op if already fresh in this session.
- * Returns the raw content array and whether it differed from the cached version.
+ * Returns the raw doodle + changelog arrays and whether either differed from cache.
  * The caller is responsible for updating Store and emitting state events.
  * @param {string} yearMonth - 'YYYY-MM'
- * @returns {Promise<{ content: Array|null, updated: boolean }>}
+ * @returns {Promise<{ content: Array|null, changelog: Array|null, updated: boolean }>}
  */
 export async function pullDoodleMonth(yearMonth) {
   const cfg = getConfig();
-  if (!cfg?.owner || !cfg?.repo || !cfg?.pat) return { content: null, updated: false };
-  if (isDoodleFreshInSession(yearMonth)) return { content: null, updated: false };
+  if (!cfg?.owner || !cfg?.repo || !cfg?.pat) return { content: null, changelog: null, updated: false };
+  if (isDoodleFreshInSession(yearMonth)) return { content: null, changelog: null, updated: false };
 
   const base = matchesBase();
   const year = yearMonth.slice(0, 4);
   const prefix = base ? `${base}/` : '';
-  const path = `${prefix}${year}/${yearMonth}/doodle_${yearMonth}.json`;
+  const doodlePath = `${prefix}${year}/${yearMonth}/doodle_${yearMonth}.json`;
+  const changelogPath = `${prefix}${year}/${yearMonth}/doodle_changelog_${yearMonth}.json`;
+
+  let content = null;
+  let changelog = null;
+  let updated = false;
+
   try {
-    const result = await readFile(path);
-    markDoodleFetched(yearMonth);
-    if (!result?.content) return { content: null, updated: false };
-    const existing = localStorage.getItem(`mexicano_doodle_${yearMonth}`);
-    const newJson = JSON.stringify(result.content);
-    return { content: result.content, updated: existing !== newJson };
-  } catch {
-    markDoodleFetched(yearMonth);
-    return { content: null, updated: false };
-  }
+    const result = await readFile(doodlePath);
+    if (Array.isArray(result?.content)) {
+      content = result.content;
+      const existing = localStorage.getItem(`mexicano_doodle_${yearMonth}`);
+      const newJson = JSON.stringify(content);
+      if (existing !== newJson) updated = true;
+    }
+  } catch { /* doodle file may not exist yet */ }
+
+  try {
+    const result = await readFile(changelogPath);
+    if (Array.isArray(result?.content)) {
+      changelog = result.content;
+      const existing = localStorage.getItem(`mexicano_doodle_changelog_${yearMonth}`);
+      const newJson = JSON.stringify(changelog);
+      if (existing !== newJson) updated = true;
+    }
+  } catch { /* changelog file may not exist yet */ }
+
+  markDoodleFetched(yearMonth);
+  return { content, changelog, updated };
 }
 
 /**
@@ -1618,6 +1651,62 @@ export async function pushDoodleNow(yearMonth) {
     }
   } catch { sha = undefined; }
   await writeFile(filePath, entriesToPush, sha);
+
+  const changelogKey = `doodle_changelog_${yearMonth}`;
+  const changelogPath = keyToPath(changelogKey);
+  if (!changelogPath) return;
+
+  const localChangelog = Store.getDoodleChangelog(yearMonth);
+  let changelogSha;
+  let changelogToPush = Array.isArray(localChangelog) ? localChangelog : [];
+  let changelogMissing = false;
+  try {
+    const existing = await readFile(changelogPath);
+    if (existing === null) {
+      // Mirror doodle file behavior: create missing monthly changelog on first push.
+      changelogMissing = true;
+      changelogSha = undefined;
+    } else {
+      changelogSha = existing?.sha;
+    }
+    if (Array.isArray(existing?.content)) {
+      changelogToPush = mergeDoodleChangelogEntries(changelogToPush, existing.content);
+    }
+  } catch { changelogSha = undefined; }
+
+  await writeFile(changelogPath, changelogToPush, changelogSha);
+  localStorage.setItem(`mexicano_doodle_changelog_${yearMonth}`, JSON.stringify(changelogToPush));
+  if (changelogMissing && changelogToPush.length === 0) {
+    ghLog('WRITE', changelogPath, 'created empty monthly doodle changelog');
+  }
+}
+
+function changelogEntryKey(entry) {
+  if (!entry || typeof entry !== 'object') return '';
+  const player = String(entry.playerName || '');
+  const stamp = String(entry.timestamp || '');
+  const yearMonth = String(entry.yearMonth || '');
+  const selectedAdded = Array.isArray(entry.selectedAdded) ? entry.selectedAdded.join(',') : '';
+  const selectedRemoved = Array.isArray(entry.selectedRemoved) ? entry.selectedRemoved.join(',') : '';
+  return `${stamp}|${player}|${yearMonth}|${selectedAdded}|${selectedRemoved}`;
+}
+
+function mergeDoodleChangelogEntries(localEntries = [], remoteEntries = []) {
+  const map = new Map();
+  for (const entry of [...localEntries, ...remoteEntries]) {
+    if (!entry || typeof entry !== 'object') continue;
+    const key = changelogEntryKey(entry);
+    if (!key || map.has(key)) continue;
+    map.set(key, entry);
+  }
+
+  const merged = [...map.values()];
+  merged.sort((a, b) => {
+    const at = Date.parse(a.timestamp || '') || 0;
+    const bt = Date.parse(b.timestamp || '') || 0;
+    return bt - at;
+  });
+  return merged;
 }
 
 /**

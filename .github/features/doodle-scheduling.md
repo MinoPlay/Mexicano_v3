@@ -4,7 +4,7 @@
 1. **User selects month** → navigate calendar with prev/next buttons
 2. **System fetches valid dates** → `getAllDatesInMonth()` finds all Tuesdays/Thursdays in month
 3. **Player toggles dates** → click playable dates (not past, not non-Tue/Thu) to select/deselect availability
-4. **saveDoodle() persists** → validates dates in month, updates Store, writes to GitHub JSON via `writeDoodle()`, emits `doodle-changed` event
+4. **saveDoodle() persists** → validates dates in month, updates Store, computes date diff (`selectedAdded`/`selectedRemoved`), writes to GitHub JSON via `writeDoodle()`, emits `doodle-changed` event
 5. **GitHub sync** → `pushDoodleNow()` syncs to repo; `pullDoodleMonth()` pulls latest on page load
 
 ## Key Calculations
@@ -27,6 +27,22 @@ doodle[yearMonth] = [
 ]
 ```
 
+### Store changelog structure
+```
+doodle_changelog[yearMonth] = [
+  {
+    playerName: string,
+    yearMonth: "2025-04",
+    year: 2025,
+    month: 4,
+    selectedAdded: ["2025-04-01", ...],
+    selectedRemoved: ["2025-04-03", ...],
+    timestamp: "2025-04-01T12:34:56.000Z"
+  },
+  ...
+]
+```
+
 ### getDoodle() output
 - Returns transformed entries with `selected` bool dict + `allowEdit` flag
 - `selected` = map `date → boolean` for all valid month dates
@@ -35,13 +51,15 @@ doodle[yearMonth] = [
 ### Local persistence path
 - Stored as: `{year}/{yearMonth}/doodle_{yearMonth}.json`
 - Example: `2025/2025-04/doodle_2025-04.json`
+- Changelog stored as: `{year}/{yearMonth}/doodle_changelog_{yearMonth}.json`
+- Example: `2025/2025-04/doodle_changelog_2025-04.json`
 
 ## Core Functions
 - `getAllDatesInMonth(year, month)` → array of YYYY-MM-DD strings for valid Tues/Thurs
 - `getDoodle(year, month)` → array with `{ name, selected: {date→bool}, allowEdit: bool }`
 - `saveDoodle(playerName, year, month, selectedDates)` → validates, updates Store, persists, emits event
 - `deleteDoodle(playerName, year, month)` → removes player entry
-- `logDoodleChange(playerName, year, month, selectedDates)` → appends to changelog (max 20 items)
+- `logDoodleChange(playerName, year, month, selectedAdded, selectedRemoved)` → appends month changelog entry when diff exists
 - `syncDoodleFromLocal(year, month)` → dev-server only, pulls local JSON and updates Store if changed
 - `writeDoodle(year, month, entries)` → local persistence API call (no-op on deployed)
 
@@ -52,20 +70,23 @@ doodle[yearMonth] = [
 - **No future data**: calendar only shows past/current month doodles; future months start empty
 - **Past dates**: disabled in UI (read-only, grayed out), but included in matrix for reference
 - **Concurrent edits**: GitHub sync via ETag; local Store updates immediately, GitHub eventual consistency
+- **Diff-only entries**: no changelog entry written if player save causes no added/removed dates
+- **Missing changelog file**: `pushDoodleNow()` auto-creates `doodle_changelog_YYYY-MM.json` (empty `[]` if no entries yet)
 
 ## Constraints
 - **Monthly scope only** — no multi-month or seasonal doodles
 - **Tues/Thurs hardcoded** — dow check `=== 2 || === 4`; no config
 - **JSON keys use YYYY-MM** — Store keys, filenames, API params
 - **Current user edit check** — enforced in `getDoodle()` + UI disable for readonly cells
-- **Max 20 changelog entries** — older entries dropped
+- **Per-month changelog scope** — each month has own backend changelog file, UI reads only active month
+- **Unlimited month changelog entries** — no cap trimming in service
 - **Dev-server only** — `writeDoodle()` + `syncDoodleFromLocal()` silent no-op on deployed (GitHub Pages)
 
 ## File References
 - **Core**: `js/services/doodle.js` (logic, validation, events)
 - **Persistence**: `js/services/local.js` → `writeDoodle()` (dev-server JSON writes)
 - **GitHub sync**: `js/services/github.js` → `pushDoodleNow()`, `pullDoodleMonth()` (remote sync)
-- **Store**: `js/store.js` → `getDoodle()`, `setDoodle()`, `getCurrentUser()`
+- **Store**: `js/store.js` → `getDoodle()`, `setDoodle()`, `getDoodleChangelog()`, `setDoodleChangelog()`, `getCurrentUser()`
 - **UI**: `js/pages/doodle.js` (calendar grid + matrix table + changelog)
 - **Events**: `js/state.js` → `doodle-changed` emitted on save
 
@@ -73,4 +94,4 @@ doodle[yearMonth] = [
 - **Calendar grid**: 7-column (Sun–Sat), clickable playable dates (Tue/Thu, not past)
 - **Matrix**: player × date table, checkmarks for availability, totals row highlights best days
 - **Total row**: clickable when count > 0, routes to create-tournament with available players sorted by ELO
-- **Changelog**: last 20 changes listed with timestamp, player, selected dates
+- **Changelog**: month-specific "Recent Changes" with timestamp, player, selected dates added, and removed dates

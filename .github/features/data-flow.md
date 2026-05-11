@@ -26,7 +26,8 @@ Every `Store.set()` call automatically schedules a debounced push to GitHub (1.5
     └── YYYY-MM/
         ├── YYYY-MM-DD.json          ← match results for one tournament day
         ├── players_overview.json    ← monthly stats snapshot (generated)
-        └── doodle_YYYY-MM.json      ← attendance schedule for the month
+        ├── doodle_YYYY-MM.json      ← attendance schedule for the month
+        └── doodle_changelog_YYYY-MM.json ← recent doodle changes for that month
 ```
 
 ---
@@ -112,8 +113,8 @@ No writes.
 | Direction | File / Store key | When |
 |-----------|-----------------|------|
 | READ | Core data (players, tournaments) | Via `pullCoreData` on load |
-| READ | `YYYY/YYYY-MM/doodle_YYYY-MM.json` | Current + next month on load via `pullDoodleMonth` |
-| WRITE | `YYYY/YYYY-MM/doodle_YYYY-MM.json` | On every user change via `pushDoodleNow` (immediate, bypasses debounce) |
+| READ | `YYYY/YYYY-MM/doodle_YYYY-MM.json` + `YYYY/YYYY-MM/doodle_changelog_YYYY-MM.json` | Current + next month on load via `pullDoodleMonth` |
+| WRITE | `YYYY/YYYY-MM/doodle_YYYY-MM.json` + `YYYY/YYYY-MM/doodle_changelog_YYYY-MM.json` | On every user change via `pushDoodleNow` (immediate, bypasses debounce) |
 
 ---
 
@@ -250,6 +251,7 @@ Only these keys trigger auto-push:
 
 Keys that bypass auto-sync:
 - `doodle_*` → pushed immediately via `pushDoodleNow()` (no debounce)
+- `doodle_changelog_*` → pushed immediately via `pushDoodleNow()` (no debounce)
 - `members`, `theme`, `changelog`, `current_user`, `github_config` → **local-only, never synced**
 
 ---
@@ -273,6 +275,7 @@ Read-only data pulled from GitHub is stored in an **ephemeral in-memory Cache** 
 - `active_tournament` — written during tournament play
 - `matches` — written during/after tournament play
 - `doodle_*` — written when user marks attendance
+- `doodle_changelog_*` — written when doodle date selections change
 
 ### Pull deduplication
 Pull functions guard with `Cache.has(key)` instead of a session TTL. If data is already in Cache (same JS context = same page visit), the pull is skipped. Since Cache is empty on every page refresh, data is always re-fetched from GitHub.

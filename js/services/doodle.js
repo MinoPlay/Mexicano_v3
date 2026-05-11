@@ -53,7 +53,11 @@ export function saveDoodle(playerName, year, month, selectedDates) {
 
   const entries = Store.getDoodle(yearMonth);
   const idx = entries.findIndex(e => e.name === playerName);
-  const entry = { name: playerName, selectedDates };
+  const previousDates = idx >= 0 && Array.isArray(entries[idx].selectedDates)
+    ? [...entries[idx].selectedDates]
+    : [];
+  const normalizedSelectedDates = [...selectedDates].sort();
+  const entry = { name: playerName, selectedDates: normalizedSelectedDates };
 
   if (idx >= 0) {
     entries[idx] = entry;
@@ -63,33 +67,44 @@ export function saveDoodle(playerName, year, month, selectedDates) {
 
   Store.setDoodle(yearMonth, entries);
   writeDoodle(year, month, entries).catch(e => console.warn('[local] doodle write failed:', e));
-  logDoodleChange(playerName, year, month, selectedDates);
+  const previousSet = new Set(previousDates);
+  const nextSet = new Set(normalizedSelectedDates);
+  const selectedAdded = normalizedSelectedDates.filter(d => !previousSet.has(d));
+  const selectedRemoved = previousDates.filter(d => !nextSet.has(d)).sort();
+  logDoodleChange(playerName, year, month, selectedAdded, selectedRemoved);
   State.emit('doodle-changed', { year, month });
 }
 
 export function deleteDoodle(playerName, year, month) {
   const yearMonth = `${year}-${String(month).padStart(2, '0')}`;
   const entries = Store.getDoodle(yearMonth);
+  const removedEntry = entries.find(e => e.name === playerName);
   const filtered = entries.filter(e => e.name !== playerName);
   Store.setDoodle(yearMonth, filtered);
-  logDoodleChange(playerName, year, month, []);
+  const selectedRemoved = Array.isArray(removedEntry?.selectedDates) ? [...removedEntry.selectedDates].sort() : [];
+  logDoodleChange(playerName, year, month, [], selectedRemoved);
   State.emit('doodle-changed', { year, month });
 }
 
-export function logDoodleChange(playerName, year, month, selectedDates) {
-  const changelog = Store.getChangelog();
+export function logDoodleChange(playerName, year, month, selectedAdded = [], selectedRemoved = []) {
+  if (!selectedAdded.length && !selectedRemoved.length) return;
+  const yearMonth = `${year}-${String(month).padStart(2, '0')}`;
+  const changelog = Store.getDoodleChangelog(yearMonth);
   changelog.unshift({
     playerName,
+    yearMonth,
     year,
     month,
-    selectedDates,
+    selectedAdded,
+    selectedRemoved,
     timestamp: new Date().toISOString()
   });
-  Store.setChangelog(changelog.slice(0, 20));
+  Store.setDoodleChangelog(yearMonth, changelog);
 }
 
-export function getChangelog() {
-  return Store.getChangelog().slice(0, 20);
+export function getChangelog(year, month) {
+  const yearMonth = `${year}-${String(month).padStart(2, '0')}`;
+  return Store.getDoodleChangelog(yearMonth);
 }
 
 /**

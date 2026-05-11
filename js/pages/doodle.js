@@ -78,15 +78,22 @@ class DoodleEditSession {
       const month = parseInt(ym.slice(5, 7));
 
       // Pull latest changes from GitHub
-      const { content: remoteContent } = await pullDoodleMonth(ym);
+      const { content: remoteContent, changelog: remoteChangelog } = await pullDoodleMonth(ym);
       if (remoteContent && Array.isArray(remoteContent)) {
         // Merge remote entries with local store
+        const mergedEntries = [...Store.getDoodle(ym)];
+        let changed = false;
         remoteContent.forEach(entry => {
-          const existing = Store.getDoodle(ym).find(e => e.name === entry.name);
+          const existing = mergedEntries.find(e => e.name === entry.name);
           if (!existing) {
-            Store.getDoodle(ym).push(entry);
+            mergedEntries.push(entry);
+            changed = true;
           }
         });
+        if (changed) Store.setDoodle(ym, mergedEntries);
+      }
+      if (remoteChangelog && Array.isArray(remoteChangelog)) {
+        Store.setDoodleChangelog(ym, remoteChangelog);
       }
 
       // Apply accumulated edits to Store (all in one batch)
@@ -526,7 +533,7 @@ export function renderDoodle(container, params = {}) {
 
   function renderChangelog() {
     changelogSection.innerHTML = '';
-    const changelog = getChangelog();
+    const changelog = getChangelog(currentYear, currentMonth);
     if (!changelog || !changelog.length) return;
 
     const title = document.createElement('h3');
@@ -544,13 +551,17 @@ export function renderDoodle(container, params = {}) {
       item.style.fontSize = 'var(--font-size-xs)';
 
       const label = entry.playerName || 'Unknown';
-      const month = entry.month ? `${entry.year}-${String(entry.month).padStart(2, '0')}` : '';
-      const dates = (entry.selectedDates || []).join(', ');
+      const month = entry.yearMonth || (entry.month ? `${entry.year}-${String(entry.month).padStart(2, '0')}` : '');
+      const selected = (entry.selectedAdded || []).join(', ');
+      const removed = (entry.selectedRemoved || []).join(', ');
+      const timestamp = entry.timestamp ? new Date(entry.timestamp).toLocaleString() : '';
 
       item.innerHTML = `
         <span class="text-medium">${label}</span>
         <span class="text-secondary"> updated for ${month}</span>
-        ${dates ? `<div class="text-secondary mt-xs">Selected: ${dates}</div>` : ''}
+        ${selected ? `<div class="text-secondary mt-xs">Selected: ${selected}</div>` : ''}
+        ${removed ? `<div class="text-secondary mt-xs">Removed: ${removed}</div>` : ''}
+        ${timestamp ? `<div class="text-secondary mt-xs">${timestamp}</div>` : ''}
       `;
       list.appendChild(item);
     });
@@ -769,9 +780,10 @@ export function renderDoodle(container, params = {}) {
     const ym = `${currentYear}-${String(currentMonth).padStart(2, '0')}`;
     if (Store.getGitHubConfig()?.pat) {
       clearSessionTTL(`doodle_${ym}`);
-      pullDoodleMonth(ym).then(({ content, updated }) => {
-        if (updated && content) {
-          Store.setDoodle(ym, content);
+      pullDoodleMonth(ym).then(({ content, changelog, updated }) => {
+        if (updated) {
+          if (content) Store.setDoodle(ym, content);
+          if (changelog) Store.setDoodleChangelog(ym, changelog);
           State.emit('doodle-changed', { year: currentYear, month: currentMonth });
         }
       }).catch(() => {});
