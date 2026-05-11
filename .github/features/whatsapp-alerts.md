@@ -41,6 +41,8 @@ Notify a WhatsApp number via CallMeBot whenever a doodle entry is saved or delet
 - Silent no-op when phone or apiKey missing
 - Silent no-op when both `selectedAdded` and `selectedRemoved` are empty
 - Only fires on explicit user saves (not background syncs like syncDoodleFromAzure)
+- Alerts are serialized client-side (single queue) to preserve commit/change order
+- Alerts enforce minimum send gap (6.5s) to avoid CallMeBot batching multiple changes into one WhatsApp message
 
 ## File References
 - **Service**: `js/services/whatsapp.js`

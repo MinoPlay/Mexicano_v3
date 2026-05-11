@@ -5,10 +5,19 @@ const GH_API = 'https://api.github.com';
 const GH_ACCEPT = 'application/vnd.github+json';
 const GH_API_VERSION = '2022-11-28';
 const CACHE_MS = 30000;
+const MIN_SEND_GAP_MS = 6500;
 
 let cached = EMPTY;
 let cachedAt = 0;
 let cachedKey = '';
+let configLoadPromise = null;
+let configLoadKey = '';
+let sendQueue = Promise.resolve();
+let lastSentAt = 0;
+
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
 
 function decodeBase64Json(content) {
   const bytes = Uint8Array.from(atob(content.replace(/\n/g, '')), c => c.charCodeAt(0));
@@ -64,10 +73,33 @@ export async function getWhatsAppConfig({ force = false } = {}) {
   const gh = Store.getGitHubConfig();
   const key = getConfigIdentity(gh);
   if (!force && key === cachedKey && Date.now() - cachedAt < CACHE_MS) return cached;
-  cached = await readWhatsAppConfigFromGitHub(gh);
+
+  if (!force && key === configLoadKey && configLoadPromise) return configLoadPromise;
+
+  configLoadKey = key;
+  configLoadPromise = readWhatsAppConfigFromGitHub(gh)
+    .then(result => {
+      cached = result;
+      cachedAt = Date.now();
+      cachedKey = key;
+      return cached;
+    })
+    .finally(() => {
+      configLoadPromise = null;
+      configLoadKey = '';
+    });
+
+  const result = await configLoadPromise;
   cachedAt = Date.now();
-  cachedKey = key;
-  return cached;
+  return result;
+}
+
+async function dispatchAlert(url) {
+  const elapsed = Date.now() - lastSentAt;
+  const waitMs = Math.max(0, MIN_SEND_GAP_MS - elapsed);
+  if (waitMs > 0) await sleep(waitMs);
+  await fetch(url, { mode: 'no-cors' });
+  lastSentAt = Date.now();
 }
 
 export async function sendDoodleAlert(playerName, yearMonth, selectedAdded = [], selectedRemoved = []) {
@@ -81,9 +113,13 @@ export async function sendDoodleAlert(playerName, yearMonth, selectedAdded = [],
 
   const url = `https://api.callmebot.com/whatsapp.php?phone=${encodeURIComponent(phone)}&text=${encodeURIComponent(text)}&apikey=${encodeURIComponent(apiKey)}`;
 
-  try {
-    await fetch(url, { mode: 'no-cors' });
-  } catch (err) {
-    console.warn('[whatsapp] alert error:', err);
-  }
+  sendQueue = sendQueue.then(async () => {
+    try {
+      await dispatchAlert(url);
+    } catch (err) {
+      console.warn('[whatsapp] alert error:', err);
+    }
+  });
+
+  return sendQueue;
 }
