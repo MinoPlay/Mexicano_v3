@@ -5,7 +5,6 @@
 import { Store } from '../store.js';
 import { State } from '../state.js';
 import { writeDoodle } from './local.js';
-import { sendDoodleAlert } from './whatsapp.js';
 
 export function getAllDatesInMonth(year, month) {
   const dates = [];
@@ -72,9 +71,9 @@ export function saveDoodle(playerName, year, month, selectedDates) {
   const nextSet = new Set(normalizedSelectedDates);
   const selectedAdded = normalizedSelectedDates.filter(d => !previousSet.has(d));
   const selectedRemoved = previousDates.filter(d => !nextSet.has(d)).sort();
-  logDoodleChange(playerName, year, month, selectedAdded, selectedRemoved);
-  sendDoodleAlert(playerName, yearMonth, selectedAdded, selectedRemoved);
+  const change = logDoodleChange(playerName, year, month, selectedAdded, selectedRemoved);
   State.emit('doodle-changed', { year, month });
+  return change;
 }
 
 export function deleteDoodle(playerName, year, month) {
@@ -84,16 +83,16 @@ export function deleteDoodle(playerName, year, month) {
   const filtered = entries.filter(e => e.name !== playerName);
   Store.setDoodle(yearMonth, filtered);
   const selectedRemoved = Array.isArray(removedEntry?.selectedDates) ? [...removedEntry.selectedDates].sort() : [];
-  logDoodleChange(playerName, year, month, [], selectedRemoved);
-  sendDoodleAlert(playerName, yearMonth, [], selectedRemoved);
+  const change = logDoodleChange(playerName, year, month, [], selectedRemoved);
   State.emit('doodle-changed', { year, month });
+  return change;
 }
 
 export function logDoodleChange(playerName, year, month, selectedAdded = [], selectedRemoved = []) {
-  if (!selectedAdded.length && !selectedRemoved.length) return;
+  if (!selectedAdded.length && !selectedRemoved.length) return null;
   const yearMonth = `${year}-${String(month).padStart(2, '0')}`;
   const changelog = Store.getDoodleChangelog(yearMonth);
-  changelog.unshift({
+  const entry = {
     playerName,
     yearMonth,
     year,
@@ -101,8 +100,10 @@ export function logDoodleChange(playerName, year, month, selectedAdded = [], sel
     selectedAdded,
     selectedRemoved,
     timestamp: new Date().toISOString()
-  });
+  };
+  changelog.unshift(entry);
   Store.setDoodleChangelog(yearMonth, changelog);
+  return entry;
 }
 
 export function getChangelog(year, month) {

@@ -4,6 +4,7 @@ import { State } from '../state.js';
 import { showToast } from '../components/toast.js';
 import { calculateAllEloRankings } from '../services/elo.js';
 import { pushDoodleNow, cancelPendingSync, pullDoodleMonth, clearSessionTTL } from '../services/github.js';
+import { sendDoodleAlert } from '../services/whatsapp.js';
 
 const WEEKDAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
@@ -97,13 +98,25 @@ class DoodleEditSession {
       }
 
       // Apply accumulated edits to Store (all in one batch)
+      const pendingAlerts = [];
       for (const [playerName, editedSet] of Object.entries(this.currentEdits)) {
         const selectedDates = [...editedSet].sort();
-        saveDoodle(playerName, year, month, selectedDates);
+        const change = saveDoodle(playerName, year, month, selectedDates);
+        if (change) pendingAlerts.push(change);
       }
 
       // Push to GitHub (single batched commit)
       await pushDoodleNow(ym);
+      void Promise.allSettled(
+        pendingAlerts.map(change =>
+          sendDoodleAlert(
+            change.playerName,
+            change.yearMonth,
+            change.selectedAdded || [],
+            change.selectedRemoved || []
+          ).catch(err => console.warn('[whatsapp] alert error:', err))
+        )
+      );
       cancelPendingSync();
       showToast('Doodle saved');
       return true;

@@ -4,8 +4,8 @@
 Notify a WhatsApp number via CallMeBot whenever a doodle entry is saved or deleted.
 
 ## Trigger Points
-- `saveDoodle()` in `js/services/doodle.js` — fires after `logDoodleChange`, passes `selectedAdded`/`selectedRemoved`
-- `deleteDoodle()` in `js/services/doodle.js` — fires after `logDoodleChange`, passes `[]` added and all removed dates
+- `DoodleEditSession.save()` in `js/pages/doodle.js` — fires only after `await pushDoodleNow(yearMonth)` commits `doodle_changelog_YYYY-MM.json`
+- Alert payload is built from the changelog entries returned by `saveDoodle()` in `js/services/doodle.js`
 
 ## Message Format
 ```
@@ -41,10 +41,12 @@ Notify a WhatsApp number via CallMeBot whenever a doodle entry is saved or delet
 - Silent no-op when phone or apiKey missing
 - Silent no-op when both `selectedAdded` and `selectedRemoved` are empty
 - Only fires on explicit user saves (not background syncs like syncDoodleFromAzure)
+- Trigger happens post-commit: alerts start only after GitHub write of monthly doodle + changelog succeeds
 - Alerts are serialized client-side (single queue) to preserve commit/change order
 - Alerts enforce minimum send gap (6.5s) to avoid CallMeBot batching multiple changes into one WhatsApp message
 
 ## File References
 - **Service**: `js/services/whatsapp.js`
-- **Trigger**: `js/services/doodle.js` — `saveDoodle()`, `deleteDoodle()`
+- **Trigger**: `js/pages/doodle.js` — `DoodleEditSession.save()`
+- **Changelog source**: `js/services/doodle.js` — `saveDoodle()`, `logDoodleChange()`
 - **Settings UI**: `js/pages/settings.js`
