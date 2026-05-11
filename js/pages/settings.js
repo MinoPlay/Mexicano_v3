@@ -11,7 +11,7 @@ import { generateOrUpdatePlayerSummary } from '../scripts/generate-player-summar
 import { uploadToAzure } from '../scripts/azure-upload.js';
 import { syncDoodleFromAzure } from '../scripts/azure-doodle-sync.js';
 import { canInstall, triggerInstall } from '../components/install-prompt.js';
-import { getWhatsAppConfig, saveWhatsAppConfig, clearWhatsAppConfig } from '../services/whatsapp.js';
+import { getWhatsAppConfig } from '../services/whatsapp.js';
 
 function renderMembersList(listEl) {
   const members = getMembers();
@@ -177,16 +177,13 @@ export function renderSettings(container, params) {
         <div class="settings-section-title">WhatsApp Alerts</div>
         <p class="text-sm text-secondary" style="margin-bottom:var(--space-sm);">
           Receive a WhatsApp message via <a href="https://www.callmebot.com/blog/free-api-whatsapp-messages/" target="_blank" rel="noopener">CallMeBot</a>
-          whenever doodle availability is updated. Activate the bot first, then enter your credentials below.
+          whenever doodle availability is updated. Credentials are read from GitHub <code>config.json</code>.
         </p>
         <div class="flex flex-col gap-sm">
-          <input type="text"     id="wa-phone"  placeholder="Phone with country code, e.g. +4512345678" autocomplete="off" />
-          <input type="password" id="wa-apikey" placeholder="CallMeBot API Key" autocomplete="off" />
+          <input type="text"     id="wa-phone"  placeholder="Phone from config.json" autocomplete="off" readonly />
+          <input type="password" id="wa-apikey" placeholder="API key from config.json" autocomplete="off" readonly />
         </div>
-        <div class="flex gap-sm mt-sm">
-          <button id="wa-save-btn"  class="btn btn-primary" style="flex:1;">Save</button>
-          <button id="wa-clear-btn" class="btn btn-ghost"   style="flex:1;">Clear</button>
-        </div>
+        <button id="wa-reload-btn" class="btn btn-secondary mt-sm" style="width:100%;">Reload from GitHub</button>
         <div id="wa-status-msg" class="text-sm mt-sm" style="min-height:1.25rem;"></div>
       </div>
 
@@ -669,8 +666,7 @@ export function renderSettings(container, params) {
 
   const waPhone    = container.querySelector('#wa-phone');
   const waApiKey   = container.querySelector('#wa-apikey');
-  const waSaveBtn  = container.querySelector('#wa-save-btn');
-  const waClearBtn = container.querySelector('#wa-clear-btn');
+  const waReloadBtn = container.querySelector('#wa-reload-btn');
   const waStatus   = container.querySelector('#wa-status-msg');
 
   function setWaStatus(msg, isError = false) {
@@ -678,27 +674,24 @@ export function renderSettings(container, params) {
     waStatus.style.color = isError ? 'var(--color-danger, #ef4444)' : 'var(--color-success, #22c55e)';
   }
 
-  const savedWa = getWhatsAppConfig();
-  if (savedWa.phone)  waPhone.value  = savedWa.phone;
-  if (savedWa.apiKey) waApiKey.value = savedWa.apiKey;
-
-  waSaveBtn.addEventListener('click', () => {
-    const phone  = waPhone.value.trim();
-    const apiKey = waApiKey.value.trim();
-    if (!phone || !apiKey) {
-      setWaStatus('Both phone and API key are required.', true);
-      return;
+  async function loadWaFromGitHub(force = false) {
+    setWaStatus('Loading from GitHub…');
+    try {
+      const wa = await getWhatsAppConfig({ force });
+      waPhone.value = wa.phone || '';
+      waApiKey.value = wa.apiKey || '';
+      if (!wa.phone || !wa.apiKey) {
+        setWaStatus('Missing whatsapp_alerts.phone_number or whatsapp_alerts.api_key in config.json.', true);
+        return;
+      }
+      setWaStatus('Loaded from config.json.');
+    } catch (err) {
+      setWaStatus(`Failed to read config.json: ${err.message}`, true);
     }
-    saveWhatsAppConfig({ phone, apiKey });
-    setWaStatus('WhatsApp alerts configured.');
-    showToast('WhatsApp alerts saved');
-  });
+  }
 
-  waClearBtn.addEventListener('click', () => {
-    clearWhatsAppConfig();
-    waPhone.value  = '';
-    waApiKey.value = '';
-    setWaStatus('WhatsApp alerts cleared.');
-    showToast('WhatsApp alerts cleared');
+  loadWaFromGitHub();
+  waReloadBtn.addEventListener('click', () => {
+    loadWaFromGitHub(true);
   });
 }

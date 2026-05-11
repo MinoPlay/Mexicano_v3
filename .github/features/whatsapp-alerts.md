@@ -21,17 +21,20 @@ Notify a WhatsApp number via CallMeBot whenever a doodle entry is saved or delet
 - User must activate bot first: https://www.callmebot.com/blog/free-api-whatsapp-messages/
 
 ## Config Storage
-- localStorage only — never synced to GitHub
-- Key `mexicano_whatsapp_phone` → phone number string
-- Key `mexicano_whatsapp_apikey` → API key string
+- GitHub backend `config.json` (same repo as app data)
+- Path is derived from configured GitHub base path:
+  - If base path is `mexicano_v3/backup-data`, config file is `mexicano_v3/config.json`
+- Values read from:
+  - `whatsapp_alerts.phone_number`
+  - `whatsapp_alerts.api_key`
 
 ## Settings UI
 - Section "WhatsApp Alerts" in Settings page
 - Visible to all users (not gated by isMino)
-- Phone input (text) + API Key input (password)
-- Save button → writes both to localStorage
-- Clear button → removes both keys
-- Alert fires only when both keys are present and non-empty
+- Phone input (text, read-only) + API Key input (password, read-only)
+- Reload button → re-fetches config from GitHub
+- Shows explicit error when config values are missing or config read fails
+- Alert fires only when both values are present and non-empty
 
 ## Behavior
 - Fire-and-forget: failures log to console, never throw
