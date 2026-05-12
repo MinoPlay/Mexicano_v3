@@ -1213,6 +1213,23 @@ async function pullEloChartsData() {
     await fetchTournamentsIndex({ create: false });
   } catch { /* tournaments.json may not exist */ }
 
+  // ── 3. Latest tournament's matches (for Latest Tournament chart) ─────────────
+  const allDates = Cache.get('tournament_dates') || [];
+  if (allDates.length > 0) {
+    const latestDate = allDates[allDates.length - 1];
+    const cached = JSON.parse(localStorage.getItem('mexicano_matches') || '[]');
+    const hasLatest = cached.some(m => m.date === latestDate);
+    if (!hasLatest) {
+      try {
+        const fetched = await readDayMatches(latestDate);
+        if (fetched.length > 0) {
+          const updated = [...cached, ...fetched];
+          localStorage.setItem('mexicano_matches', JSON.stringify(updated));
+        }
+      } catch { /* match file may not exist */ }
+    }
+  }
+
   ghLog('PULL_ELO_CHARTS', '-', 'done');
   return true;
 }

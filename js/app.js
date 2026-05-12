@@ -6,6 +6,7 @@ import { showToast } from './components/toast.js';
 import { showRefreshDialog } from './components/refresh-dialog.js';
 import { pullForRoute } from './services/github.js';
 import { initInstallPrompt } from './components/install-prompt.js';
+import { showOnboardingDialog } from './components/onboarding-dialog.js';
 
 // Pages
 import { renderHome } from './pages/home.js';
@@ -69,6 +70,8 @@ async function loadLocalData() {
 async function init() {
   await loadDevSecrets();
   initInstallPrompt();
+
+  await showOnboardingDialog();
 
   await loadLocalData();
   loadFromGitHub();

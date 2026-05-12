@@ -609,47 +609,36 @@ export function renderEloCharts(container, params = {}) {
   let _chartCleanup = null;
   const tournamentChartRef = { render: null };
 
-  const needsFullLoad = !Store.isMatchesFullyLoaded() && Store.getGitHubConfig()?.pat;
+  const playersSummary = Store.getPlayersSummary();
+  const needsPlayersPull = !playersSummary.length && Store.getGitHubConfig()?.pat;
 
-  if (!allMatches.length || needsFullLoad) {
-    const hasSummaryData = Store.getPlayersSummary().length > 0;
+  if (needsPlayersPull) {
+    content.style.paddingLeft = '';
+    content.style.paddingRight = '';
+    content.innerHTML = `<div class="empty-state">
+      <div class="empty-state-icon">⏳</div>
+      <div class="empty-state-text">Loading player data…</div>
+      <p class="text-secondary text-sm">This may take a moment</p>
+    </div>`;
 
-    if ((hasSummaryData || allMatches.length > 0) && Store.getGitHubConfig()?.pat) {
-      content.style.paddingLeft = '';
-      content.style.paddingRight = '';
-      content.innerHTML = `<div class="empty-state">
-        <div class="empty-state-icon">⏳</div>
-        <div class="empty-state-text">Loading match history…</div>
-        <p class="text-secondary text-sm">This may take a moment</p>
-      </div>`;
-
-      import('../services/github.js').then(({ pullForRoute }) =>
-        pullForRoute('#/elo-charts')
-      ).then(() => {
-        return import('../services/github.js').then(({ ensureAllMatchesLoaded }) =>
-          ensureAllMatchesLoaded()
-        ).then(matches => {
-          allMatches = matches;
-          content.innerHTML = '';
-          content.style.paddingLeft = '0';
-          content.style.paddingRight = '0';
-          _chartCleanup = renderChartContent();
-        });
-      }).catch(() => {
-        content.innerHTML = `<div class="empty-state">
-          <div class="empty-state-icon">❌</div>
-          <div class="empty-state-text">Failed to load match history</div>
-        </div>`;
-      });
-      return () => { if (_chartCleanup) _chartCleanup(); };
-    }
-
-    if (allMatches.length) {
-      // Has some matches but no GitHub config — render with what we have
+    import('../services/github.js').then(({ pullForRoute }) =>
+      pullForRoute('#/elo-charts')
+    ).then(() => {
+      allMatches = Store.getMatches();
+      content.innerHTML = '';
+      content.style.paddingLeft = '0';
+      content.style.paddingRight = '0';
       _chartCleanup = renderChartContent();
-      return () => { if (_chartCleanup) _chartCleanup(); };
-    }
+    }).catch(() => {
+      content.innerHTML = `<div class="empty-state">
+        <div class="empty-state-icon">❌</div>
+        <div class="empty-state-text">Failed to load player data</div>
+      </div>`;
+    });
+    return () => { if (_chartCleanup) _chartCleanup(); };
+  }
 
+  if (!playersSummary.length && !allMatches.length) {
     content.style.paddingLeft = '';
     content.style.paddingRight = '';
     content.innerHTML = `<div class="empty-state">
