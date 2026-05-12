@@ -179,12 +179,7 @@ export function renderSettings(container, params) {
           Receive a WhatsApp message via <a href="https://www.callmebot.com/blog/free-api-whatsapp-messages/" target="_blank" rel="noopener">CallMeBot</a>
           whenever doodle availability is updated. Credentials are read from GitHub <code>config.json</code>.
         </p>
-        <div class="flex flex-col gap-sm">
-          <input type="text"     id="wa-phone"  placeholder="Phone from config.json" autocomplete="off" readonly />
-          <input type="password" id="wa-apikey" placeholder="API key from config.json" autocomplete="off" readonly />
-        </div>
         <div class="flex gap-sm mt-sm">
-          <button id="wa-reload-btn" class="btn btn-secondary" style="flex:1;">Reload from GitHub</button>
           <button id="wa-test-btn" class="btn btn-primary" style="flex:1;">📞 Send Test Alert</button>
         </div>
         <div id="wa-status-msg" class="text-sm mt-sm" style="min-height:1.25rem;"></div>
@@ -667,9 +662,6 @@ export function renderSettings(container, params) {
 
   // ─── WhatsApp Alerts ───────────────────────────────────────────────────────
 
-  const waPhone    = container.querySelector('#wa-phone');
-  const waApiKey   = container.querySelector('#wa-apikey');
-  const waReloadBtn = container.querySelector('#wa-reload-btn');
   const waTestBtn  = container.querySelector('#wa-test-btn');
   const waStatus   = container.querySelector('#wa-status-msg');
 
@@ -678,29 +670,16 @@ export function renderSettings(container, params) {
     waStatus.style.color = isError ? 'var(--color-danger, #ef4444)' : 'var(--color-success, #22c55e)';
   }
 
-  async function loadWaFromGitHub(force = false) {
-    setWaStatus('Loading from GitHub…');
+  async function refreshWaTestBtn() {
     try {
-      const wa = await getWhatsAppConfig({ force });
-      waPhone.value = wa.phone || '';
-      waApiKey.value = wa.apiKey || '';
-      if (!wa.phone || !wa.apiKey) {
-        waTestBtn.disabled = true;
-        setWaStatus('Missing whatsapp_alerts.phone_number or whatsapp_alerts.api_key in config.json.', true);
-        return;
-      }
-      waTestBtn.disabled = false;
-      setWaStatus('Loaded from config.json.');
-    } catch (err) {
+      const wa = await getWhatsAppConfig();
+      waTestBtn.disabled = !wa.phone || !wa.apiKey;
+    } catch {
       waTestBtn.disabled = true;
-      setWaStatus(`Failed to read config.json: ${err.message}`, true);
     }
   }
 
-  loadWaFromGitHub();
-  waReloadBtn.addEventListener('click', () => {
-    loadWaFromGitHub(true);
-  });
+  refreshWaTestBtn();
   waTestBtn.addEventListener('click', async () => {
     waTestBtn.disabled = true;
     setWaStatus('Sending WhatsApp test alert…');
@@ -712,8 +691,7 @@ export function renderSettings(container, params) {
       setWaStatus(`Test alert failed: ${err.message}`, true);
       showToast('WhatsApp test alert failed', 'error');
     } finally {
-      const wa = await getWhatsAppConfig().catch(() => ({ phone: '', apiKey: '' }));
-      waTestBtn.disabled = !wa.phone || !wa.apiKey;
+      refreshWaTestBtn();
     }
   });
 }

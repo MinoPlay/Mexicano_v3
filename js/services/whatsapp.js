@@ -5,6 +5,7 @@ const GH_API = 'https://api.github.com';
 const GH_ACCEPT = 'application/vnd.github+json';
 const GH_API_VERSION = '2022-11-28';
 const CACHE_MS = 30000;
+const LS_KEY = 'mexicano_wa_config';
 const MIN_SEND_GAP_MS = 6500;
 const LOG_PREFIX = '[whatsapp]';
 
@@ -111,6 +112,7 @@ export async function getWhatsAppConfig({ force = false } = {}) {
       cached = result;
       cachedAt = Date.now();
       cachedKey = key;
+      try { localStorage.setItem(LS_KEY, JSON.stringify(result)); } catch { /* ignore */ }
       return cached;
     })
     .catch(err => {
