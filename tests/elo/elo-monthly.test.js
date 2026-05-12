@@ -8,7 +8,7 @@ const months = Object.keys(monthlyExpected).sort();
 
 describe('Monthly ELO parity with C# (hardcoded expected values)', () => {
   it(`covers all ${months.length} months`, () => {
-    expect(months.length).toBe(42);
+    expect(months.length).toBe(43);
   });
 
   for (const month of months) {

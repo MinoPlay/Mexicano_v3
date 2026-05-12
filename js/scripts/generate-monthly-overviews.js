@@ -37,11 +37,12 @@ export async function generateMonthlyOverviews(yearMonth, onProgress) {
   const year = yearMonth.slice(0, 4);
   const prefix = base ? `${base}/` : '';
 
-  // ── 1. Seed ELO from previous month's players_overview.json ─────────────────
-  // Reads the immediately preceding month; handles new ELO-array format and
-  // legacy single-number format.  For players who skipped months (not in prev
-  // month), we search backwards through all months already cached in
-  // localStorage to find their last known ELO.
+  // ── 1. Seed ELO from previous months' players_overview.json ─────────────────
+  // Reads the immediately preceding month first.  For players absent from that
+  // month (skipped months), walks backwards through older months on GitHub
+  // (newest first) until every player has a seed.  This ensures players who
+  // haven't played recently still carry their correct all-time ELO instead of
+  // falling back to the 1000 default.
   const prevDate = new Date(parseInt(year, 10), parseInt(yearMonth.slice(5, 7), 10) - 1, 0);
   const prevYm = `${prevDate.getFullYear()}-${String(prevDate.getMonth() + 1).padStart(2, '0')}`;
 
@@ -52,49 +53,60 @@ export async function generateMonthlyOverviews(yearMonth, onProgress) {
     return row.ELO;
   }
 
+  /** Read one month's overview from GitHub and return a name→elo map. */
+  async function readOverviewElos(ym) {
+    try {
+      const path = `${prefix}${ym.slice(0, 4)}/${ym}/players_overview.json`;
+      const result = await readFile(path);
+      if (!result?.content || !Array.isArray(result.content)) return {};
+      const map = {};
+      for (const p of result.content) {
+        const elo = lastEloFromRow(p);
+        if (p.Name && elo != null) map[p.Name] = elo;
+      }
+      return map;
+    } catch {
+      return {};
+    }
+  }
+
+  /** Decrement a YYYY-MM string by one month. */
+  function prevMonth(ym) {
+    const d = new Date(parseInt(ym.slice(0, 4), 10), parseInt(ym.slice(5, 7), 10) - 2, 1);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+  }
+
   const eloState = {};
 
   onProgress?.(`Reading previous month ELO (${prevYm})…`, 0, 0);
-  try {
-    const prevPath = `${prefix}${prevYm.slice(0, 4)}/${prevYm}/players_overview.json`;
-    const prevResult = await readFile(prevPath);
-    if (prevResult?.content && Array.isArray(prevResult.content)) {
-      for (const p of prevResult.content) {
-        const elo = lastEloFromRow(p);
-        if (p.Name && elo != null) eloState[p.Name] = elo;
-      }
-    }
-  } catch { /* prev month may not exist — fall through to localStorage search */ }
+  const prevElos = await readOverviewElos(prevYm);
+  Object.assign(eloState, prevElos);
 
-  // For players not found in the previous month (skipped months), search
-  // backwards through all months cached in localStorage.
-  function buildFallbackEloMap() {
-    const map = {};
-    const cachedMonths = [];
-    for (let i = 0; i < localStorage.length; i++) {
-      const k = localStorage.key(i);
-      if (k && k.startsWith('mexicano_monthly_')) {
-        const ym = k.replace('mexicano_monthly_', '');
-        if (/^\d{4}-\d{2}$/.test(ym) && ym < yearMonth) cachedMonths.push(ym);
-      }
-    }
-    cachedMonths.sort().reverse(); // newest first
-    for (const ym of cachedMonths) {
-      try {
-        const rows = JSON.parse(localStorage.getItem(`mexicano_monthly_${ym}`) || 'null');
-        if (!Array.isArray(rows)) continue;
-        for (const p of rows) {
-          if (!p.name || map[p.name] != null) continue;
-          // localStorage stores camelCase; elo may be number or array
-          const elo = Array.isArray(p.elo) ? (p.elo.length > 0 ? p.elo[p.elo.length - 1].ELO ?? p.elo[p.elo.length - 1].elo : null) : p.elo;
-          if (elo != null) map[p.name] = elo;
+  /**
+   * For players still missing from eloState after we have loaded the current
+   * month's matches, walk backwards through older months on GitHub to find
+   * their last known ELO.
+   */
+  async function backfillMissingElos(playerNames) {
+    const missing = new Set(playerNames.filter(n => !(n in eloState)));
+    if (missing.size === 0) return;
+
+    // Walk back at most 36 months (3 years) to avoid runaway API calls.
+    const LOOK_BACK_MONTHS = 36;
+    let cursor = prevMonth(prevYm);
+    for (let i = 0; i < LOOK_BACK_MONTHS && missing.size > 0; i++) {
+      onProgress?.(`Backfilling ELO seeds from ${cursor}…`, 0, 0);
+      const elos = await readOverviewElos(cursor);
+      for (const name of [...missing]) {
+        if (elos[name] != null) {
+          eloState[name] = elos[name];
+          missing.delete(name);
         }
-      } catch { /* ignore corrupt entries */ }
+      }
+      cursor = prevMonth(cursor);
     }
-    return map;
+    // Any still-missing players will receive INITIAL_ELO when first encountered.
   }
-
-  const fallbackElos = buildFallbackEloMap();
 
   // ── 2. Load only this month's match files ────────────────────────────────────
   onProgress?.(`Loading ${yearMonth} match files…`, 0, 0);
@@ -122,6 +134,13 @@ export async function generateMonthlyOverviews(yearMonth, onProgress) {
     const bk = `${b.date}.${String(b.roundNumber).padStart(2, '0')}`;
     return ak.localeCompare(bk);
   });
+
+  // Backfill ELO seeds for players absent from the previous month by walking
+  // back through older months on GitHub (fixes skipped-month ELO reset bug).
+  const allPlayerNames = [...new Set(valid.flatMap(m => [
+    m.team1Player1Name, m.team1Player2Name, m.team2Player1Name, m.team2Player2Name,
+  ]))];
+  await backfillMissingElos(allPlayerNames);
 
   // ── 3. Compute stats + replay ELO per tournament day ─────────────────────────
   onProgress?.(`Computing stats for ${yearMonth}…`, 1, 1);
@@ -160,9 +179,9 @@ export async function generateMonthlyOverviews(yearMonth, onProgress) {
         if (!team1Won) monthStats[name].wins++; else monthStats[name].losses++;
       }
 
-      // Seed ELO for new players — check eloState, then fallback map, then 1000
+      // Seed ELO for brand-new players (never seen before) — defaults to 1000
       for (const name of [t1p1, t1p2, t2p1, t2p2]) {
-        if (!(name in eloState)) eloState[name] = fallbackElos[name] ?? INITIAL_ELO;
+        if (!(name in eloState)) eloState[name] = INITIAL_ELO;
         dayPlayers.add(name);
       }
 

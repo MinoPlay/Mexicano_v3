@@ -71,6 +71,8 @@ beforeEach(() => {
   mockMatchesBase.mockReturnValue('base/backup-data');
   mockWriteFile.mockResolvedValue(undefined);
   mockGhLog.mockReturnValue(undefined);
+  // Default: any unspecified readFile call returns null (handles backfill walk-back)
+  mockReadFile.mockResolvedValue(null);
   // By default ELO calculation returns a fixed value
   mockCalculateClassicElo.mockImplementation((elo) => elo + 10);
 });
@@ -136,16 +138,15 @@ describe('generateMonthlyOverviews', () => {
     const prevOverview = [
       { Name: 'A', ELO: 1100 },
       { Name: 'B', ELO: 900 },
+      // C and D absent — will be backfilled (or default 1000)
     ];
     mockListContents.mockResolvedValue([
       { name: '2025-02-10.json', type: 'file', path: 'base/backup-data/2025/2025-02/2025-02-10.json' },
     ]);
 
-    // First readFile call = prev month overview (Dec 2025 = 2025-01)
     mockReadFile
-      .mockResolvedValueOnce({ content: prevOverview })
-      .mockResolvedValueOnce({ content: { matches: [{}] } })
-      .mockResolvedValueOnce(null);
+      .mockResolvedValueOnce({ content: prevOverview }) // prev month overview (2025-01)
+      .mockResolvedValueOnce({ content: { matches: [{}] } }); // day file
 
     const m = match('2025-02-10', 1, 'A', 'B', 'C', 'D', 10, 5);
     mockFromBackupMatch.mockReturnValueOnce(m);
@@ -154,6 +155,63 @@ describe('generateMonthlyOverviews', () => {
     await generateMonthlyOverviews('2025-02');
     const eloCall = mockCalculateClassicElo.mock.calls[0];
     expect(eloCall[0]).toBe(1100); // A's seeded ELO
+  });
+
+  it('backfills ELO from an older month when player absent from prev month', async () => {
+    // Player C was last seen in 2024-11 with ELO 1250, but not in 2025-01 (prev month)
+    const prevOverview = [{ Name: 'A', ELO: 1100 }];
+    const olderOverview = [{ Name: 'C', ELO: 1250 }]; // found 2 months back (2024-11)
+
+    mockListContents.mockResolvedValue([
+      { name: '2025-02-10.json', type: 'file', path: 'base/backup-data/2025/2025-02/2025-02-10.json' },
+    ]);
+
+    // readFile call order:
+    // 1. prev month overview (2025-01) — A found, C/D missing
+    // 2. day file
+    // 3. backfill cursor 2024-12 — nothing
+    // 4. backfill cursor 2024-11 — C found (olderOverview)
+    // default null for rest
+    mockReadFile
+      .mockResolvedValueOnce({ content: prevOverview })       // 2025-01 overview
+      .mockResolvedValueOnce({ content: { matches: [{}] } })  // day file
+      .mockResolvedValueOnce(null)                            // backfill 2024-12 — empty
+      .mockResolvedValueOnce({ content: olderOverview });     // backfill 2024-11 — C found
+
+    const m = match('2025-02-10', 1, 'A', 'C', 'B', 'D', 10, 5);
+    mockFromBackupMatch.mockReturnValueOnce(m);
+
+    await generateMonthlyOverviews('2025-02');
+
+    // First calculateClassicElo call is for t1p1 = A (ELO 1100)
+    // C is t1p2, also seeded — its call is the 2nd one
+    // The 1st call is calculateClassicElo(A_elo, t2p1_elo, t2p2_elo, won)
+    // The 2nd call is calculateClassicElo(C_elo, t2p1_elo, t2p2_elo, won)
+    // C's seeded ELO was 1250 from backfill
+    const callForC = mockCalculateClassicElo.mock.calls[1]; // 2nd call = t1p2 = C
+    expect(callForC[0]).toBe(1250); // C's backfilled ELO
+  });
+
+  it('defaults to 1000 when player absent from all previous overviews', async () => {
+    // BrandNew has never played before — no overview will have their ELO
+    const prevOverview = [{ Name: 'Known', ELO: 1200 }];
+    mockListContents.mockResolvedValue([
+      { name: '2025-02-10.json', type: 'file', path: 'base/backup-data/2025/2025-02/2025-02-10.json' },
+    ]);
+
+    // prev month has Known; day file; all backfill reads return null (default)
+    mockReadFile
+      .mockResolvedValueOnce({ content: prevOverview })
+      .mockResolvedValueOnce({ content: { matches: [{}] } });
+
+    const m = match('2025-02-10', 1, 'Known', 'BrandNew', 'X', 'Y', 10, 5);
+    mockFromBackupMatch.mockReturnValueOnce(m);
+
+    await generateMonthlyOverviews('2025-02');
+
+    // 2nd calculateClassicElo call is for t1p2 = BrandNew
+    const callForBrandNew = mockCalculateClassicElo.mock.calls[1];
+    expect(callForBrandNew[0]).toBe(1000); // defaults to INITIAL_ELO
   });
 
   it('result sorted by ELO descending', async () => {

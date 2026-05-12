@@ -78,6 +78,7 @@ result = round(new_elo × 100) / 100
 - **Same-team ELO**: Team1P1 and Team1P2 finish equal (same opponents before processing)
 - **Sorting**: Matches sorted by `date.roundNumber` (e.g., "2024-01-01.02")
 - **Rounding**: All ELO values to 2 decimals
+- **Monthly seed — skipped months**: When generating a month's `players_overview.json`, player ELO seeds come from the previous month's overview. If a player skipped one or more months, they are absent from that overview. `generateMonthlyOverviews` walks backwards through older overviews (up to 36 months) to find the last known ELO. Players with no prior overview still default to 1000.
 
 ## Constraints
 
@@ -104,10 +105,14 @@ result = round(new_elo × 100) / 100
 | `getEloSnapshots(matches)` | Per-player end-of-date snapshots |
 | `getEloForDate(snapshots, date)` | ELO + delta at specific date |
 | `getEloForMonth(snapshots, yearMonth)` | ELO + delta at end of month |
+| `generateMonthlyOverviews(yearMonth)` | Generate `players_overview.json` with walk-back ELO seed backfill |
 
 ## File References
 - **Logic**: `js/services/elo.js`
+- **Monthly overview generator**: `js/scripts/generate-monthly-overviews.js`
 - **Math tests**: `tests/elo/elo-math.test.js` (RMS, expected score, new ELO)
 - **Process tests**: `tests/elo/elo-process.test.js` (match handling, history)
 - **Monthly tests**: `tests/elo/elo-monthly.test.js` (date range filtering)
 - **Parity tests**: `tests/elo/elo-parity.test.js` (C# compatibility)
+- **Monthly overview tests**: `tests/scripts/generate-monthly-overviews.test.js` (seed backfill)
+- **Integration test**: `tests/integration/tournament-2026-05-05.test.js` (end-to-end tournament simulation)
