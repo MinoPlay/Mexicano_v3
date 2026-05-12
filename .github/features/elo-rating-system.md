@@ -78,7 +78,7 @@ result = round(new_elo × 100) / 100
 - **Same-team ELO**: Team1P1 and Team1P2 finish equal (same opponents before processing)
 - **Sorting**: Matches sorted by `date.roundNumber` (e.g., "2024-01-01.02")
 - **Rounding**: All ELO values to 2 decimals
-- **Monthly seed — skipped months**: When generating a month's `players_overview.json`, player ELO seeds come from the previous month's overview. If a player skipped one or more months, they are absent from that overview. `generateMonthlyOverviews` walks backwards through older overviews (up to 36 months) to find the last known ELO. Players with no prior overview still default to 1000.
+- **Monthly seed — skipped months**: When generating a month's `players_overview.json`, player ELO seeds are read from each player's individual `elo_history/elo_history_{id}.json` file (via `players.json` for name→id lookup). The last entry strictly before the target month is used. This correctly handles players who skip months. Players with no prior history default to 1000.
 
 ## Constraints
 

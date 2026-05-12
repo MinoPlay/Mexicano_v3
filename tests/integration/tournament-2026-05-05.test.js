@@ -1,13 +1,13 @@
 /**
  * Integration test: 2026-05-05 tournament simulation.
  *
- * Uses real backup-data from April 2026 as the ELO seed base.
+ * Uses real backup-data elo_history files as ELO seed source.
  * Simulates all 10 rounds (20 matches) of 2026-05-05, then calls
  * generateMonthlyOverviews for 2026-05 with a mocked GitHub API that
  * returns the real file contents.
  *
  * Validates:
- * 1. Correct ELO values after the tournament (incl. backfill for CW)
+ * 1. Correct ELO values after the tournament (incl. CW seeded from elo_history)
  * 2. Correct per-player stats in the generated overview
  * 3. Only the intended file (players_overview.json) is written
  * 4. No extra files are read/written beyond what is expected
@@ -26,8 +26,7 @@ function loadJson(relPath) {
   return JSON.parse(readFileSync(join(BACKUP, relPath), 'utf8'));
 }
 
-const april2026Overview  = loadJson('2026/2026-04/players_overview.json');
-const march2026Overview  = loadJson('2026/2026-03/players_overview.json');
+const playersJson        = loadJson('players.json');
 const may0505TournamentFile = loadJson('2026/2026-05/2026-05-05.json');
 
 // Camelise a raw backup match record
@@ -45,6 +44,32 @@ function toMatch(m) {
 }
 
 const may0505Matches = may0505TournamentFile.matches.map(toMatch);
+
+// Build name→id map from players.json
+const playerIdMap = Object.fromEntries(playersJson.map(p => [p.Name, p.Id]));
+
+// Load elo_history for a specific player (by name)
+function loadEloHistory(name) {
+  const id = playerIdMap[name];
+  if (!id) return null;
+  try {
+    return loadJson(`elo_history/elo_history_${id}.json`);
+  } catch {
+    return null;
+  }
+}
+
+// Get last ELO before a given yearMonth from elo_history points
+function lastEloBefore(name, yearMonth) {
+  const hist = loadEloHistory(name);
+  if (!hist?.points?.length) return null;
+  let lastElo = null;
+  for (const e of hist.points) {
+    if (e.date < yearMonth) lastElo = e.elo;
+    else break;
+  }
+  return lastElo;
+}
 
 // ─── Expected values (from calculateAllEloRankings, source of truth) ─────────
 
@@ -77,7 +102,7 @@ const mockMatchesBase    = vi.fn();
 const mockReadFile       = vi.fn();
 const mockListContents   = vi.fn();
 const mockWriteFile      = vi.fn();
-const mockFromBackupMatch = vi.fn((m) => toMatch(m)); // use real implementation
+const mockFromBackupMatch = vi.fn((m) => toMatch(m));
 const mockGhLog          = vi.fn();
 
 vi.mock('../../js/services/github.js', () => ({
@@ -115,19 +140,25 @@ beforeEach(() => {
     },
   ]);
 
-  // fromBackupMatch uses real implementation (raw → camelCase)
   mockFromBackupMatch.mockImplementation((m) => toMatch(m));
 
-  // readFile routing by path:
-  // 1. prev month overview (2026-04)  → real April data
-  // 2. backfill reads walking backwards from 2026-03 → return March overview for CW
-  // 3. day file (2026-05-05.json)     → real tournament data
-  // 4. existing players_overview.json → null (no existing file SHA)
+  // readFile routing:
+  // 1. players.json → real players array
+  // 2. each elo_history_{id}.json → real file from backup-data
+  // 3. day file (2026-05-05.json) → real tournament data
+  // 4. existing players_overview.json → null (no existing SHA)
   mockReadFile.mockImplementation(async (path) => {
-    if (path.includes('2026/2026-04/players_overview.json'))
-      return { content: april2026Overview, sha: 'apr-sha' };
-    if (path.includes('2026/2026-03/players_overview.json'))
-      return { content: march2026Overview, sha: 'mar-sha' };
+    if (path.endsWith('players.json'))
+      return { content: playersJson, sha: 'players-sha' };
+    const eloHistMatch = path.match(/elo_history\/(elo_history_[^/]+\.json)$/);
+    if (eloHistMatch) {
+      try {
+        const hist = loadJson(`elo_history/${eloHistMatch[1]}`);
+        return { content: hist, sha: 'hist-sha' };
+      } catch {
+        return null;
+      }
+    }
     if (path.includes('2026-05-05.json'))
       return { content: may0505TournamentFile, sha: 'match-sha' };
     return null;
@@ -137,65 +168,26 @@ beforeEach(() => {
 // ─── Part 1: ELO calculation correctness (processMatchElo) ───────────────────
 
 describe('Part 1 — ELO correctness using real 2026-05-05 data', () => {
-  // Build seed ELO map from April overview (last ELO entry per player)
-  function buildSeedElos(overview) {
-    const seeds = {};
-    for (const row of overview) {
-      if (!row.Name || !row.ELO) continue;
-      const lastElo = Array.isArray(row.ELO)
-        ? row.ELO[row.ELO.length - 1]?.ELO
-        : row.ELO;
-      if (lastElo != null) seeds[row.Name] = lastElo;
-    }
-    return seeds;
-  }
-
-  // Build seed for Christian Wennergren from March (absent from April)
-  function buildSeedWithBackfill(aprilOverview, marchOverview) {
-    const seeds = buildSeedElos(aprilOverview);
-    for (const row of marchOverview) {
-      if (!row.Name || seeds[row.Name] != null) continue;
-      const lastElo = Array.isArray(row.ELO)
-        ? row.ELO[row.ELO.length - 1]?.ELO
-        : row.ELO;
-      if (lastElo != null) seeds[row.Name] = lastElo;
-    }
-    return seeds;
-  }
-
-  it('April overview correctly seeds Mino at 1039.27', () => {
-    const seeds = buildSeedElos(april2026Overview);
-    expect(seeds['Mino']).toBeCloseTo(1039.27, 1);
+  it('Mino seeded at 1039.27 from elo_history (last entry before 2026-05)', () => {
+    expect(lastEloBefore('Mino', '2026-05')).toBeCloseTo(1039.27, 1);
   });
 
-  it('Christian Wennergren is absent from April but present in March with ELO 1169.01', () => {
-    const aprilSeeds = buildSeedElos(april2026Overview);
-    expect(aprilSeeds['Christian Wennergren']).toBeUndefined();
-    const marchSeeds = buildSeedElos(march2026Overview);
-    expect(marchSeeds['Christian Wennergren']).toBeCloseTo(1169.01, 1);
-  });
-
-  it('after backfill, Christian Wennergren starts at 1169.01', () => {
-    const seeds = buildSeedWithBackfill(april2026Overview, march2026Overview);
-    expect(seeds['Christian Wennergren']).toBeCloseTo(1169.01, 1);
+  it('Christian Wennergren seeded at 1169.01 from elo_history (last entry before 2026-05)', () => {
+    expect(lastEloBefore('Christian Wennergren', '2026-05')).toBeCloseTo(1169.01, 1);
   });
 
   describe('round-by-round ELO progression for 2026-05-05', () => {
-    const seeds = buildSeedWithBackfill(april2026Overview, march2026Overview);
     const players = {};
-    // Seed players object
-    for (const [name, elo] of Object.entries(seeds)) {
-      players[name] = { name, elo, history: [] };
-    }
-    // New players default to 1000
+
+    // Seed players from elo_history
     const allNames = new Set(may0505Matches.flatMap(m => [
       m.team1Player1Name, m.team1Player2Name, m.team2Player1Name, m.team2Player2Name,
     ]));
     for (const name of allNames) {
-      if (!players[name]) players[name] = { name, elo: 1000, history: [] };
+      const elo = lastEloBefore(name, '2026-05') ?? 1000;
+      players[name] = { name, elo, history: [] };
     }
 
-    // Process round by round
     const rounds = [...new Set(may0505Matches.map(m => m.roundNumber))].sort((a, b) => a - b);
     const eloAfterRound = {};
 
@@ -307,12 +299,18 @@ describe('Part 3 — only intended files are modified', () => {
     expect(listPath).toContain('2026/2026-05');
   });
 
-  it('readFile calls include April overview, day file, and backfill walk-back for March', async () => {
+  it('readFile calls include players.json, day file, and elo_history files', async () => {
     await generateMonthlyOverviews('2026-05');
     const paths = mockReadFile.mock.calls.map(c => c[0]);
-    expect(paths.some(p => p.includes('2026-04/players_overview.json'))).toBe(true);
+    expect(paths.some(p => p.endsWith('players.json'))).toBe(true);
     expect(paths.some(p => p.includes('2026-05-05.json'))).toBe(true);
-    // Backfill should have fetched March overview for Christian Wennergren
-    expect(paths.some(p => p.includes('2026-03/players_overview.json'))).toBe(true);
+    expect(paths.some(p => p.includes('elo_history/'))).toBe(true);
+  });
+
+  it('reads elo_history file for Christian Wennergren (who skipped April)', async () => {
+    await generateMonthlyOverviews('2026-05');
+    const paths = mockReadFile.mock.calls.map(c => c[0]);
+    const cwId = playerIdMap['Christian Wennergren'];
+    expect(paths.some(p => p.includes(`elo_history_${cwId}.json`))).toBe(true);
   });
 });
