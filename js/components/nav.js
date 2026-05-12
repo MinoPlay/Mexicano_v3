@@ -6,6 +6,7 @@ const NAV_ITEMS = [
   { path: '/statistics', icon: '📊', label: 'Stats' },
   { path: '/elo-charts', icon: '📈', label: 'ELO' },
   { path: '/doodle', icon: '🗓️', label: 'Doodle' },
+  { path: '/git-logs', icon: '🔌', label: 'Logs' },
   { path: '/settings', icon: '⚙️', label: 'Settings' }
 ];
 

@@ -17,6 +17,7 @@ import { renderEloCharts } from './pages/elo-charts.js';
 import { renderAttendance } from './pages/attendance.js';
 import { renderDoodle } from './pages/doodle.js';
 import { renderSettings } from './pages/settings.js';
+import { renderGitLogs } from './pages/git-logs.js';
 
 // ─── Dev secrets: auto-inject GitHub config on localhost ───
 async function loadDevSecrets() {
@@ -115,6 +116,7 @@ const routes = {
   '/elo-charts': renderEloCharts,
   '/attendance': renderAttendance,
   '/doodle': renderDoodle,
+  '/git-logs': renderGitLogs,
   '/settings': renderSettings
 };
 

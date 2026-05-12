@@ -22,19 +22,40 @@ const API_BASE = 'https://api.github.com';
 const GH_LOG_KEY = 'mexicano_github_log';
 const GH_LOG_MAX = 200;
 
+function getCallerChain() {
+  try {
+    const stack = new Error().stack || '';
+    const lines = stack.split('\n').filter(l => /^\s+at\s/.test(l));
+    // Skip: Error frame, getCallerChain, ghLog — take next 2 meaningful frames
+    const frames = lines.slice(2, 4).map(line => {
+      const m = line.match(/at\s+(?:async\s+)?([^\s(]+)/);
+      if (!m) return null;
+      // Strip module path, keep function name only
+      return m[1].split('.').pop().replace(/^_/, '');
+    }).filter(n => n && n !== 'anonymous' && n !== '<anonymous>');
+    return frames.join(' ← ') || '';
+  } catch { return ''; }
+}
+
 export function ghLog(action, path, detail) {
+  const caller = getCallerChain();
   const entry = {
     ts: new Date().toISOString(),
     action,
     path,
+    ...(caller ? { caller } : {}),
     ...(detail ? { detail } : {}),
   };
-  console.log(`[GitHub ${action}] ${path}`, detail || '');
+  console.log(`[GitHub ${action}] ${path}`, caller ? `(via ${caller})` : '', detail || '');
   try {
     const log = JSON.parse(localStorage.getItem(GH_LOG_KEY) || '[]');
     log.unshift(entry);
     localStorage.setItem(GH_LOG_KEY, JSON.stringify(log.slice(0, GH_LOG_MAX)));
   } catch { /* storage full or unavailable */ }
+}
+
+export function clearGitHubLog() {
+  try { localStorage.removeItem(GH_LOG_KEY); } catch { /* ignore */ }
 }
 
 /** Return the stored GitHub operation log (most recent first). */
