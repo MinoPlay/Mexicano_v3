@@ -114,10 +114,7 @@ describe('generateOrUpdatePlayerSummary', () => {
   });
 
   it('creates a new summary when no existing file', async () => {
-    localStorageStub.setItem(
-      'mexicano_tournaments_index',
-      JSON.stringify([{ date: '2025-01-10' }])
-    );
+    mockFetchTournamentsIndex.mockResolvedValueOnce([{ date: '2025-01-10' }]);
     mockReadDayMatches.mockResolvedValue([{ date: '2025-01-10' }]);
 
     const result = await generateOrUpdatePlayerSummary('Alice');
@@ -135,10 +132,7 @@ describe('generateOrUpdatePlayerSummary', () => {
       content: { playerName: 'Alice', lastProcessedDate: '2025-01-10', totalTournaments: 1 },
       sha: 'sha-old',
     });
-    localStorageStub.setItem(
-      'mexicano_tournaments_index',
-      JSON.stringify([{ date: '2025-01-10' }, { date: '2025-02-10' }])
-    );
+    mockFetchTournamentsIndex.mockResolvedValueOnce([{ date: '2025-01-10' }, { date: '2025-02-10' }]);
     mockReadDayMatches.mockResolvedValue([]);
     mockMergeSummary.mockReturnValue({ playerName: 'Alice', totalTournaments: 3, merged: true });
 
@@ -151,10 +145,7 @@ describe('generateOrUpdatePlayerSummary', () => {
   });
 
   it('passes existing sha to writeFile', async () => {
-    localStorageStub.setItem(
-      'mexicano_tournaments_index',
-      JSON.stringify([{ date: '2025-01-10' }])
-    );
+    mockFetchTournamentsIndex.mockResolvedValueOnce([{ date: '2025-01-10' }]);
     mockReadFile.mockResolvedValue({ content: { playerName: 'Alice', lastProcessedDate: '2024-12-01' }, sha: 'my-sha' });
 
     await generateOrUpdatePlayerSummary('Alice');
@@ -167,14 +158,11 @@ describe('generateOrUpdatePlayerSummary', () => {
       content: { playerName: 'Alice', lastProcessedDate: '2025-01-10' },
       sha: 'sha1',
     });
-    localStorageStub.setItem(
-      'mexicano_tournaments_index',
-      JSON.stringify([
-        { date: '2025-01-10' }, // already processed
-        { date: '2025-02-10' }, // new
-        { date: '2025-03-10' }, // new
-      ])
-    );
+    mockFetchTournamentsIndex.mockResolvedValueOnce([
+      { date: '2025-01-10' }, // already processed
+      { date: '2025-02-10' }, // new
+      { date: '2025-03-10' }, // new
+    ]);
 
     await generateOrUpdatePlayerSummary('Alice');
 
@@ -194,10 +182,7 @@ describe('generateOrUpdatePlayerSummary', () => {
   });
 
   it('new summary shape includes all expected fields', async () => {
-    localStorageStub.setItem(
-      'mexicano_tournaments_index',
-      JSON.stringify([{ date: '2025-01-10' }])
-    );
+    mockFetchTournamentsIndex.mockResolvedValueOnce([{ date: '2025-01-10' }]);
 
     await generateOrUpdatePlayerSummary('Alice');
     const [, payload] = mockWriteFile.mock.calls[0];
