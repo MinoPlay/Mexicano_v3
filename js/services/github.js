@@ -1580,8 +1580,7 @@ function mergePartners(existing = [], delta = []) {
 export function mergeSummary(existing, delta, newLastDate) {
   return {
     playerName:            existing.playerName,
-    generatedAt:           new Date().toISOString(),
-    lastProcessedDate:     newLastDate,
+    lastProcessedDate:newLastDate,
     totalTournaments:      (existing.totalTournaments      ?? 0) + (delta.totalTournaments      ?? 0),
     totalWins:             (existing.totalWins             ?? 0) + (delta.totalWins             ?? 0),
     totalLosses:           (existing.totalLosses           ?? 0) + (delta.totalLosses           ?? 0),

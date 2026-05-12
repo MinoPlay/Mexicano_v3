@@ -26,7 +26,6 @@ Replace single large `elo_history.json` with one history file per player.
 - File shape:
 ```json
 {
-  "generatedAt": "2026-05-08T00:00:00.000Z",
   "playerId": "uuid",
   "playerName": "Alice",
   "points": [

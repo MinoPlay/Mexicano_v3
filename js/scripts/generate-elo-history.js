@@ -145,7 +145,6 @@ export async function generateEloHistory(onProgress, options) {
     const playerName = byIdToName.get(playerId) || '';
     const points = pointsById[playerId] || [];
     const output = {
-      generatedAt: new Date().toISOString(),
       playerId,
       playerName,
       points,

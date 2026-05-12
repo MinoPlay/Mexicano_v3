@@ -99,7 +99,6 @@ describe('generateEloHistory', () => {
     await generateEloHistory();
     const aliceCall = mockWriteFile.mock.calls.find(c => c[0].endsWith('elo_history_p-alice.json'));
     const [, payload] = aliceCall;
-    expect(payload).toHaveProperty('generatedAt');
     expect(payload.playerId).toBe('p-alice');
     expect(payload.playerName).toBe('Alice');
     expect(payload.points).toEqual([

@@ -199,7 +199,6 @@ describe('generateOrUpdatePlayerSummary', () => {
       dominatingWins:     DELTA_SUMMARY.dominatingWins,
       firstPlaceFinishes: DELTA_SUMMARY.firstPlaceFinishes,
     });
-    expect(payload).toHaveProperty('generatedAt');
     expect(payload).toHaveProperty('opponents');
     expect(payload).toHaveProperty('partners');
   });

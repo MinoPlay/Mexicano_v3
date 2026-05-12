@@ -85,8 +85,7 @@ export async function generateOrUpdatePlayerSummary(playerName, onProgress) {
     ? mergeSummary(existingSummary, delta, newLastDate)
     : {
         playerName,
-        generatedAt:           new Date().toISOString(),
-        lastProcessedDate:     newLastDate,
+        lastProcessedDate:newLastDate,
         totalTournaments:      deltaSummary.totalTournaments,
         totalWins:             deltaSummary.totalWins,
         totalLosses:           deltaSummary.totalLosses,
