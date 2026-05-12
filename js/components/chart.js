@@ -35,7 +35,7 @@ export function drawLineChart(canvas, datasets, options = {}) {
   }
 
   const textColor = getComputedStyle(document.documentElement).getPropertyValue('--text-secondary').trim();
-  const gridColor = getComputedStyle(document.documentElement).getPropertyValue('--border').trim();
+  const gridColor = 'rgba(148, 163, 184, 0.25)';
 
   // Clear
   ctx.clearRect(0, 0, width, height);
@@ -43,8 +43,6 @@ export function drawLineChart(canvas, datasets, options = {}) {
   // Grid lines (horizontal)
   const ySteps = 5;
   const yRange = yMax - yMin;
-  ctx.strokeStyle = gridColor;
-  ctx.lineWidth = 0.5;
   ctx.fillStyle = textColor;
   ctx.font = '11px sans-serif';
   ctx.textAlign = 'right';
@@ -52,10 +50,14 @@ export function drawLineChart(canvas, datasets, options = {}) {
   for (let i = 0; i <= ySteps; i++) {
     const yVal = yMin + (yRange / ySteps) * i;
     const yPos = padding.top + chartH - (chartH / ySteps) * i;
+    ctx.strokeStyle = gridColor;
+    ctx.lineWidth = i === 0 ? 1 : 0.5;
+    ctx.setLineDash(i === 0 ? [] : [4, 4]);
     ctx.beginPath();
     ctx.moveTo(padding.left, yPos);
     ctx.lineTo(padding.left + chartW, yPos);
     ctx.stroke();
+    ctx.setLineDash([]);
     ctx.fillText(Math.round(yVal).toString(), padding.left - 8, yPos + 4);
   }
 

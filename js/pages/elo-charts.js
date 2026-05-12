@@ -58,7 +58,7 @@ function drawLineChart(canvas, datasets, options = {}) {
 
   const cssVar = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
   const textColor = cssVar('--text-secondary') || '#64748b';
-  const gridColor = cssVar('--border-light') || '#f1f5f9';
+  const gridColor = 'rgba(148, 163, 184, 0.25)';
   const bgColor = cssVar('--bg-card') || '#ffffff';
 
   ctx.fillStyle = bgColor;
@@ -83,10 +83,14 @@ function drawLineChart(canvas, datasets, options = {}) {
     const ratio = i / gridLines;
     const y = pad.top + plotH - ratio * plotH;
     const val = yMin + ratio * yRange;
+    ctx.strokeStyle = gridColor;
+    ctx.lineWidth = i === 0 ? 1 : 0.5;
+    ctx.setLineDash(i === 0 ? [] : [4, 4]);
     ctx.beginPath();
     ctx.moveTo(pad.left, y);
     ctx.lineTo(pad.left + plotW, y);
     ctx.stroke();
+    ctx.setLineDash([]);
     ctx.fillText(Math.round(val).toString(), pad.left - 4, y);
   }
 
