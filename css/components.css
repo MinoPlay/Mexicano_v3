@@ -463,52 +463,6 @@ dialog#doodle-changelog-dialog::backdrop {
 .elo-change.negative { color: var(--color-danger); }
 .elo-change.neutral { color: var(--text-tertiary); }
 
-/* ─── Sync Indicator ─── */
-.sync-indicator {
-  position: fixed;
-  top: var(--space-sm);
-  right: var(--space-sm);
-  width: 36px;
-  height: 36px;
-  border-radius: var(--radius-full);
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  box-shadow: var(--shadow-sm);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 200;
-  cursor: pointer;
-  transition: background var(--transition-fast), box-shadow var(--transition-fast), transform var(--transition-fast);
-  padding: 0;
-}
-
-.sync-indicator:hover {
-  background: var(--bg-secondary);
-  box-shadow: var(--shadow-md);
-}
-
-.sync-indicator:active {
-  transform: scale(0.93);
-}
-
-.sync-icon {
-  font-size: 1.1rem;
-  line-height: 1;
-  display: inline-block;
-  color: var(--text-secondary);
-  transition: color var(--transition-fast);
-}
-
-.sync-indicator.syncing .sync-icon {
-  animation: sync-spin 0.9s linear infinite;
-  color: var(--color-primary);
-}
-
-@keyframes sync-spin {
-  to { transform: rotate(360deg); }
-}
-
 /* ─── PWA Install Prompt ─── */
 @keyframes install-prompt-in {
   from { transform: translateY(100%); opacity: 0; }

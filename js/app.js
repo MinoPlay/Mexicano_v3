@@ -2,7 +2,6 @@ import { Router } from './router.js';
 import { Store } from './store.js';
 import { State } from './state.js';
 import { renderNav } from './components/nav.js';
-import { mountSyncIndicator, setSyncBusy } from './components/sync-indicator.js';
 import { showToast } from './components/toast.js';
 import { showRefreshDialog } from './components/refresh-dialog.js';
 import { pullForRoute } from './services/github.js';
@@ -70,33 +69,7 @@ async function init() {
   await loadDevSecrets();
   initInstallPrompt();
 
-  // Mount sync indicator (needs GitHub config to be loaded first)
-  if (Store.getGitHubConfig()?.pat) {
-    mountSyncIndicator(async () => {
-      const pageName = getPageName(window.location.hash);
-      const dialog = showRefreshDialog(pageName);
-      setSyncBusy(true);
-      try {
-        const { refreshCurrentPage } = await import('./services/github.js');
-        const { updated } = await refreshCurrentPage(window.location.hash, (type, label, status) => {
-          if (type === 'add') dialog.addStep(label, status);
-          else if (type === 'update') dialog.markStep(label, status);
-        });
-        dialog.close();
-        if (updated) {
-          router.resolve();
-        }
-        showToast(updated ? '✅ Data updated' : '✓ Already up to date');
-      } catch (e) {
-        dialog.setError(e.message);
-        showToast(`⚠️ Refresh failed: ${e.message}`);
-      } finally {
-        setSyncBusy(false);
-      }
-    });
-  }
-
-  await loadLocalData();
+  awaitloadLocalData();
   loadFromGitHub();
 }
 init();
@@ -115,7 +88,6 @@ window.addEventListener('storage', (e) => {
 // In-memory Cache is empty on every page refresh, so pull always runs fresh.
 async function loadFromGitHub() {
   if (!Store.getGitHubConfig()?.pat) return;
-  setSyncBusy(true);
   try {
     await pullForRoute(window.location.hash);
     // Re-render the current page with freshly pulled data
@@ -123,8 +95,6 @@ async function loadFromGitHub() {
   } catch (e) {
     console.warn('GitHub auto-pull failed:', e);
     showToast(`⚠️ Sync failed: ${e.message}`);
-  } finally {
-    setSyncBusy(false);
   }
 }
 
