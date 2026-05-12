@@ -401,6 +401,59 @@ export async function fetchTournamentsIndex({ create = false } = {}) {
 
   if (result !== null) {
     const entries = Array.isArray(result.content) ? result.content : [];
+
+    // Self-heal stale entries: matchCount=0 but playerCount>0 means the
+    // tournament was started but updateTournamentIndexEntry failed at completion.
+    const staleEntries = entries.filter(e => e.matchCount === 0 && e.playerCount > 0 && !e.isComplete);
+    if (staleEntries.length > 0) {
+      ghLog('TOURNAMENTS_INDEX_HEAL', path, `${staleEntries.length} stale entries`);
+      let changed = false;
+      for (const stale of staleEntries) {
+        const prefix = base ? `${base}/` : '';
+        const year = stale.date.slice(0, 4);
+        const yearMonth = stale.date.slice(0, 7);
+        const filePath = `${prefix}${year}/${yearMonth}/${stale.date}.json`;
+        try {
+          const dayResult = await readFile(filePath);
+          if (dayResult?.content?.matches && Array.isArray(dayResult.content.matches)) {
+            const matches = dayResult.content.matches;
+            if (matches.length === 0) continue;
+            const players = new Set();
+            const rounds = new Set();
+            let completed = 0;
+            for (const m of matches) {
+              if (m.Team1Player1Name) players.add(m.Team1Player1Name);
+              if (m.Team1Player2Name) players.add(m.Team1Player2Name);
+              if (m.Team2Player1Name) players.add(m.Team2Player1Name);
+              if (m.Team2Player2Name) players.add(m.Team2Player2Name);
+              if (m.RoundNumber != null) rounds.add(m.RoundNumber);
+              if ((m.ScoreTeam1 ?? 0) + (m.ScoreTeam2 ?? 0) === 25) completed++;
+            }
+            const idx = entries.findIndex(e => e.date === stale.date);
+            if (idx >= 0) {
+              entries[idx] = {
+                ...entries[idx],
+                playerCount: players.size,
+                roundCount: rounds.size,
+                matchCount: matches.length,
+                completedCount: completed,
+                isComplete: matches.length > 0 && completed === matches.length,
+              };
+              changed = true;
+            }
+          }
+        } catch { /* skip */ }
+      }
+      if (changed) {
+        try {
+          await writeFile(path, entries, result.sha);
+          ghLog('TOURNAMENTS_INDEX_HEALED', path);
+        } catch (e) {
+          console.warn('[github] failed to write healed tournaments.json:', e);
+        }
+      }
+    }
+
     Store.setTournamentsIndex(entries);
     const dates = entries.map(e => e.date).sort();
     Cache.set('tournament_dates', dates);
