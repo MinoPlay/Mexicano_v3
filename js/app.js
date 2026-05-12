@@ -69,7 +69,7 @@ async function init() {
   await loadDevSecrets();
   initInstallPrompt();
 
-  awaitloadLocalData();
+  await loadLocalData();
   loadFromGitHub();
 }
 init();

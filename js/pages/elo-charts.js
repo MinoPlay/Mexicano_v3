@@ -223,6 +223,19 @@ function setupTooltip(canvas, formatLabel) {
     el.style.left = closest.x + 'px';
     el.style.top = closest.y + 'px';
     parent.appendChild(el);
+
+    // Clamp to viewport after layout
+    const tip = el.getBoundingClientRect();
+    const margin = 8;
+    let dx = 0;
+    let flipBelow = false;
+    if (tip.right > window.innerWidth - margin) dx = window.innerWidth - margin - tip.right;
+    if (tip.left + dx < margin) dx = margin - tip.left;
+    if (tip.top < margin) flipBelow = true;
+    const shiftX = `calc(-50% + ${dx}px)`;
+    el.style.transform = flipBelow ? `translate(${shiftX}, 10px)` : `translate(${shiftX}, -100%)`;
+    if (flipBelow) el.style.marginTop = '0';
+
     return el;
   }
 
