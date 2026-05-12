@@ -664,18 +664,15 @@ export async function pullAll(onProgress) {
         localStorage.setItem(`mexicano_${key}`, JSON.stringify(result.content));
       }
     }
-    // If active_tournament.json is absent from GitHub, clear any stale local entry
-    // that the tournaments index already marks as complete.
+    // If active_tournament.json is absent from GitHub, always clear stale local entry.
+    // Also purge stale partial matches so tournament page re-fetches fresh data.
     if (!foundActiveTournament) {
       const local = Store.getActiveTournament();
-      if (!local || local.isCompleted) {
-        localStorage.removeItem('mexicano_active_tournament');
-      } else {
-        const index = Store.getTournamentsIndex();
-        if (index.some(e => e.date === local.tournamentDate && e.isComplete)) {
-          localStorage.removeItem('mexicano_active_tournament');
-        }
+      if (local && !local.isCompleted) {
+        const otherMatches = Store.getMatches().filter(m => m.date !== local.tournamentDate);
+        localStorage.setItem('mexicano_matches', JSON.stringify(otherMatches));
       }
+      localStorage.removeItem('mexicano_active_tournament');
     }
 
     pullSucceeded = true;
@@ -805,15 +802,15 @@ async function pullCoreData() {
     if (atResult !== null && !atResult.content?.isCompleted) {
       localStorage.setItem('mexicano_active_tournament', JSON.stringify(atResult.content));
     } else {
+      // Remote 404 or completed → no active tournament on server → always clear local.
+      // If local had an in-progress tournament, also purge its stale partial matches
+      // so the tournament page will re-fetch complete data from GitHub.
       const local = Store.getActiveTournament();
-      if (!local || local.isCompleted) {
-        localStorage.removeItem('mexicano_active_tournament');
-      } else {
-        const index = Store.getTournamentsIndex();
-        if (index.some(e => e.date === local.tournamentDate && e.isComplete)) {
-          localStorage.removeItem('mexicano_active_tournament');
-        }
+      if (local && !local.isCompleted) {
+        const otherMatches = Store.getMatches().filter(m => m.date !== local.tournamentDate);
+        localStorage.setItem('mexicano_matches', JSON.stringify(otherMatches));
       }
+      localStorage.removeItem('mexicano_active_tournament');
     }
   } catch { /* data/ may not exist yet */ }
 
@@ -876,15 +873,15 @@ async function pullTournamentsPage() {
     if (atResult !== null && !atResult.content?.isCompleted) {
       localStorage.setItem('mexicano_active_tournament', JSON.stringify(atResult.content));
     } else {
+      // Remote 404 or completed → no active tournament on server → always clear local.
+      // If local had an in-progress tournament, also purge its stale partial matches
+      // so the tournament page will re-fetch complete data from GitHub.
       const local = Store.getActiveTournament();
-      if (!local || local.isCompleted) {
-        localStorage.removeItem('mexicano_active_tournament');
-      } else {
-        const index = Store.getTournamentsIndex();
-        if (index.some(e => e.date === local.tournamentDate && e.isComplete)) {
-          localStorage.removeItem('mexicano_active_tournament');
-        }
+      if (local && !local.isCompleted) {
+        const otherMatches = Store.getMatches().filter(m => m.date !== local.tournamentDate);
+        localStorage.setItem('mexicano_matches', JSON.stringify(otherMatches));
       }
+      localStorage.removeItem('mexicano_active_tournament');
     }
   } catch { /* data/ may not exist yet */ }
 
@@ -1066,15 +1063,15 @@ async function pullHomeData() {
     if (atResult !== null && !atResult.content?.isCompleted) {
       localStorage.setItem('mexicano_active_tournament', JSON.stringify(atResult.content));
     } else {
+      // Remote 404 or completed → no active tournament on server → always clear local.
+      // If local had an in-progress tournament, also purge its stale partial matches
+      // so the tournament page will re-fetch complete data from GitHub.
       const local = Store.getActiveTournament();
-      if (!local || local.isCompleted) {
-        localStorage.removeItem('mexicano_active_tournament');
-      } else {
-        const index = Store.getTournamentsIndex();
-        if (index.some(e => e.date === local.tournamentDate && e.isComplete)) {
-          localStorage.removeItem('mexicano_active_tournament');
-        }
+      if (local && !local.isCompleted) {
+        const otherMatches = Store.getMatches().filter(m => m.date !== local.tournamentDate);
+        localStorage.setItem('mexicano_matches', JSON.stringify(otherMatches));
       }
+      localStorage.removeItem('mexicano_active_tournament');
     }
   } catch { /* data/ may not exist yet */ }
 
