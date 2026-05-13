@@ -144,7 +144,8 @@ export function startTournament(tournament) {
 
   // Single explicit push after everything is written — cancel any debounce timers
   // from the Store.set calls above so they don't fire separately.
-  import('./github.js').then(({ cancelPendingSync, flushPush, updateTournamentIndexEntry }) => {
+  import('./github.js').then(({ cancelPendingSync, flushPush, updateTournamentIndexEntry, markMatchDateDirty }) => {
+    markMatchDateDirty(tournament.tournamentDate); // ensure dirty before flush
     cancelPendingSync();
     flushPush();
     // Add new tournament to the index immediately
@@ -411,15 +412,8 @@ export function completeTournament(tournament) {
   }).catch(() => {});
 
   // Immediately sync completed tournament to GitHub
-  import('./github.js').then(({ flushPush, markMatchDateDirty, keyToPath, readFile, deleteFile, updateTournamentIndexEntry, generateMonthlyOverviews, generatePlayersJson, generateEloHistory }) => {
+  import('./github.js').then(({ flushPush, markMatchDateDirty, updateTournamentIndexEntry, generateMonthlyOverviews, generatePlayersJson, generateEloHistory, readFile }) => {
     markMatchDateDirty(tournament.tournamentDate);
-    // Delete active_tournament.json from GitHub since the tournament is done
-    const atPath = keyToPath('active_tournament');
-    if (atPath) {
-      readFile(atPath)
-        .then(existing => { if (existing?.sha) return deleteFile(atPath, existing.sha); })
-        .catch(() => {});
-    }
 
     const yearMonth = tournament.tournamentDate.slice(0, 7);
     const participantNames = [...new Set((tournament.players || []).map(p => String(p?.name || '').trim()).filter(Boolean))];

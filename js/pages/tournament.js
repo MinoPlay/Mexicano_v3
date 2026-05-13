@@ -47,6 +47,19 @@ export function renderTournament(container, params) {
       tournament = active;
       if (tournament.isCompleted) currentTab = 'leaderboard';
       render();
+      // Fire a background refresh so we always show the latest round data,
+      // bypassing the session-level pull guard that runs only once per page load.
+      if (Store.getGitHubConfig()?.pat) {
+        import('../services/github.js')
+          .then(({ fetchActiveTournamentJson }) => fetchActiveTournamentJson())
+          .then(fresh => {
+            if (fresh && !fresh.isCompleted && fresh.tournamentDate === date) {
+              tournament = fresh;
+              render();
+            }
+          })
+          .catch(() => {});
+      }
       return;
     }
 

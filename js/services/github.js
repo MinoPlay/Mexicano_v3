@@ -189,8 +189,8 @@ export function keyToPath(key) {
     return `${prefix}${year}/${yearMonth}/${key}.json`;
   }
 
-  // Only these data-folder keys are synced.
-  const SYNCED_DATA_KEYS = ['active_tournament'];
+  // Active tournament is now embedded in the date file — not synced separately.
+  const SYNCED_DATA_KEYS = [];
   if (SYNCED_DATA_KEYS.includes(key)) {
     return `${prefix}data/${key}.json`;
   }
@@ -349,7 +349,9 @@ export async function testConnection() {
  * Matches are written as per-tournament-day files: YYYY/YYYY-MM/YYYY-MM-DD.json
  * (PascalCase fields, backup metadata wrapper).
  *
- * Other synced keys (doodle, active_tournament) are written to data/.
+ * Other synced keys (doodle) are written to data/.
+ * The active tournament is embedded in the date file under a `tournament` field
+ * instead of a separate data/active_tournament.json.
  *
  * @param {function} [onProgress] - called with (label, total, index) for each file written
  * @param {object}   [opts]
@@ -359,7 +361,7 @@ export async function testConnection() {
 export async function pushAll(onProgress, { allMatchDates = false } = {}) {
   const data = Store.exportAll();
 
-  // 1. Push non-matches data (doodle, active_tournament, …)
+  // 1. Push non-matches data (doodle, …) — active_tournament is no longer in SYNCED_DATA_KEYS
   const entries = Object.entries(data).filter(([k]) => keyToPath(k));
   ghLog('PUSH_START', '-', `${entries.length} data keys, allMatchDates=${allMatchDates}`);
 
@@ -373,14 +375,28 @@ export async function pushAll(onProgress, { allMatchDates = false } = {}) {
     onProgress?.(key, total, ++i);
   }
 
-  // 2. Push matches as per-date files (only dirty dates unless allMatchDates)
+  // 2. Push matches as per-date files (only dirty dates unless allMatchDates).
+  // Snapshot dirty dates now so marks added during push are not lost.
+  const dirtyDatesSnapshot = new Set(_dirtyMatchDates);
+  _dirtyMatchDates.clear();
+
+  // Active (in-progress) tournament: embed the full tournament object in its date file.
+  const activeTournament = Store.getActiveTournament();
+  const activeTDate = (!activeTournament?.isCompleted && activeTournament?.tournamentDate)
+    ? activeTournament.tournamentDate : null;
+
   const matches = data.matches || [];
   const byDate = {};
   for (const m of matches) {
     if (!m.date) continue;
-    if (!allMatchDates && !_dirtyMatchDates.has(m.date)) continue;
+    if (!allMatchDates && !dirtyDatesSnapshot.has(m.date)) continue;
     if (!byDate[m.date]) byDate[m.date] = [];
     byDate[m.date].push(m);
+  }
+
+  // Ensure the active tournament date is included in the push even with no completed matches.
+  if (activeTDate && (allMatchDates || dirtyDatesSnapshot.has(activeTDate))) {
+    if (!byDate[activeTDate]) byDate[activeTDate] = [];
   }
 
   const dateEntries = Object.entries(byDate);
@@ -388,12 +404,22 @@ export async function pushAll(onProgress, { allMatchDates = false } = {}) {
   i = 0;
   for (const [date, dateMatches] of dateEntries) {
     const path = datePath(date);
-    const backupData = {
-      backup_timestamp: new Date().toISOString(),
-      match_date: date,
-      match_count: dateMatches.length,
-      matches: dateMatches.map(toBackupMatch),
-    };
+    let backupData;
+    if (activeTDate === date) {
+      // In-progress: store tournament object so any device can restore state.
+      backupData = {
+        backup_timestamp: new Date().toISOString(),
+        match_date: date,
+        tournament: activeTournament,
+      };
+    } else {
+      backupData = {
+        backup_timestamp: new Date().toISOString(),
+        match_date: date,
+        match_count: dateMatches.length,
+        matches: dateMatches.map(toBackupMatch),
+      };
+    }
     let sha;
     try { const existing = await readFile(path); sha = existing?.sha; } catch { sha = undefined; }
     await writeFile(path, backupData, sha);
@@ -401,7 +427,6 @@ export async function pushAll(onProgress, { allMatchDates = false } = {}) {
   }
 
   ghLog('PUSH_DONE', '-', `${entries.length} data + ${dateEntries.length} match files`);
-  _dirtyMatchDates.clear();
 }
 
 // ─── tournaments.json index ───────────────────────────────────────────────────
@@ -616,6 +641,142 @@ export async function fetchTournamentsIndexPublic() {
 }
 
 /**
+ * Internal helper: resolve the active tournament from its date file.
+ * Must be called AFTER tournaments.json has been loaded into the Store.
+ *
+ * Strategy:
+ *  1. If local active tournament is completed → clear it and return.
+ *  2. If local active tournament is in-progress → verify/refresh from its date file.
+ *  3. Else try the most recent `isComplete:false` entry in the index.
+ *  4. Fallback: probe the most recent date (≤3 days) in case tournaments.json
+ *     wrongly has `isComplete:true` after a data restore (stale index).
+ *  5. Backward-compat migration: if nothing found in date file, try the old
+ *     `data/active_tournament.json` once.
+ *
+ * When a date file has `{ tournament: {...} }` and the tournament is not
+ * completed, the in-memory index entry is corrected to `isComplete:false`.
+ */
+async function pullActiveTournamentFromDateFile() {
+  const entries = Store.getTournamentsIndex() || [];
+  const local = Store.getActiveTournament();
+  const base = matchesBase();
+
+  if (local?.isCompleted) {
+    localStorage.removeItem('mexicano_active_tournament');
+    return;
+  }
+
+  let dateToCheck = null;
+  let isExplicit = false;
+
+  if (local && !local.isCompleted) {
+    dateToCheck = local.tournamentDate;
+    isExplicit = true;
+  } else {
+    const incompleteEntry = [...entries]
+      .filter(e => !e.isComplete)
+      .sort((a, b) => b.date.localeCompare(a.date))[0];
+    if (incompleteEntry) {
+      dateToCheck = incompleteEntry.date;
+      isExplicit = true;
+    } else {
+      const mostRecent = [...entries].sort((a, b) => b.date.localeCompare(a.date))[0];
+      if (mostRecent) {
+        const daysDiff = (Date.now() - new Date(mostRecent.date + 'T00:00:00').getTime()) / 86400000;
+        if (daysDiff <= 3) dateToCheck = mostRecent.date;
+      }
+    }
+  }
+
+  let foundActiveInDateFile = false;
+
+  if (dateToCheck) {
+    let dateFileResult = null;
+    try { dateFileResult = await readFile(datePath(dateToCheck)); } catch { /* ok */ }
+
+    const activeTInFile = dateFileResult?.content?.tournament;
+    if (activeTInFile && !activeTInFile.isCompleted) {
+      foundActiveInDateFile = true;
+      localStorage.setItem('mexicano_active_tournament', JSON.stringify(activeTInFile));
+      // Fix in-memory index if tournaments.json wrongly marks it complete.
+      const entry = entries.find(e => e.date === dateToCheck);
+      if (entry?.isComplete) {
+        const fixed = entries.map(e => e.date === dateToCheck ? { ...e, isComplete: false } : e);
+        Store.setTournamentsIndex(fixed);
+        Cache.set('tournament_dates', fixed.map(e => e.date).sort());
+        ghLog('RECONCILE_ACTIVE_TOURNAMENT', dateToCheck, 'fixed stale isComplete:true → false in-memory');
+      }
+    } else if (isExplicit) {
+      // We explicitly expected an active tournament here.
+      // Only clear local state if the date file definitively shows the tournament completed
+      // (has a non-empty matches array). A missing file or a file without matches could be
+      // a pre-migration date file — fall through to backward-compat check instead.
+      const fileShowsCompleted = Array.isArray(dateFileResult?.content?.matches)
+        && dateFileResult.content.matches.length > 0;
+      if (fileShowsCompleted) {
+        if (local && local.tournamentDate === dateToCheck) {
+          const otherMatches = Store.getMatches().filter(m => m.date !== dateToCheck);
+          localStorage.setItem('mexicano_matches', JSON.stringify(otherMatches));
+        }
+        localStorage.removeItem('mexicano_active_tournament');
+      }
+    }
+  }
+
+  // Backward-compat migration: pre-migration date files lack the `tournament` field.
+  // If no active tournament resolved via the date file, try old data/active_tournament.json.
+  if (!foundActiveInDateFile && !Store.getActiveTournament()) {
+    const dataPath = base ? `${base}/data` : 'data';
+    try {
+      const atResult = await readFile(`${dataPath}/active_tournament.json`);
+      if (atResult !== null && !atResult.content?.isCompleted) {
+        localStorage.setItem('mexicano_active_tournament', JSON.stringify(atResult.content));
+        markMatchDateDirty(atResult.content.tournamentDate);
+        ghLog('MIGRATION_ACTIVE_TOURNAMENT', atResult.content.tournamentDate, 'migrated from old data/active_tournament.json');
+      }
+    } catch { /* data/active_tournament.json may not exist */ }
+  }
+}
+
+/**
+ * Force-fetch the latest active tournament state from its date file.
+ * Use on the tournament detail page to bypass the session pull guard.
+ * Returns the updated tournament object or null if not found / already completed.
+ */
+export async function fetchActiveTournamentJson() {
+  const cfg = getConfig();
+  if (!cfg?.owner || !cfg?.repo || !cfg?.pat) return null;
+
+  const local = Store.getActiveTournament();
+  if (!local || local.isCompleted) return null;
+
+  const dateToFetch = local.tournamentDate;
+  if (!dateToFetch) return null;
+
+  try {
+    const dateResult = await readFile(datePath(dateToFetch));
+    const activeTInFile = dateResult?.content?.tournament;
+    if (activeTInFile && !activeTInFile.isCompleted) {
+      localStorage.setItem('mexicano_active_tournament', JSON.stringify(activeTInFile));
+      return activeTInFile;
+    }
+  } catch { /* ok */ }
+
+  // Backward compat: try old data/active_tournament.json
+  const base = matchesBase();
+  const dataPath = base ? `${base}/data` : 'data';
+  try {
+    const atResult = await readFile(`${dataPath}/active_tournament.json`);
+    if (atResult !== null && !atResult.content?.isCompleted) {
+      localStorage.setItem('mexicano_active_tournament', JSON.stringify(atResult.content));
+      return atResult.content;
+    }
+  } catch { /* ok */ }
+
+  return null;
+}
+
+/**
  *
  * Reads pre-computed summary files (players.json, monthly overviews) and
  * discovers tournament dates via tournaments.json (creating it if missing).
@@ -729,36 +890,8 @@ export async function pullAll(onProgress) {
       onProgress?.(ym, total, i + 1);
     }
 
-    // ── 4. Pull data/ files (changelog, active_tournament, …) ──────────────
-    const dataPath = base ? `${base}/data` : 'data';
-    const dataFiles = await listContents(dataPath);
-    const jsonFiles = dataFiles.filter(f => f.type === 'file' && f.name.endsWith('.json'));
-    const foundActiveTournament = jsonFiles.some(f => f.name === 'active_tournament.json');
-    for (const file of jsonFiles) {
-      const key = file.name.replace(/\.json$/, '');
-      if (keyToPath(key) === null) continue;
-      // Doodle files are pulled from month directories (step 3)
-      if (key.startsWith('doodle_')) continue;
-      const result = await readFile(`${dataPath}/${file.name}`);
-      if (result !== null) {
-        if (key === 'active_tournament' && result.content?.isCompleted) {
-          const local = Store.getActiveTournament();
-          if (!local || local.isCompleted) localStorage.removeItem('mexicano_active_tournament');
-          continue;
-        }
-        localStorage.setItem(`mexicano_${key}`, JSON.stringify(result.content));
-      }
-    }
-    // If active_tournament.json is absent from GitHub, always clear stale local entry.
-    // Also purge stale partial matches so tournament page re-fetches fresh data.
-    if (!foundActiveTournament) {
-      const local = Store.getActiveTournament();
-      if (local && !local.isCompleted) {
-        const otherMatches = Store.getMatches().filter(m => m.date !== local.tournamentDate);
-        localStorage.setItem('mexicano_matches', JSON.stringify(otherMatches));
-      }
-      localStorage.removeItem('mexicano_active_tournament');
-    }
+    // ── 4. Resolve active tournament from date file ─────────────────────────
+    await pullActiveTournamentFromDateFile();
 
     pullSucceeded = true;
   } finally {
@@ -880,24 +1013,8 @@ async function pullCoreData() {
   // ── 2. tournaments.json → tournament_dates (no dir-walk, no create) ────────
   await fetchTournamentsIndex({ create: false });
 
-  // ── 3. active_tournament ───────────────────────────────────────────────────
-  const dataPath = base ? `${base}/data` : 'data';
-  try {
-    const atResult = await readFile(`${dataPath}/active_tournament.json`);
-    if (atResult !== null && !atResult.content?.isCompleted) {
-      localStorage.setItem('mexicano_active_tournament', JSON.stringify(atResult.content));
-    } else {
-      // Remote 404 or completed → no active tournament on server → always clear local.
-      // If local had an in-progress tournament, also purge its stale partial matches
-      // so the tournament page will re-fetch complete data from GitHub.
-      const local = Store.getActiveTournament();
-      if (local && !local.isCompleted) {
-        const otherMatches = Store.getMatches().filter(m => m.date !== local.tournamentDate);
-        localStorage.setItem('mexicano_matches', JSON.stringify(otherMatches));
-      }
-      localStorage.removeItem('mexicano_active_tournament');
-    }
-  } catch { /* data/ may not exist yet */ }
+  // ── 3. Resolve active tournament from date file ────────────────────────────
+  await pullActiveTournamentFromDateFile();
 
   // ── 4. Current + previous month overviews─────────────────────────────────
   const now = new Date();
@@ -951,24 +1068,8 @@ async function pullTournamentsPage() {
   // ── 2. tournaments.json — create if missing ────────────────────────────────
   await fetchTournamentsIndex({ create: true });
 
-  // ── 3. active_tournament ───────────────────────────────────────────────────
-  const dataPath = base ? `${base}/data` : 'data';
-  try {
-    const atResult = await readFile(`${dataPath}/active_tournament.json`);
-    if (atResult !== null && !atResult.content?.isCompleted) {
-      localStorage.setItem('mexicano_active_tournament', JSON.stringify(atResult.content));
-    } else {
-      // Remote 404 or completed → no active tournament on server → always clear local.
-      // If local had an in-progress tournament, also purge its stale partial matches
-      // so the tournament page will re-fetch complete data from GitHub.
-      const local = Store.getActiveTournament();
-      if (local && !local.isCompleted) {
-        const otherMatches = Store.getMatches().filter(m => m.date !== local.tournamentDate);
-        localStorage.setItem('mexicano_matches', JSON.stringify(otherMatches));
-      }
-      localStorage.removeItem('mexicano_active_tournament');
-    }
-  } catch { /* data/ may not exist yet */ }
+  // ── 3. Resolve active tournament from date file ────────────────────────────
+  await pullActiveTournamentFromDateFile();
 
   ghLog('PULL_TOURNAMENTS_PAGE', '-', 'done');
   return true;
@@ -1141,24 +1242,8 @@ async function pullHomeData() {
   // ── 2. Tournament dates — read tournaments.json (no create, no dir-walk) ─────
   await fetchTournamentsIndex({ create: false });
 
-  // ── 3. active_tournament.json ────────────────────────────────────────────────
-  const dataPath = base ? `${base}/data` : 'data';
-  try {
-    const atResult = await readFile(`${dataPath}/active_tournament.json`);
-    if (atResult !== null && !atResult.content?.isCompleted) {
-      localStorage.setItem('mexicano_active_tournament', JSON.stringify(atResult.content));
-    } else {
-      // Remote 404 or completed → no active tournament on server → always clear local.
-      // If local had an in-progress tournament, also purge its stale partial matches
-      // so the tournament page will re-fetch complete data from GitHub.
-      const local = Store.getActiveTournament();
-      if (local && !local.isCompleted) {
-        const otherMatches = Store.getMatches().filter(m => m.date !== local.tournamentDate);
-        localStorage.setItem('mexicano_matches', JSON.stringify(otherMatches));
-      }
-      localStorage.removeItem('mexicano_active_tournament');
-    }
-  } catch { /* data/ may not exist yet */ }
+  // ── 3. Resolve active tournament from date file ─────────────────────────────
+  await pullActiveTournamentFromDateFile();
 
   // ── 4. Latest date's matches — only if not already in localStorage ───────────
   const allDates = Cache.get('tournament_dates') || [];
