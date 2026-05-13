@@ -352,6 +352,38 @@ describe('completeTournament', () => {
     expect(allNames.every(n => typeof n === 'string' && n.length > 0)).toBe(true);
   });
 
+  it('match entities have embedded ELO fields after completion', () => {
+    const t = makeCompletedTournament();
+
+    completeTournament(t);
+
+    const m = Store.getMatches()[0];
+    expect(typeof m.team1Player1Elo).toBe('number');
+    expect(typeof m.team1Player2Elo).toBe('number');
+    expect(typeof m.team2Player1Elo).toBe('number');
+    expect(typeof m.team2Player2Elo).toBe('number');
+    expect(m.team1Player1Elo).toBeGreaterThan(0);
+    expect(m.team1Player2Elo).toBeGreaterThan(0);
+    expect(m.team2Player1Elo).toBeGreaterThan(0);
+    expect(m.team2Player2Elo).toBeGreaterThan(0);
+  });
+
+  it('multi-round: all match entities have embedded ELO fields', () => {
+    const t = createTournament(DATE, PLAYERS_4);
+    startTournament(t);
+    setMatchScore(t, 1, 1, 15, 10);
+    startNextRound(t);
+    setMatchScore(t, 2, 1, 13, 12);
+
+    completeTournament(t);
+
+    const matches = Store.getMatches();
+    for (const m of matches) {
+      expect(typeof m.team1Player1Elo).toBe('number');
+      expect(typeof m.team2Player2Elo).toBe('number');
+    }
+  });
+
   it('emits tournament-changed', () => {
     const t = makeCompletedTournament();
 

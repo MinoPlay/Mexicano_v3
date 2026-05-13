@@ -102,7 +102,7 @@ function guardPath(rawPath) {
 // ─── Field converters (camelCase ↔ backup PascalCase) ────────────────────────
 
 function toBackupMatch(m) {
-  return {
+  const out = {
     Date: m.date,
     RoundNumber: m.roundNumber,
     ScoreTeam1: m.scoreTeam1,
@@ -112,10 +112,15 @@ function toBackupMatch(m) {
     Team2Player1Name: m.team2Player1Name,
     Team2Player2Name: m.team2Player2Name,
   };
+  if (m.team1Player1Elo != null) out.Team1Player1Elo = m.team1Player1Elo;
+  if (m.team1Player2Elo != null) out.Team1Player2Elo = m.team1Player2Elo;
+  if (m.team2Player1Elo != null) out.Team2Player1Elo = m.team2Player1Elo;
+  if (m.team2Player2Elo != null) out.Team2Player2Elo = m.team2Player2Elo;
+  return out;
 }
 
 export function fromBackupMatch(m) {
-  return {
+  const out = {
     date: m.Date,
     roundNumber: m.RoundNumber,
     scoreTeam1: m.ScoreTeam1,
@@ -125,6 +130,11 @@ export function fromBackupMatch(m) {
     team2Player1Name: m.Team2Player1Name,
     team2Player2Name: m.Team2Player2Name,
   };
+  if (m.Team1Player1Elo != null) out.team1Player1Elo = m.Team1Player1Elo;
+  if (m.Team1Player2Elo != null) out.team1Player2Elo = m.Team1Player2Elo;
+  if (m.Team2Player1Elo != null) out.team2Player1Elo = m.Team2Player1Elo;
+  if (m.Team2Player2Elo != null) out.team2Player2Elo = m.Team2Player2Elo;
+  return out;
 }
 
 /** Maps a date string ('YYYY-MM-DD') to its repo file path, under the configured base path. */

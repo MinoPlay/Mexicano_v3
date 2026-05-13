@@ -56,7 +56,7 @@ result = round(new_elo × 100) / 100
 }
 ```
 
-### Match Object (input)
+### Match Object (input + output)
 ```json
 {
   "team1Player1Name": "Alice",
@@ -66,9 +66,14 @@ result = round(new_elo × 100) / 100
   "scoreTeam1": 10,
   "scoreTeam2": 5,
   "date": "2024-01-15",
-  "roundNumber": 1
+  "roundNumber": 1,
+  "team1Player1Elo": 1016.00,
+  "team1Player2Elo": 1016.00,
+  "team2Player1Elo": 984.00,
+  "team2Player2Elo": 984.00
 }
 ```
+ELO fields represent each player's ELO **after** this match. Embedded at tournament completion and used by the Latest Tournament chart directly.
 
 ## Edge Cases & Behaviors
 
@@ -101,7 +106,7 @@ result = round(new_elo × 100) / 100
 | `getEloHistoryAllTime(matches)` | Timeline: date → player ELO snapshot |
 | `getEloHistoryForPeriod(matches, months)` | Filter last N months |
 | `getEloHistoryForDateRange(matches, from, to)` | Custom date range |
-| `getEloHistoryForLatestTournament(matches, playerNames)` | Latest tournament rounds |
+| `getEloFromEmbeddedMatches(matches, date)` | Read ELO history for latest tournament from embedded match fields |
 | `getEloSnapshots(matches)` | Per-player end-of-date snapshots |
 | `getEloForDate(snapshots, date)` | ELO + delta at specific date |
 | `getEloForMonth(snapshots, yearMonth)` | ELO + delta at end of month |

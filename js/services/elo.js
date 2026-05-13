@@ -241,6 +241,47 @@ export function getEloHistoryForLatestTournament(allMatches, playerNames = null,
   return { players: historyMap, rounds: roundNumbers };
 }
 
+/**
+ * Build latest-tournament ELO history from ELO fields embedded in match entities.
+ * Requires matches to have team1Player1Elo, team1Player2Elo, team2Player1Elo, team2Player2Elo.
+ * Returns { players: { name → [{round, elo, delta}] }, rounds: [roundNumbers] }
+ */
+export function getEloFromEmbeddedMatches(allMatches, date) {
+  const tournamentMatches = (allMatches || []).filter(m => m.date === date);
+  const sorted = [...tournamentMatches].sort((a, b) => a.roundNumber - b.roundNumber);
+  const rounds = [...new Set(sorted.map(m => m.roundNumber))].sort((a, b) => a - b);
+
+  const historyMap = {};
+  for (const match of sorted) {
+    const players = [
+      { name: match.team1Player1Name, elo: match.team1Player1Elo },
+      { name: match.team1Player2Name, elo: match.team1Player2Elo },
+      { name: match.team2Player1Name, elo: match.team2Player1Elo },
+      { name: match.team2Player2Name, elo: match.team2Player2Elo },
+    ];
+    for (const { name, elo } of players) {
+      if (!name || elo == null) continue;
+      if (!historyMap[name]) historyMap[name] = [];
+      const existing = historyMap[name].find(e => e.round === match.roundNumber);
+      if (existing) {
+        existing.elo = elo;
+      } else {
+        historyMap[name].push({ round: match.roundNumber, elo });
+      }
+    }
+  }
+
+  for (const points of Object.values(historyMap)) {
+    points.sort((a, b) => a.round - b.round);
+    for (let i = 0; i < points.length; i++) {
+      const prev = points[i - 1];
+      points[i].delta = prev ? Math.round((points[i].elo - prev.elo) * 10) / 10 : 0;
+    }
+  }
+
+  return { players: historyMap, rounds };
+}
+
 export function calculateEloChange(player) {
   if (!player.history || player.history.length === 0) return 0;
 

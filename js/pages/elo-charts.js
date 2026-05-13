@@ -1,5 +1,5 @@
 import {
-  getEloHistoryForLatestTournament,
+  getEloFromEmbeddedMatches,
   getEloHistoryForPeriod,
   getEloHistoryForDateRange,
 } from '../services/elo.js';
@@ -466,25 +466,6 @@ function eloHistoryForDateRange(eloData, fromStr, toStr) {
   return { players, dates };
 }
 
-/**
- * Derive seed ELOs from per-player history data for the latest tournament.
- * For each player, returns their last known ELO strictly before latestDate.
- * Players with no prior history are omitted (they'll start at 1000 via processMatchElo).
- */
-function getSeedElosFromHistory(historyData, latestDate) {
-  if (!historyData?.players || !latestDate) return null;
-  // History points use "YYYY-MM" format. Compare against year-month prefix so
-  // the current tournament's month is excluded (e.g. "2026-05" is NOT prior to "2026-05-12").
-  const latestYearMonth = latestDate.slice(0, 7);
-  const seeds = {};
-  for (const [name, points] of Object.entries(historyData.players)) {
-    if (!Array.isArray(points)) continue;
-    const prior = points.filter(p => p.date < latestYearMonth);
-    if (prior.length > 0) seeds[name] = prior[prior.length - 1].elo;
-  }
-  return Object.keys(seeds).length > 0 ? seeds : null;
-}
-
 
 
 // ─── localStorage helpers ───
@@ -844,8 +825,7 @@ export function renderEloCharts(container, params = {}) {
       if (tResizeHandler) { window.removeEventListener('resize', tResizeHandler); tResizeHandler = null; }
 
       const latestDate = getLatestTournamentDateForSelection(allMatches, [...selectedMembers]);
-      const seedElos = getSeedElosFromHistory(eloHistoryData, latestDate);
-      const history = getEloHistoryForLatestTournament(allMatches, [...selectedMembers], seedElos);
+      const history = getEloFromEmbeddedMatches(allMatches, latestDate);
       filterHistoryToMembers(history);
       filterHistoryToSelected(history, selectedMembers);
       setTournamentMeta(latestDate ? `Date: ${latestDate}` : 'Date: —');

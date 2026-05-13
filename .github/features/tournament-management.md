@@ -35,7 +35,8 @@ tournament: {
       matches: [
         {
           id, roundNumber, player1, player2, player3, player4,
-          team1Score, team2Score, completedAt
+          team1Score, team2Score, completedAt,
+          team1Player1Elo, team1Player2Elo, team2Player1Elo, team2Player2Elo
         }
       ],
       completedAt: null | timestamp

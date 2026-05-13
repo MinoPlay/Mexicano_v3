@@ -5,6 +5,7 @@
 import { Store } from '../store.js';
 import { State } from '../state.js';
 import { rankPlayers } from './ranking.js';
+import { calculateAllEloRankings, processMatchElo } from './elo.js';
 
 // ─── Helpers ───
 
@@ -281,6 +282,34 @@ export function completeTournament(tournament) {
   // Persist all matches as MatchEntities
   const allMatches = Store.getMatches();
 
+  // Compute starting player ELO states from all matches BEFORE this tournament
+  const { players: playerStates } = calculateAllEloRankings(allMatches);
+
+  // Process rounds in order to chain ELO correctly
+  const sortedRounds = [...tournament.rounds].sort((a, b) => a.roundNumber - b.roundNumber);
+  for (const round of sortedRounds) {
+    for (const match of round.matches) {
+      if (!isMatchComplete(match)) continue;
+      const matchForElo = {
+        team1Player1Name: match.player1.name,
+        team1Player2Name: match.player2.name,
+        team2Player1Name: match.player3.name,
+        team2Player2Name: match.player4.name,
+        scoreTeam1: match.team1Score,
+        scoreTeam2: match.team2Score,
+        date: tournament.tournamentDate,
+        roundNumber: round.roundNumber,
+      };
+      processMatchElo(matchForElo, playerStates);
+      match._eloAfter = {
+        p1: playerStates[match.player1.name]?.elo,
+        p2: playerStates[match.player2.name]?.elo,
+        p3: playerStates[match.player3.name]?.elo,
+        p4: playerStates[match.player4.name]?.elo,
+      };
+    }
+  }
+
   for (const round of tournament.rounds) {
     for (let i = 0; i < round.matches.length; i++) {
       const match = round.matches[i];
@@ -294,7 +323,13 @@ export function completeTournament(tournament) {
         team2Player1Name: match.player3.name,
         team2Player2Name: match.player4.name,
         scoreTeam1: match.team1Score,
-        scoreTeam2: match.team2Score
+        scoreTeam2: match.team2Score,
+        ...(match._eloAfter && {
+          team1Player1Elo: match._eloAfter.p1,
+          team1Player2Elo: match._eloAfter.p2,
+          team2Player1Elo: match._eloAfter.p3,
+          team2Player2Elo: match._eloAfter.p4,
+        }),
       };
 
       const key = `${tournament.tournamentDate}_R${round.roundNumber}M${i + 1}`;
