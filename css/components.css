@@ -35,6 +35,12 @@
 }
 .btn-danger:hover { opacity: 0.9; }
 
+.btn-success {
+  background: var(--color-success, #22c55e);
+  color: white;
+}
+.btn-success:hover { opacity: 0.9; }
+
 .btn-ghost {
   background: transparent;
   color: var(--color-primary);

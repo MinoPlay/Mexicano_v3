@@ -247,13 +247,10 @@ export function renderDoodle(container, params = {}) {
   // Fixed top save bar (non-blocking, appears when dirty)
   const saveBar = document.createElement('div');
   saveBar.id = 'doodle-save-bar';
-  saveBar.style.cssText = 'display:none;position:fixed;top:0;left:0;right:0;z-index:1000;background:var(--color-surface);border-bottom:1px solid var(--color-border);padding:var(--space-sm) var(--space-md);align-items:center;justify-content:space-between;gap:var(--space-sm);box-shadow:var(--shadow-sm);';
+  saveBar.style.cssText = 'display:none;position:fixed;bottom:calc(var(--nav-height) + 10px);left:50%;transform:translateX(-50%);z-index:1000;background:var(--color-surface);border:1px solid var(--color-border);border-radius:var(--radius-lg);padding:var(--space-sm) var(--space-md);align-items:center;justify-content:center;gap:var(--space-md);box-shadow:var(--shadow-lg);white-space:nowrap;';
   saveBar.innerHTML = `
-    <span class="text-sm text-medium">Unsaved changes</span>
-    <div style="display:flex;gap:var(--space-sm);">
-      <button class="btn btn-ghost btn-sm" id="doodle-cancel-btn">Cancel</button>
-      <button class="btn btn-primary btn-sm" id="doodle-save-btn">Save</button>
-    </div>
+    <button class="btn btn-danger" id="doodle-cancel-btn">Cancel</button>
+    <button class="btn btn-success" id="doodle-save-btn">Save</button>
   `;
   document.body.appendChild(saveBar);
 
@@ -268,24 +265,16 @@ export function renderDoodle(container, params = {}) {
       <span class="text-medium">${MONTHS[currentMonth - 1]} ${currentYear}</span>
       <button class="btn btn-ghost btn-sm" data-dir="next">▶</button>
     `;
-    nav.querySelector('[data-dir="prev"]').addEventListener('click', async () => {
-      if (editSession?.isDirty()) {
-        const result = await showUnsavedChangesModal('month');
-        if (result === 'cancel') return;
-      }
+    nav.querySelector('[data-dir="prev"]').addEventListener('click', () => {
+      if (editSession) { cleanupEditSession(); editSession = null; }
       currentMonth--;
       if (currentMonth < 1) { currentMonth = 12; currentYear--; }
-      editSession = null;
       renderAll();
     });
-    nav.querySelector('[data-dir="next"]').addEventListener('click', async () => {
-      if (editSession?.isDirty()) {
-        const result = await showUnsavedChangesModal('month');
-        if (result === 'cancel') return;
-      }
+    nav.querySelector('[data-dir="next"]').addEventListener('click', () => {
+      if (editSession) { cleanupEditSession(); editSession = null; }
       currentMonth++;
       if (currentMonth > 12) { currentMonth = 1; currentYear++; }
-      editSession = null;
       renderAll();
     });
   }
