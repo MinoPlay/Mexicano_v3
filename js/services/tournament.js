@@ -429,7 +429,7 @@ export function completeTournament(tournament) {
     // partial/stale state.
     Promise.resolve(flushPush())
       .then(() => { localStorage.removeItem('mexicano_completion_marker'); return generateMonthlyOverviews(yearMonth); })
-      .then(() => generatePlayersJson())
+      .then(() => generatePlayersJson(undefined, { playerNames: participantNames }))
       .then(async () => {
         const base = Store.getGitHubConfig()?.basePath?.trim().replace(/\/$/, '') || '';
         const playersPath = base ? `${base}/players.json` : 'players.json';

@@ -33,11 +33,24 @@ function createRandomPlayerId() {
  * Generate players.json by aggregating all monthly players_overview.json files.
  *
  * @param {function} [onProgress] - called with (label, total, index)
+ * @param {object}   [options]
+ * @param {string[]} [options.playerNames] - when set, only recompute these players;
+ *   non-participants keep their existing players.json entry unchanged
  * @returns {Promise<{ written: number }>}
  */
-export async function generatePlayersJson(onProgress) {
+export async function generatePlayersJson(onProgress, options) {
   const cfg = getConfig();
   if (!cfg?.owner || !cfg?.repo || !cfg?.pat) throw new Error('GitHub not configured');
+
+  // Normalise optional options arg (onProgress may be omitted)
+  if (typeof onProgress !== 'function' && onProgress != null) {
+    options = onProgress;
+    onProgress = undefined;
+  }
+  options = options || {};
+  const participantSet = Array.isArray(options.playerNames)
+    ? new Set(options.playerNames.map(n => normalizePlayerKey(n)).filter(Boolean))
+    : null; // null = rebuild all players
 
   const base        = matchesBase();
   const playersPath = base ? `${base}/players.json` : 'players.json';
@@ -122,8 +135,25 @@ export async function generatePlayersJson(onProgress) {
     }
   }
 
-  const result = Object.entries(playerTotals)
+  // Index existing players.json entries by normalised name for partial-update lookups.
+  const existingByKey = new Map();
+  for (const row of existingPlayers) {
+    if (!row?.Name) continue;
+    const key = normalizePlayerKey(row.Name);
+    if (key && !existingByKey.has(key)) existingByKey.set(key, row);
+  }
+
+  const recomputed = Object.entries(playerTotals)
     .map(([name, s]) => {
+      const key = normalizePlayerKey(name);
+
+      // When playerNames filter is active, non-participants keep their existing entry.
+      if (participantSet !== null && !participantSet.has(key)) {
+        const existing = existingByKey.get(key);
+        if (existing) return existing;
+        // If no existing entry, fall through to compute (new player in old data).
+      }
+
       const months = playerMonths[name];
       const elo    = months[months.length - 1].elo;
       // Use per-day granularity when available so that PreviousELO reflects the
@@ -133,7 +163,6 @@ export async function generatePlayersJson(onProgress) {
         ? days[days.length - 2].elo
         : (months.length >= 2 ? months[months.length - 2].elo : elo);
       const games   = s.wins + s.losses;
-      const key = normalizePlayerKey(name);
       let id = existingIdByKey.get(key);
       if (!id) {
         id = createRandomPlayerId();
@@ -148,10 +177,14 @@ export async function generatePlayersJson(onProgress) {
         Losses:      s.losses,
         TotalPoints: s.pts,
         Average:     games > 0 ? Math.round(s.pts / games * 100) / 100 : 0,
-        Tournaments: months.length,
+        // Count individual tournament days (one ELO snapshot per day in overview).
+        // Fall back to months count when no day-level ELO data exists (old scalar format).
+        Tournaments: days.length > 0 ? days.length : months.length,
       };
     })
     .sort((a, b) => b.ELO - a.ELO);
+
+  const result = recomputed;
 
   // ── 4. Write players.json ─────────────────────────────────────────────────
   onProgress?.('Writing players.json…', 1, 1);

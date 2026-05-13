@@ -143,7 +143,33 @@ describe('generatePlayersJson', () => {
     expect(payload[0].Average).toBeCloseTo(15.7, 2);
   });
 
-  it('Tournaments = number of months player appeared in', async () => {
+  it('Tournaments = number of tournament days (ELO array entries)', async () => {
+    setupRepo({
+      months: {
+        '2025-01': [{
+          Name: 'Eve',
+          ELO: [{ Date: '2025-01-07', ELO: 1000 }, { Date: '2025-01-14', ELO: 1010 }],
+          Wins: 3, Losses: 1, Total_Points: 50,
+        }],
+        '2025-02': [{
+          Name: 'Eve',
+          ELO: [{ Date: '2025-02-04', ELO: 1020 }],
+          Wins: 2, Losses: 2, Total_Points: 40,
+        }],
+        '2025-03': [{
+          Name: 'Eve',
+          ELO: [{ Date: '2025-03-04', ELO: 1030 }, { Date: '2025-03-18', ELO: 1040 }, { Date: '2025-03-25', ELO: 1050 }],
+          Wins: 5, Losses: 1, Total_Points: 90,
+        }],
+      },
+    });
+    await generatePlayersJson();
+    const [, payload] = mockWriteFile.mock.calls[0];
+    // 2 days in Jan + 1 in Feb + 3 in Mar = 6 tournament days (not 3 months)
+    expect(payload[0].Tournaments).toBe(6);
+  });
+
+  it('Tournaments falls back to month count when ELO is scalar (old format)', async () => {
     setupRepo({
       months: {
         '2025-01': [makeOverviewRow('Eve', 1000)],
@@ -182,5 +208,52 @@ describe('generatePlayersJson', () => {
       },
     });
     await expect(generatePlayersJson()).rejects.toThrow('collision');
+  });
+
+  it('playerNames option: only recomputes participants, keeps existing entry for others', async () => {
+    const existingBob = { Id: 'bob-id', Name: 'Bob', ELO: 1200, PreviousELO: 1150, Wins: 20, Losses: 5, TotalPoints: 300, Average: 12, Tournaments: 39 };
+    setupRepo({
+      months: {
+        '2025-01': [
+          { Name: 'Alice', ELO: [{ Date: '2025-01-07', ELO: 1080 }], Wins: 3, Losses: 1, Total_Points: 50 },
+          { Name: 'Bob',   ELO: [{ Date: '2025-01-07', ELO: 1190 }], Wins: 4, Losses: 0, Total_Points: 60 },
+        ],
+      },
+      existingPlayers: [existingBob, { Id: 'alice-id', Name: 'Alice', ELO: 1000 }],
+    });
+
+    await generatePlayersJson(undefined, { playerNames: ['Alice'] });
+    const [, payload] = mockWriteFile.mock.calls[0];
+
+    const alice = payload.find(p => p.Name === 'Alice');
+    const bob   = payload.find(p => p.Name === 'Bob');
+
+    // Alice should be recomputed from monthly overviews
+    expect(alice.ELO).toBe(1080);
+    expect(alice.Tournaments).toBe(1);
+
+    // Bob did NOT participate — his existing entry must be kept intact
+    expect(bob).toEqual(existingBob);
+  });
+
+  it('playerNames option: new player not in existing players.json is still computed', async () => {
+    setupRepo({
+      months: {
+        '2025-01': [
+          { Name: 'Alice', ELO: [{ Date: '2025-01-07', ELO: 1080 }], Wins: 3, Losses: 1, Total_Points: 50 },
+          { Name: 'Carol', ELO: [{ Date: '2025-01-07', ELO: 1000 }], Wins: 1, Losses: 3, Total_Points: 30 },
+        ],
+      },
+      existingPlayers: [{ Id: 'alice-id', Name: 'Alice', ELO: 1000 }],
+    });
+
+    // Only Alice is in playerNames but Carol also exists in overviews (no existing entry)
+    await generatePlayersJson(undefined, { playerNames: ['Alice'] });
+    const [, payload] = mockWriteFile.mock.calls[0];
+
+    // Carol has no existing entry → should be computed even though not in playerNames
+    const carol = payload.find(p => p.Name === 'Carol');
+    expect(carol).toBeDefined();
+    expect(carol.ELO).toBe(1000);
   });
 });

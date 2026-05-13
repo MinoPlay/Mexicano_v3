@@ -216,7 +216,9 @@ completeTournament(tournament)
                                                               (completed format: { matches: [...] }
                                                                no `tournament` field)
   → generateMonthlyOverviews(yearMonth)       → GitHub WRITE: YYYY/YYYY-MM/players_overview.json  ← MUST come first
-  → generatePlayersJson()                     → GitHub WRITE: players.json                         ← runs only after overview succeeds
+  → generatePlayersJson({ playerNames })      → GitHub WRITE: players.json                         ← runs only after overview succeeds
+                                              → only participant entries recomputed;
+                                                non-participants keep existing players.json values
                                               → GitHub WRITE: players_meta.json
   → updateTournamentIndexEntry(...)           → GitHub READ+WRITE: tournaments.json
 ```
@@ -226,6 +228,14 @@ completeTournament(tournament)
 > page reads ELO from `players_overview.json`; the Home page reads from `players.json`.
 > Writing the overview first and aborting the chain on failure keeps both files consistent
 > — `players.json` is never updated unless the overview write succeeds.
+>
+> **Partial-update rule**: `completeTournament` passes `{ playerNames: participantNames }`
+> to `generatePlayersJson`. Only tournament participants are recomputed from monthly overviews;
+> all other player entries are kept unchanged. The Settings full-rebuild button does NOT pass
+> `playerNames` and always recomputes all players.
+>
+> **Tournaments field**: counts individual tournament days (one ELO snapshot per day in the
+> monthly overview), not calendar months. Fallback to month count only for old scalar-ELO data.
 
 ---
 
@@ -233,9 +243,11 @@ completeTournament(tournament)
 
 ### `players.json` + `players_meta.json`
 - **Written** automatically after every `completeTournament()` call — **only after `players_overview.json` is written successfully**
-- **Written** manually via Settings → "Generate players.json" button
+- **Partial update on completion**: only the tournament's participants are recomputed; non-participants keep their existing entry
+- **Written** manually via Settings → "Generate players.json" button (full rebuild — all players)
 - **Read** on every page load (home, tournaments, statistics, settings, elo-charts, doodle)
 - Contains: `[{ Name, ELO, PreviousELO, Wins, Losses, TotalPoints, Average, Tournaments }]`
+- `Tournaments` = count of individual tournament days played (ELO snapshot entries), not calendar months
 
 ### `YYYY/YYYY-MM/players_overview.json`
 - **Written** automatically after every `completeTournament()` call (for that tournament's month) — **must succeed before `players.json` is written**
@@ -518,7 +530,9 @@ completeTournament(tournament)
   → deleteFile(data/active_tournament.json)   → GitHub DELETE: data/active_tournament.json
   → flushPush()                               → GitHub WRITE: YYYY/YYYY-MM/YYYY-MM-DD.json
   → generateMonthlyOverviews(yearMonth)       → GitHub WRITE: YYYY/YYYY-MM/players_overview.json  ← MUST come first
-  → generatePlayersJson()                     → GitHub WRITE: players.json                         ← runs only after overview succeeds
+  → generatePlayersJson({ playerNames })      → GitHub WRITE: players.json                         ← runs only after overview succeeds
+                                              → only participant entries recomputed;
+                                                non-participants keep existing players.json values
                                               → GitHub WRITE: players_meta.json
   → updateTournamentIndexEntry(...)           → GitHub READ+WRITE: tournaments.json
 ```
@@ -528,6 +542,14 @@ completeTournament(tournament)
 > page reads ELO from `players_overview.json`; the Home page reads from `players.json`.
 > Writing the overview first and aborting the chain on failure keeps both files consistent
 > — `players.json` is never updated unless the overview write succeeds.
+>
+> **Partial-update rule**: `completeTournament` passes `{ playerNames: participantNames }`
+> to `generatePlayersJson`. Only tournament participants are recomputed from monthly overviews;
+> all other player entries are kept unchanged. The Settings full-rebuild button does NOT pass
+> `playerNames` and always recomputes all players.
+>
+> **Tournaments field**: counts individual tournament days (one ELO snapshot per day in the
+> monthly overview), not calendar months. Fallback to month count only for old scalar-ELO data.
 
 ---
 
@@ -535,9 +557,11 @@ completeTournament(tournament)
 
 ### `players.json` + `players_meta.json`
 - **Written** automatically after every `completeTournament()` call — **only after `players_overview.json` is written successfully**
-- **Written** manually via Settings → "Generate players.json" button
+- **Partial update on completion**: only the tournament's participants are recomputed; non-participants keep their existing entry
+- **Written** manually via Settings → "Generate players.json" button (full rebuild — all players)
 - **Read** on every page load (home, tournaments, statistics, settings, elo-charts, doodle)
 - Contains: `[{ Name, ELO, PreviousELO, Wins, Losses, TotalPoints, Average, Tournaments }]`
+- `Tournaments` = count of individual tournament days played (ELO snapshot entries), not calendar months
 
 ### `YYYY/YYYY-MM/players_overview.json`
 - **Written** automatically after every `completeTournament()` call (for that tournament's month) — **must succeed before `players.json` is written**
