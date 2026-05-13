@@ -45,7 +45,14 @@ When a specific date is selected from the "Pick date…" dropdown:
 
 ---
 
-## Table Sorting
+## Filter Persistence
+
+Active filter is saved to `localStorage` under key `stats_active_filter`.
+Restored on page load. Falls back to `'latest'` if not set.
+
+---
+
+
 
 - Default sorting for all statistics filters (**All Time**, **Latest**, **Monthly**, and specific **date**) is:
   1. `AVG` descending

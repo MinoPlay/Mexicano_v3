@@ -534,8 +534,11 @@ export function getLatestCompleteTournamentDate() {
     const complete = index.filter(e => e.isComplete).sort((a, b) => b.date.localeCompare(a.date));
     if (complete.length > 0) return complete[0].date;
   }
-  // Fallback: no index data — use latest date regardless of completion status
-  const all = getAllTournamentDates();
+  // Fallback: no index data yet — exclude active (in-progress) tournament date
+  // so we don't show an incomplete tournament on first render
+  const active = Store.getActiveTournament();
+  const activeDate = (active && !active.isCompleted) ? active.tournamentDate : null;
+  const all = getAllTournamentDates().filter(d => d !== activeDate);
   return all.length > 0 ? all[0] : null;
 }
 

@@ -2,7 +2,7 @@
  * generate-players-json.js
  *
  * Aggregates all monthly players_overview.json files from GitHub and writes
- * backup-data/players.json sorted by ELO descending.
+ * backup-data/players.json sorted by player name ascending.
  *
  * Output shape: [{ Name, ELO, PreviousELO, Wins, Losses, TotalPoints, Average, Tournaments }]
  */
@@ -182,7 +182,7 @@ export async function generatePlayersJson(onProgress, options) {
         Tournaments: days.length > 0 ? days.length : months.length,
       };
     })
-    .sort((a, b) => b.ELO - a.ELO);
+    .sort((a, b) => (a.Name || '').localeCompare(b.Name || ''));
 
   const result = recomputed;
 

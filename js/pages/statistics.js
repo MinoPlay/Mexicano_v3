@@ -1,6 +1,7 @@
 import { calculatePlayerStatistics } from '../services/statistics.js';
-import { calculateAllEloRankings, getEloSnapshots, getEloForDate, getEloForMonth } from '../services/elo.js';
+import { calculateAllEloRankings, getEloSnapshots, getEloForDate, getEloForMonth, getEloFromEmbeddedMatches } from '../services/elo.js';
 import { Store } from '../store.js';
+import { getLatestCompleteTournamentDate } from '../services/tournament.js';
 
 // ─── Text measurement helper for column auto-fit ───
 let _measureCanvas;
@@ -520,17 +521,11 @@ export function renderStatistics(container, params = {}) {
   }
 
   const dates = tournamentDates;
-  // Latest = most recent *completed* tournament; fall back to last known date
-  const tournamentsIndex = Store.getTournamentsIndex();
-  const completedDates = tournamentsIndex
-    .filter(e => e.isComplete)
-    .map(e => e.date)
-    .sort();
-  const latestDate = completedDates.length > 0
-    ? completedDates[completedDates.length - 1]
-    : dates.length > 0 ? dates[dates.length - 1] : null;
+  const latestDate = getLatestCompleteTournamentDate();
 
-  let activeFilter = 'latest';
+  const LS_KEY = 'stats_active_filter';
+  const savedFilter = localStorage.getItem(LS_KEY);
+  let activeFilter = savedFilter || 'latest';
 
   // Filter bar
   const filterBar = document.createElement('div');
@@ -556,7 +551,7 @@ export function renderStatistics(container, params = {}) {
       const chip = document.createElement('button');
       chip.className = 'chip' + (activeFilter === f.id ? ' selected' : '');
       chip.textContent = f.label;
-      chip.addEventListener('click', () => { activeFilter = f.id; renderFilterBar(); renderTable(); });
+      chip.addEventListener('click', () => { activeFilter = f.id; localStorage.setItem(LS_KEY, activeFilter); renderFilterBar(); renderTable(); });
       filterBar.appendChild(chip);
     });
 
@@ -577,7 +572,7 @@ export function renderStatistics(container, params = {}) {
         if (activeFilter === ym) opt.selected = true;
         monthSelect.appendChild(opt);
       });
-      monthSelect.addEventListener('change', () => { activeFilter = monthSelect.value; renderFilterBar(); renderTable(); });
+      monthSelect.addEventListener('change', () => { activeFilter = monthSelect.value; localStorage.setItem(LS_KEY, activeFilter); renderFilterBar(); renderTable(); });
       filterBar.appendChild(monthSelect);
     }
 
@@ -598,7 +593,7 @@ export function renderStatistics(container, params = {}) {
         if (activeFilter === d) opt.selected = true;
         select.appendChild(opt);
       });
-      select.addEventListener('change', () => { activeFilter = select.value; renderFilterBar(); renderTable(); });
+      select.addEventListener('change', () => { activeFilter = select.value; localStorage.setItem(LS_KEY, activeFilter); renderFilterBar(); renderTable(); });
       filterBar.appendChild(select);
     }
   }
@@ -684,21 +679,24 @@ export function renderStatistics(container, params = {}) {
 
     // Monthly overview — lazy-fetch this month if needed
     if (/^\d{4}-\d{2}$/.test(activeFilter)) {
+      // Derive previous month string for ELO delta
+      const [y, mo] = activeFilter.split('-').map(Number);
+      const prevMonth = mo === 1
+        ? `${y - 1}-12`
+        : `${y}-${String(mo - 1).padStart(2, '0')}`;
       if (Store.getGitHubConfig()?.pat) {
         tableContainer.innerHTML = '<p class="text-center mt-lg">⏳ Loading…</p>';
         try {
           const { pullMonthlyOverview } = await import('../services/github.js');
-          await pullMonthlyOverview(activeFilter);
+          await Promise.all([
+            pullMonthlyOverview(activeFilter),
+            pullMonthlyOverview(prevMonth),
+          ]);
         } catch { /* continue with cached data */ }
       }
       const overview = Store.getMonthlyOverview(activeFilter);
       let stats;
       if (overview.length > 0) {
-        // Derive previous month string for ELO delta
-        const [y, mo] = activeFilter.split('-').map(Number);
-        const prevMonth = mo === 1
-          ? `${y - 1}-12`
-          : `${y}-${String(mo - 1).padStart(2, '0')}`;
         const prevOverview = Store.getMonthlyOverview(prevMonth);
         stats = overviewToStats(overview, prevOverview);
       } else {
@@ -734,7 +732,7 @@ export function renderStatistics(container, params = {}) {
     // Check locally cached matches first
     let dayMatches = allMatches.filter(m => m.date === targetDate);
     if (dayMatches.length > 0) {
-      renderDayStats(dayMatches, targetDate, isLatest);
+      await renderDayStats(dayMatches, targetDate, isLatest);
       return;
     }
 
@@ -743,9 +741,9 @@ export function renderStatistics(container, params = {}) {
       tableContainer.innerHTML = '<p class="text-center mt-lg">⏳ Loading…</p>';
       import('../services/github.js').then(({ ensureDayMatchesLoaded }) =>
         ensureDayMatchesLoaded(targetDate)
-      ).then(matches => {
+      ).then(async matches => {
         if (matches.length > 0) {
-          renderDayStats(matches, targetDate, isLatest);
+          await renderDayStats(matches, targetDate, isLatest);
         } else {
           tableContainer.innerHTML = '<p class="text-secondary text-center mt-lg">No data for this date</p>';
         }
@@ -757,7 +755,56 @@ export function renderStatistics(container, params = {}) {
     }
   }
 
-  function renderDayStats(matches, targetDate, isLatest) {
+  // ─── Per-player ELO history helper ───
+
+  async function attachEloFromPlayerHistoryFiles(stats, targetDate) {
+    const summary = Store.getPlayersSummary();
+    if (!summary.length) return;
+
+    const playerIdMap = {};
+    for (const p of summary) {
+      if (p.id && p.name) playerIdMap[p.name] = p.id;
+    }
+
+    const playerIds = stats.map(s => playerIdMap[s.name]).filter(Boolean);
+    if (!playerIds.length) return;
+
+    try {
+      const { pullEloHistoryForPlayerIds, getCachedEloHistoryForPlayerIds } = await import('../services/github.js');
+      await pullEloHistoryForPlayerIds(playerIds);
+      const files = getCachedEloHistoryForPlayerIds(playerIds);
+
+      const eloAtDate = {};
+      for (const file of files) {
+        if (!file.playerName || !Array.isArray(file.points)) continue;
+        const point = file.points.find(p => p.date === targetDate);
+        if (point) {
+          eloAtDate[file.playerName] = { elo: point.elo, eloChange: point.delta ?? null };
+        }
+      }
+
+      for (const stat of stats) {
+        const data = eloAtDate[stat.name];
+        if (data) {
+          stat.elo = data.elo;
+          stat.eloChange = data.eloChange;
+        }
+      }
+    } catch { /* no-op: fallback handles it */ }
+  }
+
+  function attachEloFromEmbeddedMatchData(stats, matches, targetDate) {
+    const { players: embeddedPlayers } = getEloFromEmbeddedMatches(matches, targetDate);
+    for (const stat of stats) {
+      if (stat.elo != null) continue;
+      const rounds = embeddedPlayers[stat.name];
+      if (rounds && rounds.length > 0) {
+        stat.elo = rounds[rounds.length - 1].elo;
+      }
+    }
+  }
+
+  async function renderDayStats(matches, targetDate, isLatest) {
     const stats = calculatePlayerStatistics(matches);
     tableContainer.innerHTML = '';
     if (!stats.length) {
@@ -773,11 +820,21 @@ export function renderStatistics(container, params = {}) {
     // For non-latest dates (or if summary didn't have data), compute from matches
     const needsElo = stats.some(s => s.elo == null);
     if (needsElo) {
-      const freshMatches = Store.getMatches();
-      if (freshMatches.length > 0) {
-        const { snapshots } = getEloSnapshots(freshMatches);
-        const eloMap = getEloForDate(snapshots, targetDate);
-        attachEloFromSnapshots(stats, eloMap);
+      if (Store.isMatchesFullyLoaded()) {
+        // Full history in store — on-the-fly computation is accurate
+        const freshMatches = Store.getMatches();
+        if (freshMatches.length > 0) {
+          const { snapshots } = getEloSnapshots(freshMatches);
+          const eloMap = getEloForDate(snapshots, targetDate);
+          attachEloFromSnapshots(stats, eloMap);
+        }
+      } else {
+        // Partial history — use canonical per-player history files
+        await attachEloFromPlayerHistoryFiles(stats, targetDate);
+        // Fallback for any remaining null elo: embedded match ELOs
+        if (stats.some(s => s.elo == null)) {
+          attachEloFromEmbeddedMatchData(stats, matches, targetDate);
+        }
       }
     }
 

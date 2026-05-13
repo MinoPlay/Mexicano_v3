@@ -361,8 +361,8 @@ export async function testConnection() {
 export async function pushAll(onProgress, { allMatchDates = false } = {}) {
   const data = Store.exportAll();
 
-  // 1. Push non-matches data (doodle, …) — active_tournament is no longer in SYNCED_DATA_KEYS
-  const entries = Object.entries(data).filter(([k]) => keyToPath(k));
+  // 1. Push non-matches data — doodle is pushed explicitly via pushDoodleNow, not here
+  const entries = Object.entries(data).filter(([k]) => keyToPath(k) && !k.startsWith('doodle_'));
   ghLog('PUSH_START', '-', `${entries.length} data keys, allMatchDates=${allMatchDates}`);
 
   let total = entries.length;
@@ -1832,10 +1832,12 @@ export async function pushDoodleNow(yearMonth) {
   const localEntries = Store.getDoodle(yearMonth);
   let sha;
   let entriesToPush = localEntries;
+  let remoteContent = null;
   try {
     const existing = await readFile(filePath);
     sha = existing?.sha;
     if (existing?.content && Array.isArray(existing.content)) {
+      remoteContent = existing.content;
       // Merge: local entries take priority; preserve remote entries not in local store
       const localNames = new Set(localEntries.map(e => e.name));
       const remoteOnly = existing.content.filter(e => !localNames.has(e.name));
@@ -1844,7 +1846,12 @@ export async function pushDoodleNow(yearMonth) {
       localStorage.setItem(`mexicano_doodle_${yearMonth}`, JSON.stringify(entriesToPush));
     }
   } catch { sha = undefined; }
-  await writeFile(filePath, entriesToPush, sha);
+
+  if (!sha || JSON.stringify(entriesToPush) !== JSON.stringify(remoteContent)) {
+    await writeFile(filePath, entriesToPush, sha);
+  } else {
+    ghLog('WRITE_SKIP', filePath, 'no change');
+  }
 
   const changelogKey = `doodle_changelog_${yearMonth}`;
   const changelogPath = keyToPath(changelogKey);
@@ -1853,25 +1860,30 @@ export async function pushDoodleNow(yearMonth) {
   const localChangelog = Store.getDoodleChangelog(yearMonth);
   let changelogSha;
   let changelogToPush = Array.isArray(localChangelog) ? localChangelog : [];
+  let remoteChangelog = null;
   let changelogMissing = false;
   try {
     const existing = await readFile(changelogPath);
     if (existing === null) {
-      // Mirror doodle file behavior: create missing monthly changelog on first push.
       changelogMissing = true;
       changelogSha = undefined;
     } else {
       changelogSha = existing?.sha;
     }
     if (Array.isArray(existing?.content)) {
+      remoteChangelog = existing.content;
       changelogToPush = mergeDoodleChangelogEntries(changelogToPush, existing.content);
     }
   } catch { changelogSha = undefined; }
 
-  await writeFile(changelogPath, changelogToPush, changelogSha);
-  localStorage.setItem(`mexicano_doodle_changelog_${yearMonth}`, JSON.stringify(changelogToPush));
-  if (changelogMissing && changelogToPush.length === 0) {
-    ghLog('WRITE', changelogPath, 'created empty monthly doodle changelog');
+  if (!changelogSha || JSON.stringify(changelogToPush) !== JSON.stringify(remoteChangelog)) {
+    await writeFile(changelogPath, changelogToPush, changelogSha);
+    localStorage.setItem(`mexicano_doodle_changelog_${yearMonth}`, JSON.stringify(changelogToPush));
+    if (changelogMissing && changelogToPush.length === 0) {
+      ghLog('WRITE', changelogPath, 'created empty monthly doodle changelog');
+    }
+  } else {
+    ghLog('WRITE_SKIP', changelogPath, 'no change');
   }
 }
 
