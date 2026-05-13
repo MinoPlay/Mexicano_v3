@@ -15,7 +15,11 @@ export function renderNav() {
   nav.className = 'bottom-nav';
   nav.setAttribute('aria-label', 'Main navigation');
 
-  nav.innerHTML = NAV_ITEMS.map(item => `
+  const visibleItems = NAV_ITEMS.filter(item =>
+    item.path !== '/git-logs' || Store.isMino()
+  );
+
+  nav.innerHTML = visibleItems.map(item => `
     <a href="#${item.path}" class="nav-item" data-path="${item.path}" aria-label="${item.label}">
       <span class="nav-item-icon">${item.icon}</span>
       <span>${item.label}</span>

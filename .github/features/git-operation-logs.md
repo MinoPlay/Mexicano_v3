@@ -58,7 +58,10 @@ Debug and inspect all GitHub API operations (read, write, delete, list) performe
 - Each entry: colour-coded action badge + file path + caller chain + optional detail + timestamp
 - "🗑 Clear" button in header removes all entries from localStorage immediately
 
-## API
+## Access Control
+- Logs tab (nav + `ghLog` writes) only active when `Store.isMino()` returns `true`
+- Non-Mino users: tab hidden, no entries written to localStorage
+
 ```js
 import { getGitHubLog, clearGitHubLog } from './services/github.js';
 

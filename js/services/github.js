@@ -38,6 +38,7 @@ function getCallerChain() {
 }
 
 export function ghLog(action, path, detail) {
+  if (!Store.isMino()) return;
   const caller = getCallerChain();
   const entry = {
     ts: new Date().toISOString(),
