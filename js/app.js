@@ -5,7 +5,6 @@ import { renderNav } from './components/nav.js';
 import { showToast } from './components/toast.js';
 import { showRefreshDialog } from './components/refresh-dialog.js';
 import { pullForRoute } from './services/github.js';
-import { initInstallPrompt } from './components/install-prompt.js';
 import { showOnboardingDialog } from './components/onboarding-dialog.js';
 
 // Pages
@@ -69,7 +68,6 @@ async function loadLocalData() {
 
 async function init() {
   await loadDevSecrets();
-  initInstallPrompt();
 
   await showOnboardingDialog();
 

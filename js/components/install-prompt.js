@@ -1,30 +1,6 @@
-/** PWA install — install prompt is triggered from Settings only, never auto-shown. */
+/** PWA install — native browser behaviour. No e.preventDefault(). */
 
-let deferredPrompt = null;
-
-export function initInstallPrompt() {
-  if (window.matchMedia('(display-mode: standalone)').matches) return;
-
-  window.addEventListener('beforeinstallprompt', (e) => {
-    e.preventDefault();
-    deferredPrompt = e;
-  });
-
-  window.addEventListener('appinstalled', () => {
-    deferredPrompt = null;
-  });
-}
-
-/** Returns true when a native install prompt is available. */
-export function canInstall() {
-  return !!deferredPrompt && !window.matchMedia('(display-mode: standalone)').matches;
-}
-
-/** Trigger the native install prompt programmatically (e.g. from Settings). */
-export async function triggerInstall() {
-  if (!deferredPrompt) return false;
-  deferredPrompt.prompt();
-  const { outcome } = await deferredPrompt.userChoice;
-  deferredPrompt = null;
-  return outcome === 'accepted';
+/** Returns true when running as an installed PWA. */
+export function isInstalled() {
+  return window.matchMedia('(display-mode: standalone)').matches;
 }
