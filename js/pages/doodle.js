@@ -209,7 +209,9 @@ export function renderDoodle(container, params = {}) {
   content.className = 'page-content';
   container.appendChild(content);
 
-  let savePopup = null;
+  let saveBarSaveBtn = null;
+  let saveBarCancelBtn = null;
+  let saveBarActive = false;
 
   if (!currentUser) {
     content.innerHTML = `<div class="empty-state">
@@ -241,6 +243,21 @@ export function renderDoodle(container, params = {}) {
   matrixContainer.className = 'mt-sm';
   overallDetails.appendChild(matrixContainer);
   content.appendChild(overallDetails);
+
+  // Inline save bar (shown above changelog when dirty)
+  const saveBar = document.createElement('div');
+  saveBar.id = 'doodle-save-bar';
+  saveBar.style.cssText = 'display:none;';
+  saveBar.innerHTML = `
+    <div class="card" style="display:flex;align-items:center;justify-content:space-between;padding:var(--space-sm) var(--space-md);gap:var(--space-sm);">
+      <span class="text-sm text-medium">Unsaved changes</span>
+      <div style="display:flex;gap:var(--space-sm);">
+        <button class="btn btn-ghost btn-sm" id="doodle-cancel-btn">Cancel</button>
+        <button class="btn btn-primary btn-sm" id="doodle-save-btn">Save</button>
+      </div>
+    </div>
+  `;
+  content.appendChild(saveBar);
 
   // Changelog container
   const changelogSection = document.createElement('div');
@@ -624,33 +641,26 @@ export function renderDoodle(container, params = {}) {
   }
 
   function showSavePopup() {
-    if (savePopup) return; // Already visible
+    if (saveBarActive) return;
+    saveBarActive = true;
+    saveBar.style.display = '';
 
-    const overlay = document.createElement('div');
-    overlay.className = 'doodle-modal-overlay doodle-save-popup';
+    saveBarSaveBtn = saveBar.querySelector('#doodle-save-btn');
+    saveBarCancelBtn = saveBar.querySelector('#doodle-cancel-btn');
 
-    const modal = document.createElement('div');
-    modal.className = 'doodle-modal';
-    modal.innerHTML = `
-      <h3>Save Changes?</h3>
-      <p>You have unsaved doodle changes.</p>
-      <div class="modal-buttons">
-        <button class="btn btn-primary" id="doodle-save-btn">Save Changes</button>
-        <button class="btn btn-ghost" id="doodle-cancel-btn">Cancel</button>
-      </div>
-    `;
-    overlay.appendChild(modal);
-    document.body.appendChild(overlay);
-    savePopup = overlay;
+    // Clone to remove stale listeners
+    const newSave = saveBarSaveBtn.cloneNode(true);
+    const newCancel = saveBarCancelBtn.cloneNode(true);
+    saveBarSaveBtn.replaceWith(newSave);
+    saveBarCancelBtn.replaceWith(newCancel);
+    saveBarSaveBtn = newSave;
+    saveBarCancelBtn = newCancel;
 
-    const saveBtn = overlay.querySelector('#doodle-save-btn');
-    const cancelBtn = overlay.querySelector('#doodle-cancel-btn');
-
-    saveBtn.addEventListener('click', async () => {
-      saveBtn.disabled = true;
-      cancelBtn.disabled = true;
-      const originalText = saveBtn.textContent;
-      saveBtn.textContent = 'Saving...';
+    saveBarSaveBtn.addEventListener('click', async () => {
+      saveBarSaveBtn.disabled = true;
+      saveBarCancelBtn.disabled = true;
+      const orig = saveBarSaveBtn.textContent;
+      saveBarSaveBtn.textContent = 'Saving…';
 
       const success = await editSession.save();
 
@@ -661,13 +671,13 @@ export function renderDoodle(container, params = {}) {
         renderMatrix();
         renderChangelog();
       } else {
-        saveBtn.disabled = false;
-        cancelBtn.disabled = false;
-        saveBtn.textContent = originalText;
+        saveBarSaveBtn.disabled = false;
+        saveBarCancelBtn.disabled = false;
+        saveBarSaveBtn.textContent = orig;
       }
     });
 
-    cancelBtn.addEventListener('click', () => {
+    saveBarCancelBtn.addEventListener('click', () => {
       hideSavePopup();
       editSession.revert();
       renderUserCalendar();
@@ -676,10 +686,8 @@ export function renderDoodle(container, params = {}) {
   }
 
   function hideSavePopup() {
-    if (savePopup) {
-      savePopup.remove();
-      savePopup = null;
-    }
+    saveBarActive = false;
+    saveBar.style.display = 'none';
   }
 
   function updateFooter() {
@@ -688,15 +696,12 @@ export function renderDoodle(container, params = {}) {
       return;
     }
 
-    if (!savePopup) {
+    if (!saveBarActive) {
       showSavePopup();
     } else {
-      // Update button states if popup is already shown
-      const saveBtn = savePopup.querySelector('#doodle-save-btn');
-      const cancelBtn = savePopup.querySelector('#doodle-cancel-btn');
-      if (saveBtn && cancelBtn) {
-        saveBtn.disabled = editSession.isSaving;
-        cancelBtn.disabled = editSession.isSaving;
+      if (saveBarSaveBtn && saveBarCancelBtn) {
+        saveBarSaveBtn.disabled = editSession.isSaving;
+        saveBarCancelBtn.disabled = editSession.isSaving;
       }
     }
   }
