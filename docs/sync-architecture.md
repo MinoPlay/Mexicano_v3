@@ -9,16 +9,15 @@ Documents the GitHub sync flows, localStorage schema, and data lifecycle for the
 ```mermaid
 flowchart TD
     A[Page loads] --> B{GitHub config\nin localStorage?}
-    B -->|No| C[seed-data.js seeds\ndemo data if empty]
-    C --> D[Render page\nwith local data]
-    B -->|Yes| E[seed-data.js skips\nno dummy data seeded]
-    E --> F{mexicano_github_just_pulled\nin sessionStorage?}
-    F -->|Yes — our own reload| G[Clear flag\nShow toast: Data updated]
+    B -->|No| C[Show onboarding dialog\nUser enters PAT]
+    C --> D[Render page\nwith empty state]
+    B -->|Yes| E{mexicano_github_just_pulled\nin sessionStorage?}
+    E -->|Yes — our own reload| G[Clear flag\nShow toast: Data updated]
     G --> D
-    F -->|No — real page load| H[setSyncBusy true\ncall pullAll]
+    E -->|No — real page load| H[setSyncBusy true\ncall pullAll]
     H --> I{Pull succeeded?}
     I -->|Yes| J[Set just_pulled flag\nlocation.reload]
-    J --> F
+    J --> E
     I -->|No| K[Restore snapshot\nShow error toast\nRender with empty/stale data]
     K --> D
 ```

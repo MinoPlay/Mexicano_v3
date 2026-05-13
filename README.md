@@ -118,7 +118,6 @@ npm run test:ui       # Playwright interactive UI
 │   ├── router.js           # Client-side SPA router
 │   ├── store.js            # localStorage wrapper with auto-sync
 │   ├── state.js            # Reactive state management
-│   ├── seed-data.js        # Demo data for first-time visitors
 │   ├── services/           # Business logic (ELO, stats, GitHub sync, …)
 │   ├── components/         # Reusable UI components
 │   └── pages/              # Page renderers (home, tournaments, stats, …)
