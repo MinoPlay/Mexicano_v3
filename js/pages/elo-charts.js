@@ -466,6 +466,22 @@ function eloHistoryForDateRange(eloData, fromStr, toStr) {
   return { players, dates };
 }
 
+/**
+ * Derive seed ELOs from per-player history data for the latest tournament.
+ * For each player, returns their last known ELO strictly before latestDate.
+ * Players with no prior history are omitted (they'll start at 1000 via processMatchElo).
+ */
+function getSeedElosFromHistory(historyData, latestDate) {
+  if (!historyData?.players || !latestDate) return null;
+  const seeds = {};
+  for (const [name, points] of Object.entries(historyData.players)) {
+    if (!Array.isArray(points)) continue;
+    const prior = points.filter(p => p.date < latestDate);
+    if (prior.length > 0) seeds[name] = prior[prior.length - 1].elo;
+  }
+  return Object.keys(seeds).length > 0 ? seeds : null;
+}
+
 
 
 // ─── localStorage helpers ───
@@ -824,10 +840,11 @@ export function renderEloCharts(container, params = {}) {
       if (tCleanupTooltip) { tCleanupTooltip(); tCleanupTooltip = null; }
       if (tResizeHandler) { window.removeEventListener('resize', tResizeHandler); tResizeHandler = null; }
 
-      const history = getEloHistoryForLatestTournament(allMatches, [...selectedMembers]);
+      const latestDate = getLatestTournamentDateForSelection(allMatches, [...selectedMembers]);
+      const seedElos = getSeedElosFromHistory(eloHistoryData, latestDate);
+      const history = getEloHistoryForLatestTournament(allMatches, [...selectedMembers], seedElos);
       filterHistoryToMembers(history);
       filterHistoryToSelected(history, selectedMembers);
-      const latestDate = getLatestTournamentDateForSelection(allMatches, [...selectedMembers]);
       setTournamentMeta(latestDate ? `Date: ${latestDate}` : 'Date: —');
 
       const datasets = buildDatasets(history, colorMap, pt => `Round ${pt.round}`);
@@ -896,6 +913,7 @@ export function renderEloCharts(container, params = {}) {
       if (selectedIds.length === 0) {
         eloHistoryData = { players: {}, dates: [] };
         renderHistoryChart();
+        renderTournamentChart();
         return;
       }
 
@@ -914,6 +932,7 @@ export function renderEloCharts(container, params = {}) {
         missingSelectedNames = [];
       }
       renderHistoryChart();
+      renderTournamentChart();
     }
 
     function renderHistoryChart() {

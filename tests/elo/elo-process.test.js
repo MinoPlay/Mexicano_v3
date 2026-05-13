@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { processMatchElo, calculateAllEloRankings } from '../../js/services/elo.js';
+import { processMatchElo, calculateAllEloRankings, getEloHistoryForLatestTournament } from '../../js/services/elo.js';
 
 describe('processMatchElo', () => {
   it('sequential mutation: team2 sees team1 updated ELOs', () => {
@@ -94,5 +94,59 @@ describe('processMatchElo', () => {
       roundNumber: 3,
       elo: players['A'].elo,
     });
+  });
+});
+
+describe('getEloHistoryForLatestTournament with seedElos', () => {
+  // Two-tournament scenario:
+  // Tournament 1 (2024-01-01, round 1): A+B beat C+D → A,B gain ELO; C,D lose
+  // Tournament 2 (2024-02-01, rounds 1-2): latest tournament
+  // Without seeds, all players start at 1000 for tournament 2 → wrong values
+  // With seeds from tournament 1 final ELOs → correct values
+
+  function makeMatch(date, rn, t1p1, t1p2, t2p1, t2p2, s1, s2) {
+    return { team1Player1Name: t1p1, team1Player2Name: t1p2, team2Player1Name: t2p1, team2Player2Name: t2p2, scoreTeam1: s1, scoreTeam2: s2, date, roundNumber: rn };
+  }
+
+  const t1Match = makeMatch('2024-01-01', 1, 'A', 'B', 'C', 'D', 10, 5);
+  const t2Match1 = makeMatch('2024-02-01', 1, 'A', 'B', 'C', 'D', 10, 5);
+  const t2Match2 = makeMatch('2024-02-01', 2, 'C', 'D', 'A', 'B', 10, 5);
+
+  const allMatches = [t1Match, t2Match1, t2Match2];
+
+  it('without seeds: replays from 1000, uses all matches', () => {
+    const result = getEloHistoryForLatestTournament(allMatches, null, null);
+    // All rounds present
+    expect(result.rounds).toEqual([1, 2]);
+    // A started tournament 2 above 1000 (won t1), so round 1 ELO should be > 1016
+    expect(result.players['A'][0].elo).toBeGreaterThan(1016);
+  });
+
+  it('with seeds: only processes latest tournament, produces same round values as full replay', () => {
+    // Compute "correct" seeds by doing a full replay up to t1
+    const { players: fullPlayers } = calculateAllEloRankings([t1Match]);
+    const seedElos = Object.fromEntries(Object.values(fullPlayers).map(p => [p.name, p.elo]));
+
+    const seeded = getEloHistoryForLatestTournament([t2Match1, t2Match2], null, seedElos);
+    const full = getEloHistoryForLatestTournament(allMatches, null, null);
+
+    expect(seeded.rounds).toEqual([1, 2]);
+
+    // Both methods should produce identical per-round ELO values
+    for (const name of ['A', 'B', 'C', 'D']) {
+      for (let i = 0; i < 2; i++) {
+        expect(seeded.players[name][i].elo).toBeCloseTo(full.players[name][i].elo, 5);
+      }
+    }
+  });
+
+  it('with seeds: new player (no prior history) starts at 1000', () => {
+    const newMatch = makeMatch('2024-02-01', 1, 'A', 'B', 'NEW', 'D', 10, 5);
+    const seedElos = { A: 1020, B: 1020, D: 990 }; // NEW not in seeds
+
+    const result = getEloHistoryForLatestTournament([newMatch], null, seedElos);
+    // NEW should have been created at 1000 by processMatchElo
+    expect(result.players['NEW']).toBeDefined();
+    expect(result.players['NEW'][0].elo).toBeLessThan(1000); // lost
   });
 });

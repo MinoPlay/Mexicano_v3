@@ -167,8 +167,13 @@ export function getEloHistoryForDateRange(allMatches, fromStr, toStr) {
 /**
  * Returns ELO history for the latest tournament that involved any of the given players.
  * Pass playerNames=null (or omit) to use the global latest tournament.
+ *
+ * seedElos: optional { playerName: startingElo } map.
+ * When provided, players are pre-seeded with those ELOs and only the latest
+ * tournament's matches are processed (no full-history replay needed).
+ * This is the correct approach when per-player elo_history files are available.
  */
-export function getEloHistoryForLatestTournament(allMatches, playerNames = null) {
+export function getEloHistoryForLatestTournament(allMatches, playerNames = null, seedElos = null) {
   const validMatches = allMatches.filter(m => !(m.scoreTeam1 === 0 && m.scoreTeam2 === 0));
   if (validMatches.length === 0) return {};
 
@@ -189,14 +194,25 @@ export function getEloHistoryForLatestTournament(allMatches, playerNames = null)
     latestDate = dates[dates.length - 1];
   }
 
-  // Process all matches up to and including the latest tournament
   const players = {};
   const latestRounds = new Set();
 
-  for (const match of sorted) {
-    processMatchElo(match, players);
-    if (match.date === latestDate) {
+  if (seedElos) {
+    // Pre-seed players from provided ELOs, then process only the latest tournament's matches
+    for (const [name, elo] of Object.entries(seedElos)) {
+      players[name] = { name, elo, history: [] };
+    }
+    for (const match of sorted.filter(m => m.date === latestDate)) {
+      processMatchElo(match, players);
       latestRounds.add(match.roundNumber);
+    }
+  } else {
+    // Fallback: replay all matches from scratch (requires full match history in allMatches)
+    for (const match of sorted) {
+      processMatchElo(match, players);
+      if (match.date === latestDate) {
+        latestRounds.add(match.roundNumber);
+      }
     }
   }
 
