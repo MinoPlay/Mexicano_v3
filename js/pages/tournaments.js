@@ -38,7 +38,7 @@ export function renderTournaments(container, params) {
     list.innerHTML = sorted.map(entry => {
       const locked = !entry.isComplete && !isMino;
       return `
-        <div class="tournament-list-item${locked ? ' tournament-list-item--locked' : ''}" data-date="${entry.date}" ${locked ? 'title="Only Mino can access active tournaments"' : ''}>
+        <div class="tournament-list-item${locked ? ' tournament-list-item--locked' : ''}" data-date="${entry.date}" ${locked ? 'title="Only admins can access active tournaments"' : ''}>
           <div>
             <div class="tournament-list-date">${formatDate(entry.date)}</div>
             <div class="tournament-list-meta">

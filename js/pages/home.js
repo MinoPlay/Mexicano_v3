@@ -240,7 +240,7 @@ export function renderHome(container, params) {
             </div>
           </a>`;
         } else {
-          return `<div class="card" style="display:block;margin:0 0 var(--space-md);border-radius:0;border-left:3px solid var(--color-success);border-right:none;color:inherit;background:none;border-top:none;border-bottom:none;opacity:0.4;cursor:not-allowed;" title="Only Mino can access active tournaments">
+          return `<div class="card" style="display:block;margin:0 0 var(--space-md);border-radius:0;border-left:3px solid var(--color-success);border-right:none;color:inherit;background:none;border-top:none;border-bottom:none;opacity:0.4;cursor:not-allowed;" title="Only admins can access active tournaments">
             <div class="card-header">
               <span class="card-title">Active Tournament</span>
               <span class="badge badge-success">Live</span>
