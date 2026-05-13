@@ -714,12 +714,14 @@ async function pullActiveTournamentFromDateFile() {
       }
     } else if (isExplicit) {
       // We explicitly expected an active tournament here.
-      // Only clear local state if the date file definitively shows the tournament completed
-      // (has a non-empty matches array). A missing file or a file without matches could be
-      // a pre-migration date file — fall through to backward-compat check instead.
+      // Clear local state when the date file shows the tournament completed
+      // (non-empty matches array) OR when tournaments.json definitively marks
+      // this date as complete — the index is updated after every successful push
+      // and is the authoritative source of truth.
       const fileShowsCompleted = Array.isArray(dateFileResult?.content?.matches)
         && dateFileResult.content.matches.length > 0;
-      if (fileShowsCompleted) {
+      const indexMarksComplete = entries.some(e => e.date === dateToCheck && e.isComplete);
+      if (fileShowsCompleted || indexMarksComplete) {
         if (local && local.tournamentDate === dateToCheck) {
           const otherMatches = Store.getMatches().filter(m => m.date !== dateToCheck);
           localStorage.setItem('mexicano_matches', JSON.stringify(otherMatches));

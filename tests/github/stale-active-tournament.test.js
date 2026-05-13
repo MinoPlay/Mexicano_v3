@@ -221,6 +221,35 @@ describe('pullForRoute — active tournament resolved from date file', () => {
     });
   });
 
+  // ── Index marks complete + date file 404 → clear stale local state ───────────
+
+  describe('index marks date complete, date file 404 — clears stale local state', () => {
+    routes.forEach(({ label, hash }) => {
+      it(`[${label}] clears stale active_tournament when index says complete`, async () => {
+        seedLocalActive();
+        vi.stubGlobal('fetch', makeFetch({ tournamentInDateFile: null, indexComplete: true }));
+        await pullForRoute(hash);
+        expect(ls.getItem('mexicano_active_tournament')).toBeNull();
+      });
+
+      it(`[${label}] purges stale matches for the tournament date`, async () => {
+        seedLocalActive();
+        vi.stubGlobal('fetch', makeFetch({ tournamentInDateFile: null, indexComplete: true }));
+        await pullForRoute(hash);
+        const matches = JSON.parse(ls.getItem('mexicano_matches') || '[]');
+        expect(matches.some(m => m.date === STALE_DATE)).toBe(false);
+      });
+
+      it(`[${label}] preserves matches for other dates`, async () => {
+        seedLocalActive();
+        vi.stubGlobal('fetch', makeFetch({ tournamentInDateFile: null, indexComplete: true }));
+        await pullForRoute(hash);
+        const matches = JSON.parse(ls.getItem('mexicano_matches') || '[]');
+        expect(matches.some(m => m.date === OTHER_DATE)).toBe(true);
+      });
+    });
+  });
+
   // ── Date file shows completed format → clear local ────────────────────────────
 
   describe('date file shows completed tournament format', () => {
