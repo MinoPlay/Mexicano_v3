@@ -244,20 +244,18 @@ export function renderDoodle(container, params = {}) {
   overallDetails.appendChild(matrixContainer);
   content.appendChild(overallDetails);
 
-  // Inline save bar (shown above changelog when dirty)
+  // Fixed top save bar (non-blocking, appears when dirty)
   const saveBar = document.createElement('div');
   saveBar.id = 'doodle-save-bar';
-  saveBar.style.cssText = 'display:none;';
+  saveBar.style.cssText = 'display:none;position:fixed;top:0;left:0;right:0;z-index:1000;background:var(--color-surface);border-bottom:1px solid var(--color-border);padding:var(--space-sm) var(--space-md);align-items:center;justify-content:space-between;gap:var(--space-sm);box-shadow:var(--shadow-sm);';
   saveBar.innerHTML = `
-    <div class="card" style="display:flex;align-items:center;justify-content:space-between;padding:var(--space-sm) var(--space-md);gap:var(--space-sm);">
-      <span class="text-sm text-medium">Unsaved changes</span>
-      <div style="display:flex;gap:var(--space-sm);">
-        <button class="btn btn-ghost btn-sm" id="doodle-cancel-btn">Cancel</button>
-        <button class="btn btn-primary btn-sm" id="doodle-save-btn">Save</button>
-      </div>
+    <span class="text-sm text-medium">Unsaved changes</span>
+    <div style="display:flex;gap:var(--space-sm);">
+      <button class="btn btn-ghost btn-sm" id="doodle-cancel-btn">Cancel</button>
+      <button class="btn btn-primary btn-sm" id="doodle-save-btn">Save</button>
     </div>
   `;
-  content.appendChild(saveBar);
+  document.body.appendChild(saveBar);
 
   // Changelog container
   const changelogSection = document.createElement('div');
@@ -643,7 +641,7 @@ export function renderDoodle(container, params = {}) {
   function showSavePopup() {
     if (saveBarActive) return;
     saveBarActive = true;
-    saveBar.style.display = '';
+    saveBar.style.display = 'flex';
 
     saveBarSaveBtn = saveBar.querySelector('#doodle-save-btn');
     saveBarCancelBtn = saveBar.querySelector('#doodle-cancel-btn');
@@ -881,5 +879,6 @@ export function renderDoodle(container, params = {}) {
     unsubDoodle();
     cleanupEditSession();
     window.removeEventListener('beforeunload', beforePageUnloadHandler);
+    saveBar.remove();
   };
 }

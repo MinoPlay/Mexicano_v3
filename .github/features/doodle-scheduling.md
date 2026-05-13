@@ -93,5 +93,5 @@ doodle_changelog[yearMonth] = [
 - **Calendar grid**: 7-column (Sun–Sat), clickable playable dates (Tue/Thu, not past)
 - **Matrix**: player × date table, checkmarks for availability, totals row highlights best days
 - **Total row**: clickable when count > 0, routes to create-tournament with available players sorted by ELO
-- **Save bar**: inline bar above "Recent Changes" section appears when user has unsaved changes (date toggled). Contains "Unsaved changes" label + Cancel (ghost) + Save (primary sm) buttons. Save disabled + shows "Saving…" during async save; re-enables on failure. Hidden on successful save or cancel.
+- **Save bar**: fixed top banner (non-blocking, `position:fixed;top:0`) appears when dirty. Appended to `document.body`. Contains "Unsaved changes" label + Cancel (ghost) + Save (primary sm). User can still toggle dates freely while bar is visible. Save disabled + "Saving…" during async save. Hidden on success or cancel. Removed from DOM on page unload.
 - **Changelog**: month-specific "Recent Changes" collapsible section (collapsed by default). Shows last 5 entries when collapsed, up to 20 when expanded. Toggle with click on header (▶/▼ arrow). Each row is a one-liner: player name anchored left, timestamp anchored right. Click any row opens a native `<dialog>` with full details (month, added dates, removed dates, full timestamp).
