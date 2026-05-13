@@ -209,11 +209,7 @@ export function renderDoodle(container, params = {}) {
   content.className = 'page-content';
   container.appendChild(content);
 
-  // Footer for Save/Cancel buttons
-  const footer = document.createElement('div');
-  footer.className = 'doodle-footer';
-  footer.style.display = 'none';
-  container.appendChild(footer);
+  let savePopup = null;
 
   if (!currentUser) {
     content.innerHTML = `<div class="empty-state">
@@ -627,33 +623,44 @@ export function renderDoodle(container, params = {}) {
     applyCollapsed();
   }
 
-  function setupFooterButtons() {
-    footer.innerHTML = `
-      <button class="btn btn-primary" id="doodle-save-btn">Save Changes</button>
-      <button class="btn btn-ghost" id="doodle-cancel-btn">Cancel</button>
-    `;
+  function showSavePopup() {
+    if (savePopup) return; // Already visible
 
-    const saveBtn = document.getElementById('doodle-save-btn');
-    const cancelBtn = document.getElementById('doodle-cancel-btn');
+    const overlay = document.createElement('div');
+    overlay.className = 'doodle-modal-overlay doodle-save-popup';
+
+    const modal = document.createElement('div');
+    modal.className = 'doodle-modal';
+    modal.innerHTML = `
+      <h3>Save Changes?</h3>
+      <p>You have unsaved doodle changes.</p>
+      <div class="modal-buttons">
+        <button class="btn btn-primary" id="doodle-save-btn">Save Changes</button>
+        <button class="btn btn-ghost" id="doodle-cancel-btn">Cancel</button>
+      </div>
+    `;
+    overlay.appendChild(modal);
+    document.body.appendChild(overlay);
+    savePopup = overlay;
+
+    const saveBtn = overlay.querySelector('#doodle-save-btn');
+    const cancelBtn = overlay.querySelector('#doodle-cancel-btn');
 
     saveBtn.addEventListener('click', async () => {
-      // Disable buttons during save
       saveBtn.disabled = true;
       cancelBtn.disabled = true;
       const originalText = saveBtn.textContent;
       saveBtn.textContent = 'Saving...';
 
       const success = await editSession.save();
-      
+
       if (success) {
-        // Save succeeded, clear edit session and refresh UI
+        hideSavePopup();
         editSession = null;
         renderUserCalendar();
         renderMatrix();
         renderChangelog();
-        updateFooter();
       } else {
-        // Save failed, re-enable buttons for retry
         saveBtn.disabled = false;
         cancelBtn.disabled = false;
         saveBtn.textContent = originalText;
@@ -661,37 +668,36 @@ export function renderDoodle(container, params = {}) {
     });
 
     cancelBtn.addEventListener('click', () => {
+      hideSavePopup();
       editSession.revert();
       renderUserCalendar();
       renderMatrix();
-      updateFooter();
     });
   }
 
+  function hideSavePopup() {
+    if (savePopup) {
+      savePopup.remove();
+      savePopup = null;
+    }
+  }
+
   function updateFooter() {
-    if (!editSession) {
-      footer.style.display = 'none';
-      footer.innerHTML = '';
+    if (!editSession || !editSession.isDirty()) {
+      hideSavePopup();
       return;
     }
 
-    if (editSession.isDirty()) {
-      footer.style.display = 'flex';
-      
-      // Only set up buttons if they don't exist yet
-      if (!document.getElementById('doodle-save-btn')) {
-        setupFooterButtons();
-      }
-
-      // Update button states based on saving status
-      const saveBtn = document.getElementById('doodle-save-btn');
-      const cancelBtn = document.getElementById('doodle-cancel-btn');
+    if (!savePopup) {
+      showSavePopup();
+    } else {
+      // Update button states if popup is already shown
+      const saveBtn = savePopup.querySelector('#doodle-save-btn');
+      const cancelBtn = savePopup.querySelector('#doodle-cancel-btn');
       if (saveBtn && cancelBtn) {
         saveBtn.disabled = editSession.isSaving;
         cancelBtn.disabled = editSession.isSaving;
       }
-    } else {
-      footer.style.display = 'none';
     }
   }
 
@@ -822,9 +828,8 @@ export function renderDoodle(container, params = {}) {
       if (editSession._unblockRoute) {
         editSession._unblockRoute();
       }
-      // Clear footer when edit session ends
-      footer.innerHTML = '';
-      footer.style.display = 'none';
+      // Clear save popup when edit session ends
+      hideSavePopup();
     }
   }
 

@@ -974,25 +974,6 @@ details[open] > .members-summary {
   border-style: dashed !important;
 }
 
-.doodle-footer {
-  position: fixed;
-  bottom: var(--nav-height);
-  left: 0;
-  right: 0;
-  background: var(--bg-card);
-  border-top: 1px solid var(--border);
-  padding: var(--space-md);
-  display: flex;
-  gap: var(--space-sm);
-  justify-content: flex-end;
-  box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.1);
-  z-index: 40;
-}
-
-.doodle-footer .btn {
-  min-width: 120px;
-}
-
 .doodle-modal-overlay {
   position: fixed;
   top: 0;
