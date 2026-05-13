@@ -60,7 +60,8 @@ Debug and inspect all GitHub API operations (read, write, delete, list) performe
 
 ## Access Control
 - Logs tab (nav + `ghLog` writes) only active when `Store.isMino()` returns `true`
-- Non-Mino users: tab hidden, no entries written to localStorage
+- Non-admin users: tab hidden, no entries written to localStorage
+- Admins: Mino and Kikke
 
 ```js
 import { getGitHubLog, clearGitHubLog } from './services/github.js';

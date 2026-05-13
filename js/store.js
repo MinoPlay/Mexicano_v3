@@ -117,7 +117,8 @@ export const Store = {
   },
 
   isMino() {
-    return this.getCurrentUser().toLowerCase() === 'mino';
+    const user = this.getCurrentUser().toLowerCase();
+    return user === 'mino' || user === 'kikke';
   },
 
   // ─── GitHub Backend config ───

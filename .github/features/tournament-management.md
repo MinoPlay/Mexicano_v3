@@ -52,6 +52,12 @@ tournament: {
 
 Match: Team1 = (player1 + player2). Team2 = (player3 + player4).
 
+## Admin Access
+
+`Store.isMino()` gates tournament create/modify/run actions.
+
+Admins: **Mino**, **Kikke** — both have full tournament management rights.
+
 ## Edge Cases & Constraints
 
 ### Edge Cases
