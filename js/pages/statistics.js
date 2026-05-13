@@ -520,7 +520,15 @@ export function renderStatistics(container, params = {}) {
   }
 
   const dates = tournamentDates;
-  const latestDate = dates.length > 0 ? dates[dates.length - 1] : null;
+  // Latest = most recent *completed* tournament; fall back to last known date
+  const tournamentsIndex = Store.getTournamentsIndex();
+  const completedDates = tournamentsIndex
+    .filter(e => e.isComplete)
+    .map(e => e.date)
+    .sort();
+  const latestDate = completedDates.length > 0
+    ? completedDates[completedDates.length - 1]
+    : dates.length > 0 ? dates[dates.length - 1] : null;
 
   let activeFilter = 'latest';
 
