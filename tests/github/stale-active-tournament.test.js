@@ -290,6 +290,57 @@ describe('pullForRoute — active tournament resolved from date file', () => {
     });
   });
 
+  // ── Completion marker: push in-flight, must not restore stale state ───────────
+
+  describe('completion marker: prevents restoring stale in-progress state while push is in-flight', () => {
+    routes.forEach(({ label, hash }) => {
+      it(`[${label}] skips restoring active tournament when completion marker matches date`, async () => {
+        // Simulate: tournament was just completed locally, push is in-flight.
+        // localStorage has no active tournament (cleared by completeTournament),
+        // but the date file still shows in-progress format (push not yet landed).
+        ls.removeItem('mexicano_active_tournament');
+        ls.setItem('mexicano_completion_marker', STALE_DATE);
+        const stale = inProgressTournament({ currentRoundNumber: 3 });
+        vi.stubGlobal('fetch', makeFetch({ tournamentInDateFile: stale }));
+        await pullForRoute(hash);
+        // Must NOT restore the stale in-progress tournament
+        expect(ls.getItem('mexicano_active_tournament')).toBeNull();
+        // Marker must still be present (only cleared when push is confirmed)
+        expect(ls.getItem('mexicano_completion_marker')).toBe(STALE_DATE);
+      });
+
+      it(`[${label}] without completion marker, still reconciles stale in-memory index`, async () => {
+        ls.removeItem('mexicano_active_tournament');
+        ls.removeItem('mexicano_completion_marker');
+        ls.setItem('mexicano_matches', JSON.stringify(mixedMatches()));
+        const fresh = inProgressTournament({ currentRoundNumber: 9 });
+        vi.stubGlobal('fetch', makeFetch({ tournamentInDateFile: fresh, indexComplete: true }));
+        await pullForRoute(hash);
+        const stored = JSON.parse(ls.getItem('mexicano_active_tournament'));
+        expect(stored).not.toBeNull();
+        expect(stored.currentRoundNumber).toBe(9);
+      });
+    });
+  });
+
+  // ── Completion marker cleared when file shows completed (push confirmed) ──────
+
+  describe('completion marker cleared when date file shows completed matches', () => {
+    routes.forEach(({ label, hash }) => {
+      it(`[${label}] clears completion marker when file shows completed tournament`, async () => {
+        // Marker set from previous completion; now the push has landed so the
+        // date file shows the completed format (matches array present).
+        ls.setItem('mexicano_active_tournament', JSON.stringify(inProgressTournament()));
+        ls.setItem('mexicano_matches', JSON.stringify(mixedMatches()));
+        ls.setItem('mexicano_completion_marker', STALE_DATE);
+        vi.stubGlobal('fetch', makeFetch({ tournamentInDateFile: 'completed' }));
+        await pullForRoute(hash);
+        expect(ls.getItem('mexicano_active_tournament')).toBeNull();
+        expect(ls.getItem('mexicano_completion_marker')).toBeNull();
+      });
+    });
+  });
+
   // ── Backward-compat migration from data/active_tournament.json ───────────────
 
   describe('backward-compat migration: date file 404, old active_tournament.json exists', () => {

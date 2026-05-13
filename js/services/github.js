@@ -696,15 +696,21 @@ async function pullActiveTournamentFromDateFile() {
 
     const activeTInFile = dateFileResult?.content?.tournament;
     if (activeTInFile && !activeTInFile.isCompleted) {
-      foundActiveInDateFile = true;
-      localStorage.setItem('mexicano_active_tournament', JSON.stringify(activeTInFile));
-      // Fix in-memory index if tournaments.json wrongly marks it complete.
-      const entry = entries.find(e => e.date === dateToCheck);
-      if (entry?.isComplete) {
-        const fixed = entries.map(e => e.date === dateToCheck ? { ...e, isComplete: false } : e);
-        Store.setTournamentsIndex(fixed);
-        Cache.set('tournament_dates', fixed.map(e => e.date).sort());
-        ghLog('RECONCILE_ACTIVE_TOURNAMENT', dateToCheck, 'fixed stale isComplete:true → false in-memory');
+      const completionMarker = localStorage.getItem('mexicano_completion_marker');
+      if (completionMarker === dateToCheck) {
+        // Tournament was just completed locally, push is in-flight — don't restore stale state.
+        ghLog('SKIP_RESTORE_COMPLETED', dateToCheck, 'completion marker set');
+      } else {
+        foundActiveInDateFile = true;
+        localStorage.setItem('mexicano_active_tournament', JSON.stringify(activeTInFile));
+        // Fix in-memory index if tournaments.json wrongly marks it complete.
+        const entry = entries.find(e => e.date === dateToCheck);
+        if (entry?.isComplete) {
+          const fixed = entries.map(e => e.date === dateToCheck ? { ...e, isComplete: false } : e);
+          Store.setTournamentsIndex(fixed);
+          Cache.set('tournament_dates', fixed.map(e => e.date).sort());
+          ghLog('RECONCILE_ACTIVE_TOURNAMENT', dateToCheck, 'fixed stale isComplete:true → false in-memory');
+        }
       }
     } else if (isExplicit) {
       // We explicitly expected an active tournament here.
@@ -719,6 +725,7 @@ async function pullActiveTournamentFromDateFile() {
           localStorage.setItem('mexicano_matches', JSON.stringify(otherMatches));
         }
         localStorage.removeItem('mexicano_active_tournament');
+        localStorage.removeItem('mexicano_completion_marker'); // push confirmed, clear marker
       }
     }
   }
@@ -1550,6 +1557,7 @@ let _syncStatus = 'idle'; // idle | syncing | success | error
 let _isPulling = false;   // suppresses auto-push during pullAll
 let _pushInProgress = false;
 let _pushPending = false;
+const _afterAllPushResolvers = [];
 const _listeners = new Set();
 const _dirtyMatchDates = new Set();
 
@@ -1577,7 +1585,7 @@ async function executePush() {
   if (_pushInProgress) {
     _pushPending = true;
     ghLog('AUTO_SYNC', '-', 'queued (push already in progress)');
-    return;
+    return new Promise(resolve => { _afterAllPushResolvers.push(resolve); });
   }
   _pushInProgress = true;
   setSyncStatus('syncing');
@@ -1594,8 +1602,11 @@ async function executePush() {
     _pushInProgress = false;
     if (_pushPending) {
       _pushPending = false;
-      executePush();
+      await executePush(); // wait for the pending run (which also handles more pending)
     }
+    // Queue fully drained — notify all waiters
+    const resolvers = _afterAllPushResolvers.splice(0);
+    resolvers.forEach(fn => fn());
   }
 }
 
@@ -1628,8 +1639,8 @@ export function cancelPendingSync() {
  * Use for critical operations like tournament creation / completion.
  */
 export function flushPush() {
-  if (_isPulling) return;
-  if (!getConfig()?.pat) return;
+  // NOTE: Does NOT check _isPulling — tournament completion/creation must push even during pulls.
+  if (!getConfig()?.pat) return Promise.resolve();
   clearTimeout(_syncTimer);
   return executePush();
 }

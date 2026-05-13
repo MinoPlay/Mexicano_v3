@@ -351,6 +351,7 @@ export function completeTournament(tournament) {
   }
 
   Store.setMatches(allMatches);
+  localStorage.setItem('mexicano_completion_marker', tournament.tournamentDate);
   Store.clearActiveTournament();
   State.emit('tournament-changed', tournament);
 
@@ -427,7 +428,7 @@ export function completeTournament(tournament) {
     // write fails the whole chain aborts — players.json is never updated with a
     // partial/stale state.
     Promise.resolve(flushPush())
-      .then(() => generateMonthlyOverviews(yearMonth))
+      .then(() => { localStorage.removeItem('mexicano_completion_marker'); return generateMonthlyOverviews(yearMonth); })
       .then(() => generatePlayersJson())
       .then(async () => {
         const base = Store.getGitHubConfig()?.basePath?.trim().replace(/\/$/, '') || '';
