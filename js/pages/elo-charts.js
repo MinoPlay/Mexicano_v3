@@ -473,10 +473,13 @@ function eloHistoryForDateRange(eloData, fromStr, toStr) {
  */
 function getSeedElosFromHistory(historyData, latestDate) {
   if (!historyData?.players || !latestDate) return null;
+  // History points use "YYYY-MM" format. Compare against year-month prefix so
+  // the current tournament's month is excluded (e.g. "2026-05" is NOT prior to "2026-05-12").
+  const latestYearMonth = latestDate.slice(0, 7);
   const seeds = {};
   for (const [name, points] of Object.entries(historyData.players)) {
     if (!Array.isArray(points)) continue;
-    const prior = points.filter(p => p.date < latestDate);
+    const prior = points.filter(p => p.date < latestYearMonth);
     if (prior.length > 0) seeds[name] = prior[prior.length - 1].elo;
   }
   return Object.keys(seeds).length > 0 ? seeds : null;
