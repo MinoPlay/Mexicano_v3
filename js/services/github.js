@@ -701,7 +701,24 @@ async function pullActiveTournamentFromDateFile() {
     try { dateFileResult = await readFile(datePath(dateToCheck)); } catch { /* ok */ }
 
     const activeTInFile = dateFileResult?.content?.tournament;
-    if (activeTInFile && !activeTInFile.isCompleted) {
+    const entry = entries.find(e => e.date === dateToCheck);
+    // Index is definitively complete when it has real match data (not just a
+    // stale isComplete:true from a data-restore with matchCount=0).
+    const indexIsDefinitivelyComplete = !!(entry?.isComplete
+      && entry.matchCount > 0
+      && entry.completedCount === entry.matchCount);
+
+    if (indexIsDefinitivelyComplete) {
+      // Index has real completion data — date file may be a stale intermediate push.
+      // Clear local state unconditionally.
+      if (local && local.tournamentDate === dateToCheck) {
+        const otherMatches = Store.getMatches().filter(m => m.date !== dateToCheck);
+        localStorage.setItem('mexicano_matches', JSON.stringify(otherMatches));
+      }
+      localStorage.removeItem('mexicano_active_tournament');
+      localStorage.removeItem('mexicano_completion_marker');
+      ghLog('CLEAR_STALE_ACTIVE', dateToCheck, 'index definitively complete');
+    } else if (activeTInFile && !activeTInFile.isCompleted) {
       const completionMarker = localStorage.getItem('mexicano_completion_marker');
       if (completionMarker === dateToCheck) {
         // Tournament was just completed locally, push is in-flight — don't restore stale state.
@@ -709,8 +726,7 @@ async function pullActiveTournamentFromDateFile() {
       } else {
         foundActiveInDateFile = true;
         localStorage.setItem('mexicano_active_tournament', JSON.stringify(activeTInFile));
-        // Fix in-memory index if tournaments.json wrongly marks it complete.
-        const entry = entries.find(e => e.date === dateToCheck);
+        // Fix in-memory index if tournaments.json wrongly marks it complete (stale index).
         if (entry?.isComplete) {
           const fixed = entries.map(e => e.date === dateToCheck ? { ...e, isComplete: false } : e);
           Store.setTournamentsIndex(fixed);

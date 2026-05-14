@@ -65,6 +65,7 @@ Admins: **Mino**, **Kikke** — both have full tournament management rights.
 - **Tied scores**: Both teams score same cumulative points (e.g., 13-12) → valid, both get credited.
 - **Mid-tournament edit (< 24h)**: Editing previous round score cascades: delete later rounds, recalculate stats, auto-regenerate if round now complete.
 - **Player removal**: Not explicitly handled; current schema assumes fixed player list per tournament.
+- **Stale date file vs definitive index**: If `tournaments.json` has `isComplete: true` with real match data (`completedCount === matchCount > 0`), the index wins over a stale date file that still contains `{ tournament: { isCompleted: false } }` (leftover intermediate push). The active tournament is cleared and stale matches are purged. Only when `matchCount === 0` (index may be stale after a data-restore) does the date file take precedence.
 
 ### Constraints
 - **Match format**: Always 2v2 (4 players per match).

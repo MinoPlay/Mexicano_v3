@@ -114,7 +114,13 @@ function gh404() {
  * @param {boolean} indexComplete
  *   Whether tournaments.json marks STALE_DATE as isComplete:true (stale/corrupt index).
  */
-function makeFetch({ tournamentInDateFile = null, activeTournamentJson = null, indexComplete = false } = {}) {
+function makeFetch({
+  tournamentInDateFile = null,
+  activeTournamentJson = null,
+  indexComplete = false,
+  indexMatchCount = 1,
+  indexCompletedCount = 0,
+} = {}) {
   return vi.fn(async (url) => {
     if (url.includes(`/${STALE_DATE}.json`)) {
       if (tournamentInDateFile === null) return gh404();
@@ -143,8 +149,9 @@ function makeFetch({ tournamentInDateFile = null, activeTournamentJson = null, i
     }
     if (url.includes('/tournaments.json')) {
       return ghOk([
-        { date: STALE_DATE, playerCount: 4, roundCount: 1, matchCount: 1,
-          completedCount: 0, isComplete: indexComplete },
+        { date: STALE_DATE, playerCount: 4, roundCount: 1,
+          matchCount: indexMatchCount, completedCount: indexCompletedCount,
+          isComplete: indexComplete },
       ]);
     }
     return gh404();
@@ -397,6 +404,71 @@ describe('pullForRoute — active tournament resolved from date file', () => {
         const matches = JSON.parse(ls.getItem('mexicano_matches') || '[]');
         expect(matches.some(m => m.date === STALE_DATE)).toBe(true);
         expect(matches.some(m => m.date === OTHER_DATE)).toBe(true);
+      });
+    });
+  });
+
+  // ── Definitive index completion beats stale date file ────────────────────────
+  // Real-world: date file has old { tournament: { isCompleted: false } } from an
+  // intermediate round push, but tournaments.json has full completion data
+  // (matchCount > 0, completedCount === matchCount).
+
+  describe('definitive index completion (completedCount === matchCount > 0) beats stale date file', () => {
+    routes.forEach(({ label, hash }) => {
+      it(`[${label}] clears active_tournament when index is definitively complete`, async () => {
+        seedLocalActive();
+        const stale = inProgressTournament({ currentRoundNumber: 1 });
+        vi.stubGlobal('fetch', makeFetch({
+          tournamentInDateFile: stale,
+          indexComplete: true,
+          indexMatchCount: 20,
+          indexCompletedCount: 20,
+        }));
+        await pullForRoute(hash);
+        expect(ls.getItem('mexicano_active_tournament')).toBeNull();
+      });
+
+      it(`[${label}] purges stale matches for tournament date`, async () => {
+        seedLocalActive();
+        const stale = inProgressTournament({ currentRoundNumber: 1 });
+        vi.stubGlobal('fetch', makeFetch({
+          tournamentInDateFile: stale,
+          indexComplete: true,
+          indexMatchCount: 20,
+          indexCompletedCount: 20,
+        }));
+        await pullForRoute(hash);
+        const matches = JSON.parse(ls.getItem('mexicano_matches') || '[]');
+        expect(matches.some(m => m.date === STALE_DATE)).toBe(false);
+      });
+
+      it(`[${label}] preserves matches for other dates`, async () => {
+        seedLocalActive();
+        const stale = inProgressTournament({ currentRoundNumber: 1 });
+        vi.stubGlobal('fetch', makeFetch({
+          tournamentInDateFile: stale,
+          indexComplete: true,
+          indexMatchCount: 20,
+          indexCompletedCount: 20,
+        }));
+        await pullForRoute(hash);
+        const matches = JSON.parse(ls.getItem('mexicano_matches') || '[]');
+        expect(matches.some(m => m.date === OTHER_DATE)).toBe(true);
+      });
+
+      it(`[${label}] stale index (matchCount=0) still trusts date file`, async () => {
+        ls.setItem('mexicano_matches', JSON.stringify(mixedMatches()));
+        const fresh = inProgressTournament({ currentRoundNumber: 5 });
+        vi.stubGlobal('fetch', makeFetch({
+          tournamentInDateFile: fresh,
+          indexComplete: true,
+          indexMatchCount: 0,
+          indexCompletedCount: 0,
+        }));
+        await pullForRoute(hash);
+        const stored = JSON.parse(ls.getItem('mexicano_active_tournament'));
+        expect(stored).not.toBeNull();
+        expect(stored.currentRoundNumber).toBe(5);
       });
     });
   });
