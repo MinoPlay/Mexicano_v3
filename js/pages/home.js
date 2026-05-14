@@ -5,6 +5,52 @@ import { getLatestCompleteTournamentDate, getActiveTournament } from '../service
 import { getMembers } from '../services/members.js';
 import { calculatePlayerStatistics } from '../services/statistics.js';
 
+function getCurrentYearMonth() {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+}
+
+function getPrevYearMonth(yearMonth) {
+  const [y, mo] = yearMonth.split('-').map(Number);
+  return mo === 1
+    ? `${y - 1}-12`
+    : `${y}-${String(mo - 1).padStart(2, '0')}`;
+}
+
+function formatMonth(yearMonth) {
+  try {
+    const [y, m] = yearMonth.split('-');
+    const d = new Date(parseInt(y), parseInt(m) - 1, 1);
+    return d.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+  } catch {
+    return yearMonth;
+  }
+}
+
+function overviewToStats(overview, prevOverview = []) {
+  const prevEloMap = {};
+  prevOverview.forEach(p => { prevEloMap[p.name] = p.elo; });
+
+  return overview.map(p => {
+    const totalMatches = p.wins + p.losses;
+    const elo = p.elo ?? null;
+    const prevElo = prevEloMap[p.name] ?? null;
+    const eloChange = elo != null && prevElo != null
+      ? Math.round((elo - prevElo) * 100) / 100
+      : null;
+    return {
+      name: p.name,
+      wins: p.wins,
+      losses: p.losses,
+      points: p.totalPoints,
+      average: p.average,
+      winRate: totalMatches > 0 ? Math.round((p.wins / totalMatches) * 100 * 100) / 100 : 0,
+      elo,
+      eloChange,
+    };
+  });
+}
+
 function formatDate(dateStr) {
   try {
     const d = new Date(dateStr + 'T00:00:00');
@@ -62,9 +108,34 @@ export function renderHome(container, params) {
     }
   }
 
-  // State for sorting
+  // Current month stats (from cache — may be empty before lazy-fetch below)
+  const currentYearMonth = getCurrentYearMonth();
+  const prevYearMonth = getPrevYearMonth(currentYearMonth);
+  let currentMonthStats = [];
+
+  function resolveCurrentMonthStats() {
+    const overview = Store.getMonthlyOverview(currentYearMonth);
+    if (overview.length > 0) {
+      const prevOverview = Store.getMonthlyOverview(prevYearMonth);
+      return overviewToStats(overview, prevOverview);
+    }
+    // Fallback: compute from local matches
+    const monthMatches = allMatches.filter(m => m.date?.startsWith(currentYearMonth));
+    if (monthMatches.length > 0) {
+      return calculatePlayerStatistics(monthMatches);
+    }
+    return [];
+  }
+
+  currentMonthStats = resolveCurrentMonthStats();
+
+  // State for sorting (Latest Tournament)
   let sortCol = 'average';
   let sortDir = 'desc';
+
+  // State for sorting (Current Month)
+  let sortCol2 = 'average';
+  let sortDir2 = 'desc';
 
   function renderTable() {
     const tableContainer = container.querySelector('#latest-tournament-table');
@@ -221,6 +292,141 @@ export function renderHome(container, params) {
     tableContainer.appendChild(wrapper);
   }
 
+  function renderCurrentMonthTable() {
+    const tableContainer = container.querySelector('#current-month-table');
+    if (!tableContainer || currentMonthStats.length === 0) return;
+
+    const cols = [
+      { key: 'rank',   label: '#',    sort: null },
+      { key: 'name',   label: 'NAME', sort: 'name' },
+      { key: 'wl',     label: 'W/T',  sort: 'wl' },
+      { key: 'pts',    label: 'PTS',  sort: 'pts' },
+      { key: 'avg',    label: 'AVG',  sort: 'avg' },
+      { key: 'win',    label: 'WIN',  sort: 'win' },
+      { key: 'elo',    label: 'ELO',  sort: 'elo' },
+      { key: 'change', label: 'Δ',    sort: 'change' },
+    ];
+
+    const sorted = [...currentMonthStats];
+    sorted.sort((a, b) => {
+      let av, bv;
+      if (sortCol2 === 'name') { av = a.name.toLowerCase(); bv = b.name.toLowerCase(); }
+      else if (sortCol2 === 'wl') { av = a.wins; bv = b.wins; }
+      else if (sortCol2 === 'pts') { av = a.points ?? a.totalPoints ?? 0; bv = b.points ?? b.totalPoints ?? 0; }
+      else if (sortCol2 === 'avg') { av = a.average; bv = b.average; }
+      else if (sortCol2 === 'win') {
+        const tA = a.wins + a.losses, tB = b.wins + b.losses;
+        av = tA > 0 ? a.wins / tA : 0;
+        bv = tB > 0 ? b.wins / tB : 0;
+      }
+      else if (sortCol2 === 'elo') { av = a.elo ?? 0; bv = b.elo ?? 0; }
+      else if (sortCol2 === 'change') { av = a.eloChange ?? 0; bv = b.eloChange ?? 0; }
+      if (av < bv) return sortDir2 === 'asc' ? -1 : 1;
+      if (av > bv) return sortDir2 === 'asc' ? 1 : -1;
+      return 0;
+    });
+
+    const wrapper = document.createElement('div');
+    wrapper.className = 'data-table';
+    const table = document.createElement('table');
+
+    const thead = document.createElement('thead');
+    const headerRow = document.createElement('tr');
+    cols.forEach(col => {
+      const th = document.createElement('th');
+      th.textContent = col.label;
+      if (col.key === 'rank') th.className = 'rank-cell';
+      else th.className = 'num-cell';
+      if (col.key === 'name') th.style.textAlign = 'left';
+      if (col.sort === sortCol2) th.classList.add(sortDir2 === 'asc' ? 'sort-asc' : 'sort-desc');
+      if (col.sort) {
+        th.addEventListener('click', () => {
+          if (sortCol2 === col.sort) {
+            sortDir2 = sortDir2 === 'asc' ? 'desc' : 'asc';
+          } else {
+            sortCol2 = col.sort;
+            sortDir2 = col.sort === 'name' ? 'asc' : 'desc';
+          }
+          renderCurrentMonthTable();
+        });
+      }
+      headerRow.appendChild(th);
+    });
+    thead.appendChild(headerRow);
+    table.appendChild(thead);
+
+    const tbody = document.createElement('tbody');
+    sorted.forEach((stat, i) => {
+      const rank = i + 1;
+      const totalMatches = stat.wins + stat.losses;
+      const winPct = totalMatches > 0 ? (stat.wins / totalMatches) * 100 : 0;
+      const elo = stat.elo != null ? Math.round(stat.elo) : '—';
+      const eloChange = stat.eloChange ?? 0;
+      const changeIcon = eloChange > 0 ? '▲' : eloChange < 0 ? '▼' : '–';
+      const changeText = eloChange !== 0 ? Math.abs(Math.round(eloChange * 10) / 10).toFixed(1) : '';
+
+      const tr = document.createElement('tr');
+
+      const tdRank = document.createElement('td');
+      tdRank.className = 'rank-cell';
+      tdRank.textContent = rank;
+      if (rank === 1) tdRank.style.color = '#f59e0b';
+      else if (rank === 2) tdRank.style.color = '#94a3b8';
+      else if (rank === 3) tdRank.style.color = '#d97706';
+      tr.appendChild(tdRank);
+
+      const tdName = document.createElement('td');
+      tdName.className = 'name-cell';
+      tdName.style.cursor = 'default';
+      tdName.style.color = 'var(--text-primary)';
+      tdName.textContent = stat.name;
+      tr.appendChild(tdName);
+
+      const tdWl = document.createElement('td');
+      tdWl.className = 'num-cell';
+      tdWl.textContent = `${stat.wins}/${totalMatches}`;
+      tr.appendChild(tdWl);
+
+      const tdPts = document.createElement('td');
+      tdPts.className = 'num-cell';
+      tdPts.textContent = Math.round(stat.points ?? stat.totalPoints ?? 0);
+      tr.appendChild(tdPts);
+
+      const tdAvg = document.createElement('td');
+      tdAvg.className = 'num-cell';
+      tdAvg.textContent = stat.average.toFixed(1);
+      tr.appendChild(tdAvg);
+
+      const tdWin = document.createElement('td');
+      tdWin.className = 'num-cell';
+      tdWin.textContent = winPct.toFixed(1) + '%';
+      if (winPct >= 75) tdWin.style.color = 'var(--color-success)';
+      else if (winPct < 35) tdWin.style.color = 'var(--color-danger)';
+      else tdWin.style.color = 'var(--color-warning)';
+      tr.appendChild(tdWin);
+
+      const tdElo = document.createElement('td');
+      tdElo.className = 'num-cell';
+      tdElo.style.fontWeight = 'var(--font-weight-semibold)';
+      tdElo.textContent = elo;
+      tr.appendChild(tdElo);
+
+      const tdChange = document.createElement('td');
+      tdChange.className = 'num-cell';
+      tdChange.textContent = changeIcon + changeText;
+      if (eloChange > 0) tdChange.style.color = 'var(--color-success)';
+      else if (eloChange < 0) tdChange.style.color = 'var(--color-danger)';
+      else tdChange.style.color = 'var(--text-tertiary)';
+      tr.appendChild(tdChange);
+
+      tbody.appendChild(tr);
+    });
+    table.appendChild(tbody);
+    wrapper.appendChild(table);
+    tableContainer.innerHTML = '';
+    tableContainer.appendChild(wrapper);
+  }
+
   container.innerHTML = `
     <header class="page-header">
       <h1>🎾 Mexicano</h1>
@@ -269,6 +475,16 @@ export function renderHome(container, params) {
         `}
       </div>
 
+      <div class="card" style="margin:0 0 var(--space-md);border-radius:0;padding:0;overflow:hidden;border-left:none;border-right:none;background:none;border-top:none;border-bottom:none;">
+        <div class="card-header" style="padding:var(--space-md);">
+          <span class="card-title">Current Month</span>
+          <span class="text-sm text-secondary">${formatMonth(currentYearMonth)}</span>
+        </div>
+        <div id="current-month-table">
+          ${currentMonthStats.length === 0 ? `<p id="current-month-no-data" class="text-sm text-secondary text-center" style="padding:var(--space-md);">No data for this month</p>` : ''}
+        </div>
+      </div>
+
     </div>
   `;
 
@@ -299,5 +515,34 @@ export function renderHome(container, params) {
         if (noDataEl.isConnected) noDataEl.textContent = 'No tournament data available';
       });
     }
+  }
+
+  // Render current month table
+  if (currentMonthStats.length > 0) {
+    renderCurrentMonthTable();
+  } else if (Store.getGitHubConfig()?.pat) {
+    // Lazy-fetch current month overview from GitHub
+    const noDataEl = container.querySelector('#current-month-no-data');
+    if (noDataEl) noDataEl.textContent = '⏳ Loading…';
+    import('../services/github.js').then(({ pullMonthlyOverview }) =>
+      Promise.all([
+        pullMonthlyOverview(currentYearMonth),
+        pullMonthlyOverview(prevYearMonth),
+      ])
+    ).then(() => {
+      const tableEl = container.querySelector('#current-month-table');
+      if (!tableEl) return;
+      currentMonthStats = resolveCurrentMonthStats();
+      if (currentMonthStats.length > 0) {
+        tableEl.innerHTML = '';
+        renderCurrentMonthTable();
+      } else {
+        const nd = container.querySelector('#current-month-no-data');
+        if (nd) nd.textContent = 'No data for this month';
+      }
+    }).catch(() => {
+      const nd = container.querySelector('#current-month-no-data');
+      if (nd && nd.isConnected) nd.textContent = 'No data for this month';
+    });
   }
 }
