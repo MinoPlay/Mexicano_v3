@@ -148,7 +148,7 @@ export function renderHome(container, params) {
   let sortDir = 'desc';
 
   // State for sorting (Current Month)
-  let sortCol2 = 'average';
+  let sortCol2 = 'avg';
   let sortDir2 = 'desc';
 
   function renderTable() {
