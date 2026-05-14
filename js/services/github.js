@@ -710,7 +710,7 @@ async function pullActiveTournamentFromDateFile() {
 
     if (indexIsDefinitivelyComplete) {
       // Index has real completion data — date file may be a stale intermediate push.
-      // Clear local state unconditionally.
+      // Clear local state unconditionally and return early (skip migration path).
       if (local && local.tournamentDate === dateToCheck) {
         const otherMatches = Store.getMatches().filter(m => m.date !== dateToCheck);
         localStorage.setItem('mexicano_matches', JSON.stringify(otherMatches));
@@ -718,6 +718,7 @@ async function pullActiveTournamentFromDateFile() {
       localStorage.removeItem('mexicano_active_tournament');
       localStorage.removeItem('mexicano_completion_marker');
       ghLog('CLEAR_STALE_ACTIVE', dateToCheck, 'index definitively complete');
+      return;
     } else if (activeTInFile && !activeTInFile.isCompleted) {
       const completionMarker = localStorage.getItem('mexicano_completion_marker');
       if (completionMarker === dateToCheck) {
@@ -750,6 +751,7 @@ async function pullActiveTournamentFromDateFile() {
         }
         localStorage.removeItem('mexicano_active_tournament');
         localStorage.removeItem('mexicano_completion_marker'); // push confirmed, clear marker
+        return;
       }
     }
   }

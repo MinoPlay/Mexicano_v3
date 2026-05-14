@@ -470,6 +470,22 @@ describe('pullForRoute — active tournament resolved from date file', () => {
         expect(stored).not.toBeNull();
         expect(stored.currentRoundNumber).toBe(5);
       });
+
+      it(`[${label}] does NOT restore from data/active_tournament.json when index is definitively complete`, async () => {
+        // This is the real-world bug: definitive index clears active_tournament,
+        // but the backward-compat migration path was re-restoring it from old file.
+        seedLocalActive();
+        const staleOldFile = inProgressTournament({ currentRoundNumber: 3 });
+        vi.stubGlobal('fetch', makeFetch({
+          tournamentInDateFile: null,       // date file is 404
+          activeTournamentJson: staleOldFile, // old data/active_tournament.json exists
+          indexComplete: true,
+          indexMatchCount: 20,
+          indexCompletedCount: 20,
+        }));
+        await pullForRoute(hash);
+        expect(ls.getItem('mexicano_active_tournament')).toBeNull();
+      });
     });
   });
 });
