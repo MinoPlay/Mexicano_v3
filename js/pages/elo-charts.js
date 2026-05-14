@@ -1,5 +1,5 @@
 import {
-  getEloFromEmbeddedMatches,
+  getEloHistoryForLatestTournament,
   getEloHistoryForPeriod,
   getEloHistoryForDateRange,
 } from '../services/elo.js';
@@ -825,7 +825,17 @@ export function renderEloCharts(container, params = {}) {
       if (tResizeHandler) { window.removeEventListener('resize', tResizeHandler); tResizeHandler = null; }
 
       const latestDate = getLatestTournamentDateForSelection(allMatches, [...selectedMembers]);
-      const history = getEloFromEmbeddedMatches(allMatches, latestDate);
+
+      // Seed pre-tournament ELOs from players.json PreviousELO (= ELO before latest tournament).
+      // Avoids full match history replay which fails when allMatches is incomplete in localStorage.
+      const seedElos = {};
+      for (const [, player] of playerByName) {
+        if (player.name && player.previousElo != null) seedElos[player.name] = player.previousElo;
+      }
+
+      const history = getEloHistoryForLatestTournament(
+        allMatches, [...selectedMembers], Object.keys(seedElos).length ? seedElos : null
+      );
       filterHistoryToMembers(history);
       filterHistoryToSelected(history, selectedMembers);
       setTournamentMeta(latestDate ? `Date: ${latestDate}` : 'Date: —');
