@@ -688,6 +688,12 @@ async function pullActiveTournamentFromDateFile() {
     }
   }
 
+  // No active tournament found in index → stale localStorage entry must be cleared.
+  if (!dateToCheck) {
+    localStorage.removeItem('mexicano_active_tournament');
+    return;
+  }
+
   let foundActiveInDateFile = false;
 
   if (dateToCheck) {
