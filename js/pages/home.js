@@ -122,7 +122,21 @@ export function renderHome(container, params) {
     // Fallback: compute from local matches
     const monthMatches = allMatches.filter(m => m.date?.startsWith(currentYearMonth));
     if (monthMatches.length > 0) {
-      return calculatePlayerStatistics(monthMatches);
+      const stats = calculatePlayerStatistics(monthMatches);
+      // Attach ELO from players.json summary
+      const summary = Store.getPlayersSummary();
+      if (summary.length > 0) {
+        const summaryMap = {};
+        for (const p of summary) summaryMap[p.name] = p;
+        for (const stat of stats) {
+          const p = summaryMap[stat.name];
+          if (p) {
+            stat.elo = p.elo;
+            stat.eloChange = Math.round(((p.elo ?? 1000) - (p.previousElo ?? 1000)) * 100) / 100;
+          }
+        }
+      }
+      return stats;
     }
     return [];
   }
