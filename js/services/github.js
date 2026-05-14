@@ -869,7 +869,7 @@ export async function pullAll(onProgress) {
           average: p.Average ?? null,
           tournaments: p.Tournaments ?? null,
         }));
-        Cache.set('players_summary', camelPlayers);
+        Store.setPlayersSummaryCache(camelPlayers);
         // Update members list from the authoritative players.json
         const playerNames = camelPlayers.map(p => p.name).sort();
         Cache.set('members', playerNames);
@@ -1036,7 +1036,7 @@ async function pullCoreData() {
         average: p.Average ?? null,
         tournaments: p.Tournaments ?? null,
       }));
-      Cache.set('players_summary', camelPlayers);
+      Store.setPlayersSummaryCache(camelPlayers);
       const memberNames = camelPlayers.map(p => p.name).sort();
       Cache.set('members', memberNames);
       Store.setMembers(memberNames);
@@ -1091,7 +1091,7 @@ async function pullTournamentsPage() {
         average: p.Average ?? null,
         tournaments: p.Tournaments ?? null,
       }));
-      Cache.set('players_summary', camelPlayers);
+      Store.setPlayersSummaryCache(camelPlayers);
       const memberNames = camelPlayers.map(p => p.name).sort();
       Cache.set('members', memberNames);
       Store.setMembers(memberNames);
@@ -1136,7 +1136,7 @@ async function pullSettingsData() {
         average: p.Average ?? null,
         tournaments: p.Tournaments ?? null,
       }));
-      Cache.set('players_summary', camelPlayers);
+      Store.setPlayersSummaryCache(camelPlayers);
       const memberNames = camelPlayers.map(p => p.name).sort();
       Cache.set('members', memberNames);
       Store.setMembers(memberNames);
@@ -1265,7 +1265,7 @@ async function pullHomeData() {
         average: p.Average ?? null,
         tournaments: p.Tournaments ?? null,
       }));
-      Cache.set('players_summary', camelPlayers);
+      Store.setPlayersSummaryCache(camelPlayers);
       const memberNames = camelPlayers.map(p => p.name).sort();
       Cache.set('members', memberNames);
       Store.setMembers(memberNames);
@@ -1330,7 +1330,7 @@ async function pullEloChartsData() {
         average: p.Average ?? null,
         tournaments: p.Tournaments ?? null,
       }));
-      Cache.set('players_summary', camelPlayers);
+      Store.setPlayersSummaryCache(camelPlayers);
       const memberNames = camelPlayers.map(p => p.name).sort();
       Cache.set('members', memberNames);
       Store.setMembers(memberNames);

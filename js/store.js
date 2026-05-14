@@ -139,7 +139,13 @@ export const Store = {
   // ─── Summary data (pre-computed from Python scripts, read-only) ───
 
   getPlayersSummary() {
-    return Cache.get('players_summary') || [];
+    return Cache.get('players_summary') || this.get('players_summary_cache') || [];
+  },
+
+  /** Persist players_summary to both in-memory Cache and localStorage warm-start cache. */
+  setPlayersSummaryCache(data) {
+    Cache.set('players_summary', data);
+    try { localStorage.setItem(PREFIX + 'players_summary_cache', JSON.stringify(data)); } catch { /* storage full */ }
   },
 
   getTournamentDates() {
