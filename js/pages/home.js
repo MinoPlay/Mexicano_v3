@@ -337,7 +337,9 @@ export function renderHome(container, params) {
       else if (sortCol2 === 'change') { av = a.eloChange ?? 0; bv = b.eloChange ?? 0; }
       if (av < bv) return sortDir2 === 'asc' ? -1 : 1;
       if (av > bv) return sortDir2 === 'asc' ? 1 : -1;
-      return 0;
+      // Tiebreak: wins desc, then name asc
+      if (a.wins !== b.wins) return b.wins - a.wins;
+      return a.name.localeCompare(b.name);
     });
 
     const wrapper = document.createElement('div');
