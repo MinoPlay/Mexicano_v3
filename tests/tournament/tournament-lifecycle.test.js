@@ -313,12 +313,15 @@ describe('completeTournament', () => {
     expect(t.completedAt).not.toBeNull();
   });
 
-  it('clears active tournament from Store', () => {
+  it('keeps active tournament in Store until push succeeds (offline-safe)', () => {
     const t = makeCompletedTournament();
 
     completeTournament(t);
 
-    expect(Store.getActiveTournament()).toBeNull();
+    // Tournament stays in localStorage marked completed — cleared only after push succeeds
+    const stored = Store.getActiveTournament();
+    expect(stored).not.toBeNull();
+    expect(stored.isCompleted).toBe(true);
   });
 
   it('Store.getMatches contains all completed match entities', () => {

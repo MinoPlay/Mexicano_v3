@@ -277,6 +277,12 @@ export function startNextRound(tournament) {
 }
 
 export function completeTournament(tournament) {
+  // Idempotent guard: if already completed, just retry the push
+  if (tournament.isCompleted && tournament.completedAt) {
+    retryCompletedTournamentPush();
+    return tournament;
+  }
+
   tournament.isCompleted = true;
   tournament.completedAt = Date.now();
 
@@ -352,7 +358,9 @@ export function completeTournament(tournament) {
 
   Store.setMatches(allMatches);
   localStorage.setItem('mexicano_completion_marker', tournament.tournamentDate);
-  Store.clearActiveTournament();
+  // Keep active_tournament in localStorage until GitHub push succeeds.
+  // Mark completed so UI shows correct state, but don't remove yet.
+  Store.setActiveTournament(tournament);
   State.emit('tournament-changed', tournament);
 
   // Compute tournament index entry before async operations so it can be used
@@ -428,7 +436,12 @@ export function completeTournament(tournament) {
     // write fails the whole chain aborts — players.json is never updated with a
     // partial/stale state.
     Promise.resolve(flushPush())
-      .then(() => { localStorage.removeItem('mexicano_completion_marker'); return generateMonthlyOverviews(yearMonth); })
+      .then(() => {
+        // Push succeeded — safe to clear local tournament data
+        Store.clearActiveTournament();
+        localStorage.removeItem('mexicano_completion_marker');
+        return generateMonthlyOverviews(yearMonth);
+      })
       .then(() => generatePlayersJson(undefined, { playerNames: participantNames }))
       .then(async () => {
         const base = Store.getGitHubConfig()?.basePath?.trim().replace(/\/$/, '') || '';
@@ -442,12 +455,98 @@ export function completeTournament(tournament) {
         }
         return generateEloHistory(undefined, { playerIds: participantIds });
       })
-      .catch(e => console.warn('[tournament] post-complete generation failed:', e));
+      .catch(e => {
+        console.warn('[tournament] post-complete push/generation failed:', e);
+        // Push failed — local data preserved. Will retry on reconnect.
+      });
 
     updateTournamentIndexEntry(indexEntry).catch(() => {});
   }).catch(() => {});
 
   return tournament;
+}
+
+/**
+ * Retry pushing a completed tournament that failed to sync to GitHub.
+ * Called on reconnect or when completeTournament is called again on
+ * an already-completed tournament.
+ */
+export function retryCompletedTournamentPush() {
+  const tournament = Store.getActiveTournament();
+  if (!tournament || !tournament.isCompleted) return;
+
+  const marker = localStorage.getItem('mexicano_completion_marker');
+  if (!marker) return; // no pending push
+
+  console.log('[tournament] retrying push for completed tournament:', marker);
+
+  import('./github.js').then(({ flushPush, markMatchDateDirty, updateTournamentIndexEntry, generateMonthlyOverviews, generatePlayersJson, generateEloHistory, readFile }) => {
+    markMatchDateDirty(tournament.tournamentDate);
+
+    const yearMonth = tournament.tournamentDate.slice(0, 7);
+    const participantNames = [...new Set((tournament.players || []).map(p => String(p?.name || '').trim()).filter(Boolean))];
+    const normalizeName = name => String(name || '').trim().toLowerCase();
+
+    // Rebuild index entry for updateTournamentIndexEntry
+    const indexPlayers = new Set();
+    const indexRoundNums = new Set();
+    let indexMatchCount = 0;
+    let indexCompletedCount = 0;
+    for (const round of tournament.rounds || []) {
+      for (const m of round.matches || []) {
+        if (m.player1?.name) indexPlayers.add(m.player1.name);
+        if (m.player2?.name) indexPlayers.add(m.player2.name);
+        if (m.player3?.name) indexPlayers.add(m.player3.name);
+        if (m.player4?.name) indexPlayers.add(m.player4.name);
+        indexRoundNums.add(round.roundNumber);
+        indexMatchCount++;
+        if (isMatchComplete(m)) indexCompletedCount++;
+      }
+    }
+    const indexEntry = {
+      date: tournament.tournamentDate,
+      playerCount: indexPlayers.size,
+      roundCount: indexRoundNums.size,
+      matchCount: indexMatchCount,
+      completedCount: indexCompletedCount,
+      isComplete: indexMatchCount > 0 && indexCompletedCount === indexMatchCount,
+    };
+
+    Promise.resolve(flushPush())
+      .then(() => {
+        Store.clearActiveTournament();
+        localStorage.removeItem('mexicano_completion_marker');
+        console.log('[tournament] retry push succeeded, local data cleared');
+        return generateMonthlyOverviews(yearMonth);
+      })
+      .then(() => generatePlayersJson(undefined, { playerNames: participantNames }))
+      .then(async () => {
+        const base = Store.getGitHubConfig()?.basePath?.trim().replace(/\/$/, '') || '';
+        const playersPath = base ? `${base}/players.json` : 'players.json';
+        const playersResult = await readFile(playersPath);
+        const rows = Array.isArray(playersResult?.content) ? playersResult.content : [];
+        const idByName = new Map(rows.map(r => [normalizeName(r?.Name), r?.Id]).filter(([k, v]) => k && typeof v === 'string' && v.trim()));
+        const participantIds = participantNames.map(name => idByName.get(normalizeName(name))).filter(Boolean);
+        if (participantIds.length === 0) return;
+        return generateEloHistory(undefined, { playerIds: participantIds });
+      })
+      .catch(e => {
+        console.warn('[tournament] retry push failed, will try again on next reconnect:', e);
+      });
+
+    updateTournamentIndexEntry(indexEntry).catch(() => {});
+  }).catch(() => {});
+}
+
+// Auto-retry on network reconnect
+if (typeof window !== 'undefined') {
+  window.addEventListener('online', () => {
+    const marker = localStorage.getItem('mexicano_completion_marker');
+    if (marker) {
+      console.log('[tournament] network restored, retrying pending push...');
+      retryCompletedTournamentPush();
+    }
+  });
 }
 
 export function getActiveTournament() {

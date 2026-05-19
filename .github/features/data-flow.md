@@ -209,20 +209,33 @@ startNextRound(tournament)
 ```
 completeTournament(tournament)
   → Store.setMatches(allMatches)              → localStorage: mexicano_matches
-  → Store.clearActiveTournament()             → localStorage: mexicano_active_tournament (removed)
+  → Store.setActiveTournament(tournament)     → localStorage: keeps tournament (isCompleted: true)
+  → completion_marker set                     → localStorage: mexicano_completion_marker
   → writeTournamentDay(date, matches)         → local dev server only (no-op in prod)
   → markMatchDateDirty(date)
   → flushPush()                               → GitHub WRITE: YYYY/YYYY-MM/YYYY-MM-DD.json
                                                               (completed format: { matches: [...] }
                                                                no `tournament` field)
+  ─── ON SUCCESS ───
+  → Store.clearActiveTournament()             → localStorage: mexicano_active_tournament (removed)
+  → completion_marker removed                 → localStorage: mexicano_completion_marker (removed)
   → generateMonthlyOverviews(yearMonth)       → GitHub WRITE: YYYY/YYYY-MM/players_overview.json  ← MUST come first
   → generatePlayersJson({ playerNames })      → GitHub WRITE: players.json                         ← runs only after overview succeeds
                                               → only participant entries recomputed;
                                                 non-participants keep existing players.json values
                                               → GitHub WRITE: players_meta.json
   → updateTournamentIndexEntry(...)           → GitHub READ+WRITE: tournaments.json
+  ─── ON FAILURE (no internet) ───
+  → localStorage preserved (tournament + matches + marker intact)
+  → retryCompletedTournamentPush() fires on `online` event
 ```
 
+> **Offline-safe guarantee**: `Store.clearActiveTournament()` is called ONLY after `flushPush()`
+> succeeds. If the push fails (no internet, API error), all local data is preserved. When the
+> browser fires the `online` event, `retryCompletedTournamentPush()` automatically retries the
+> full push chain. The function is idempotent — calling `completeTournament()` on an already-
+> completed tournament simply retries the push without re-processing matches.
+>
 > **Ordering guarantee**: `generateMonthlyOverviews` is chained with `.then()` before
 > `generatePlayersJson`. This is intentional and must not be reversed. The Statistics
 > page reads ELO from `players_overview.json`; the Home page reads from `players.json`.
@@ -524,17 +537,22 @@ startNextRound(tournament)
 ```
 completeTournament(tournament)
   → Store.setMatches(allMatches)              → localStorage: mexicano_matches
-  → Store.clearActiveTournament()             → localStorage: mexicano_active_tournament (removed)
+  → Store.setActiveTournament(tournament)     → localStorage: keeps tournament (isCompleted: true)
+  → completion_marker set                     → localStorage: mexicano_completion_marker
   → writeTournamentDay(date, matches)         → local dev server only (no-op in prod)
   → markMatchDateDirty(date)
-  → deleteFile(data/active_tournament.json)   → GitHub DELETE: data/active_tournament.json
   → flushPush()                               → GitHub WRITE: YYYY/YYYY-MM/YYYY-MM-DD.json
+  ─── ON SUCCESS ───
+  → Store.clearActiveTournament()             → localStorage: mexicano_active_tournament (removed)
+  → completion_marker removed
   → generateMonthlyOverviews(yearMonth)       → GitHub WRITE: YYYY/YYYY-MM/players_overview.json  ← MUST come first
   → generatePlayersJson({ playerNames })      → GitHub WRITE: players.json                         ← runs only after overview succeeds
                                               → only participant entries recomputed;
                                                 non-participants keep existing players.json values
                                               → GitHub WRITE: players_meta.json
   → updateTournamentIndexEntry(...)           → GitHub READ+WRITE: tournaments.json
+  ─── ON FAILURE (no internet) ───
+  → localStorage preserved — retries on `online` event
 ```
 
 > **Ordering guarantee**: `generateMonthlyOverviews` is chained with `.then()` before
