@@ -15,7 +15,6 @@ import {
   listContents,
   writeFile,
   fromBackupMatch,
-  ghLog,
 } from '../services/github.js';
 
 /**
@@ -191,6 +190,5 @@ export async function generateMonthlyOverviews(yearMonth, onProgress) {
   const existing = await readFile(path);
   await writeFile(path, overview, existing?.sha);
 
-  ghLog('GENERATE_MONTHLY_OVERVIEWS', path, `${overview.length} players`);
   return { written: 1, month: yearMonth };
 }

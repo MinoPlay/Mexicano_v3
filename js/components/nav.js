@@ -6,7 +6,7 @@ const NAV_ITEMS = [
   { path: '/statistics', icon: '📊', label: 'Stats' },
   { path: '/elo-charts', icon: '📈', label: 'ELO' },
   { path: '/doodle', icon: '🗓️', label: 'Doodle' },
-  { path: '/git-logs', icon: '🔌', label: 'Logs' },
+  { path: '/logs', icon: '📝', label: 'Logs' },
   { path: '/settings', icon: '⚙️', label: 'Settings' }
 ];
 
@@ -16,7 +16,7 @@ export function renderNav() {
   nav.setAttribute('aria-label', 'Main navigation');
 
   const visibleItems = NAV_ITEMS.filter(item =>
-    item.path !== '/git-logs' || Store.isMino()
+    item.path !== '/logs' || Store.isMino()
   );
 
   nav.innerHTML = visibleItems.map(item => `

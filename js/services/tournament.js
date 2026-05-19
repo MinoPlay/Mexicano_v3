@@ -6,6 +6,7 @@ import { Store } from '../store.js';
 import { State } from '../state.js';
 import { rankPlayers } from './ranking.js';
 import { calculateAllEloRankings, processMatchElo } from './elo.js';
+import { logRoundResult } from './round-log.js';
 
 // ─── Helpers ───
 
@@ -254,6 +255,10 @@ export function startNextRound(tournament) {
   currentRound.completedAt = Date.now();
 
   recalculateAllPlayerStats(tournament);
+
+  // Log completed round results before advancing
+  logRoundResult(tournament, tournament.currentRoundNumber);
+
   const ranked = rankPlayers(tournament.players);
 
   const nextRoundNumber = tournament.currentRoundNumber + 1;
@@ -285,6 +290,9 @@ export function completeTournament(tournament) {
 
   tournament.isCompleted = true;
   tournament.completedAt = Date.now();
+
+  // Log final round results
+  logRoundResult(tournament, tournament.currentRoundNumber);
 
   // Persist all matches as MatchEntities
   const allMatches = Store.getMatches();

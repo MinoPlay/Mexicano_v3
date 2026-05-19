@@ -12,7 +12,6 @@ import {
   listContents,
   readFile,
   writeFile,
-  ghLog,
 } from '../services/github.js';
 
 function normalizePlayerKey(name) {
@@ -159,6 +158,5 @@ export async function generateEloHistory(onProgress, options) {
     writtenIds.push(playerId);
   }
 
-  ghLog('GENERATE_ELO_HISTORY', `${base || '.'}/elo_history`, `${written} player files`);
   return { written, playerIds: writtenIds };
 }

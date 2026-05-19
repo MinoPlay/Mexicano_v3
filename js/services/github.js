@@ -17,53 +17,6 @@ import { Cache } from '../cache.js';
 
 const API_BASE = 'https://api.github.com';
 
-// ─── Logging ─────────────────────────────────────────────────────────────────
-
-const GH_LOG_KEY = 'mexicano_github_log';
-const GH_LOG_MAX = 200;
-
-function getCallerChain() {
-  try {
-    const stack = new Error().stack || '';
-    const lines = stack.split('\n').filter(l => /^\s+at\s/.test(l));
-    // Skip: Error frame, getCallerChain, ghLog — take next 2 meaningful frames
-    const frames = lines.slice(2, 4).map(line => {
-      const m = line.match(/at\s+(?:async\s+)?([^\s(]+)/);
-      if (!m) return null;
-      // Strip module path, keep function name only
-      return m[1].split('.').pop().replace(/^_/, '');
-    }).filter(n => n && n !== 'anonymous' && n !== '<anonymous>');
-    return frames.join(' ← ') || '';
-  } catch { return ''; }
-}
-
-export function ghLog(action, path, detail) {
-  if (!Store.isMino()) return;
-  const caller = getCallerChain();
-  const entry = {
-    ts: new Date().toISOString(),
-    action,
-    path,
-    ...(caller ? { caller } : {}),
-    ...(detail ? { detail } : {}),
-  };
-  console.log(`[GitHub ${action}] ${path}`, caller ? `(via ${caller})` : '', detail || '');
-  try {
-    const log = JSON.parse(localStorage.getItem(GH_LOG_KEY) || '[]');
-    log.unshift(entry);
-    localStorage.setItem(GH_LOG_KEY, JSON.stringify(log.slice(0, GH_LOG_MAX)));
-  } catch { /* storage full or unavailable */ }
-}
-
-export function clearGitHubLog() {
-  try { localStorage.removeItem(GH_LOG_KEY); } catch { /* ignore */ }
-}
-
-/** Return the stored GitHub operation log (most recent first). */
-export function getGitHubLog() {
-  try { return JSON.parse(localStorage.getItem(GH_LOG_KEY) || '[]'); } catch { return []; }
-}
-
 // ─── Path guard ──────────────────────────────────────────────────────────────
 
 /**
@@ -207,12 +160,11 @@ export async function readFile(path) {
   if (!cfg?.owner || !cfg?.repo || !cfg?.pat) return null;
 
   const safePath = guardPath(path);
-  ghLog('READ', safePath);
 
   const url = `${API_BASE}/repos/${encodeURIComponent(cfg.owner)}/${encodeURIComponent(cfg.repo)}/contents/${safePath}`;
   const res = await fetch(url, { headers: authHeaders(cfg.pat) });
 
-  if (res.status === 404) { ghLog('READ_404', safePath); return null; }
+  if (res.status === 404) { return null; }
   if (!res.ok) throw new Error(`GitHub read failed (${res.status}): ${safePath}`);
 
   const json = await res.json();
@@ -230,7 +182,6 @@ export async function listContents(path) {
   if (!cfg?.owner || !cfg?.repo || !cfg?.pat) return [];
 
   const safePath = guardPath(path);
-  ghLog('LIST', safePath);
 
   const url = `${API_BASE}/repos/${encodeURIComponent(cfg.owner)}/${encodeURIComponent(cfg.repo)}/contents/${safePath}`;
   const res = await fetch(url, { headers: authHeaders(cfg.pat) });
@@ -251,7 +202,6 @@ export async function deleteFile(path, sha) {
   if (!cfg?.owner || !cfg?.repo || !cfg?.pat) throw new Error('GitHub not configured');
 
   const safePath = guardPath(path);
-  ghLog('DELETE', safePath);
 
   const url = `${API_BASE}/repos/${encodeURIComponent(cfg.owner)}/${encodeURIComponent(cfg.repo)}/contents/${safePath}`;
   const body = {
@@ -266,10 +216,8 @@ export async function deleteFile(path, sha) {
 
   if (!res.ok && res.status !== 404) {
     const err = await res.json().catch(() => ({}));
-    ghLog('DELETE_FAIL', safePath, err.message);
     throw new Error(`GitHub delete failed (${res.status}): ${err.message || safePath}`);
   }
-  ghLog('DELETE_OK', safePath);
 }
 
 /**
@@ -284,7 +232,6 @@ export async function writeFile(path, data, sha) {
   if (!cfg?.owner || !cfg?.repo || !cfg?.pat) throw new Error('GitHub not configured');
 
   const safePath = guardPath(path);
-  ghLog('WRITE', safePath, sha ? 'update' : 'create');
 
   const url = `${API_BASE}/repos/${encodeURIComponent(cfg.owner)}/${encodeURIComponent(cfg.repo)}/contents/${safePath}`;
 
@@ -305,17 +252,14 @@ export async function writeFile(path, data, sha) {
 
   // Retry once on 409 Conflict — re-read the current SHA and try again
   if (res.status === 409) {
-    ghLog('WRITE_CONFLICT', safePath, 'retrying');
     const fresh = await readFile(path);
     res = await attempt(fresh?.sha);
   }
 
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    ghLog('WRITE_FAIL', safePath, err.message);
     throw new Error(`GitHub write failed (${res.status}): ${err.message || safePath}`);
   }
-  ghLog('WRITE_OK', safePath);
   return res.json();
 }
 
@@ -363,7 +307,6 @@ export async function pushAll(onProgress, { allMatchDates = false } = {}) {
 
   // 1. Push non-matches data — doodle is pushed explicitly via pushDoodleNow, not here
   const entries = Object.entries(data).filter(([k]) => keyToPath(k) && !k.startsWith('doodle_'));
-  ghLog('PUSH_START', '-', `${entries.length} data keys, allMatchDates=${allMatchDates}`);
 
   let total = entries.length;
   let i = 0;
@@ -426,7 +369,6 @@ export async function pushAll(onProgress, { allMatchDates = false } = {}) {
     onProgress?.(date, dateEntries.length, ++i);
   }
 
-  ghLog('PUSH_DONE', '-', `${entries.length} data + ${dateEntries.length} match files`);
 }
 
 // ─── tournaments.json index ───────────────────────────────────────────────────
@@ -453,7 +395,6 @@ export async function fetchTournamentsIndex({ create = false } = {}) {
   const path = tournamentsIndexPath();
   const base = matchesBase();
 
-  ghLog('READ_TOURNAMENTS_INDEX', path);
   const result = await readFile(path);
 
   if (result !== null) {
@@ -463,7 +404,6 @@ export async function fetchTournamentsIndex({ create = false } = {}) {
     // tournament was started but updateTournamentIndexEntry failed at completion.
     const staleEntries = entries.filter(e => e.matchCount === 0 && e.playerCount > 0 && !e.isComplete);
     if (staleEntries.length > 0) {
-      ghLog('TOURNAMENTS_INDEX_HEAL', path, `${staleEntries.length} stale entries`);
       let changed = false;
       for (const stale of staleEntries) {
         const prefix = base ? `${base}/` : '';
@@ -504,7 +444,6 @@ export async function fetchTournamentsIndex({ create = false } = {}) {
       if (changed) {
         try {
           await writeFile(path, entries, result.sha);
-          ghLog('TOURNAMENTS_INDEX_HEALED', path);
         } catch (e) {
           console.warn('[github] failed to write healed tournaments.json:', e);
         }
@@ -514,14 +453,12 @@ export async function fetchTournamentsIndex({ create = false } = {}) {
     Store.setTournamentsIndex(entries);
     const dates = entries.map(e => e.date).sort();
     Cache.set('tournament_dates', dates);
-    ghLog('TOURNAMENTS_INDEX_LOADED', path, `${entries.length} entries`);
     return entries;
   }
 
   if (!create) return null;
 
   // ── Bootstrap: traverse repo, read each day file, build index ─────────────
-  ghLog('TOURNAMENTS_INDEX_MISSING', path, 'traversing repo to create it');
 
   const rootContents = await listContents(base);
   const yearDirs = rootContents.filter(f => f.type === 'dir' && /^\d{4}$/.test(f.name));
@@ -576,7 +513,6 @@ export async function fetchTournamentsIndex({ create = false } = {}) {
 
   try {
     await writeFile(path, entries, null);
-    ghLog('TOURNAMENTS_INDEX_CREATED', path, `${entries.length} entries`);
   } catch (e) {
     console.warn('[github] failed to write tournaments.json:', e);
   }
@@ -600,7 +536,6 @@ export async function updateTournamentIndexEntry(entry) {
   if (!entry?.date) return;
 
   const path = tournamentsIndexPath();
-  ghLog('UPDATE_TOURNAMENT_ENTRY', path, entry.date);
 
   let entries = [];
   let sha = null;
@@ -717,13 +652,11 @@ async function pullActiveTournamentFromDateFile() {
       }
       localStorage.removeItem('mexicano_active_tournament');
       localStorage.removeItem('mexicano_completion_marker');
-      ghLog('CLEAR_STALE_ACTIVE', dateToCheck, 'index definitively complete');
       return;
     } else if (activeTInFile && !activeTInFile.isCompleted) {
       const completionMarker = localStorage.getItem('mexicano_completion_marker');
       if (completionMarker === dateToCheck) {
         // Tournament was just completed locally, push is in-flight — don't restore stale state.
-        ghLog('SKIP_RESTORE_COMPLETED', dateToCheck, 'completion marker set');
       } else {
         foundActiveInDateFile = true;
         localStorage.setItem('mexicano_active_tournament', JSON.stringify(activeTInFile));
@@ -732,7 +665,6 @@ async function pullActiveTournamentFromDateFile() {
           const fixed = entries.map(e => e.date === dateToCheck ? { ...e, isComplete: false } : e);
           Store.setTournamentsIndex(fixed);
           Cache.set('tournament_dates', fixed.map(e => e.date).sort());
-          ghLog('RECONCILE_ACTIVE_TOURNAMENT', dateToCheck, 'fixed stale isComplete:true → false in-memory');
         }
       }
     } else if (isExplicit) {
@@ -765,7 +697,6 @@ async function pullActiveTournamentFromDateFile() {
       if (atResult !== null && !atResult.content?.isCompleted) {
         localStorage.setItem('mexicano_active_tournament', JSON.stringify(atResult.content));
         markMatchDateDirty(atResult.content.tournamentDate);
-        ghLog('MIGRATION_ACTIVE_TOURNAMENT', atResult.content.tournamentDate, 'migrated from old data/active_tournament.json');
       }
     } catch { /* data/active_tournament.json may not exist */ }
   }
@@ -825,12 +756,11 @@ export async function pullAll(onProgress) {
   const cfg = getConfig();
   if (!cfg?.owner || !cfg?.repo || !cfg?.pat) throw new Error('GitHub not configured');
 
-  ghLog('PULL_START', '-');
   _isPulling = true;
 
   // Keys to preserve across pull (config, audit log, user preferences, dev flags)
   const PRESERVE = new Set([
-    GH_LOG_KEY,
+    'mexicano_round_log',
     'mexicano_github_config',
     'mexicano_theme',
     'mexicano_current_user',
@@ -929,7 +859,6 @@ export async function pullAll(onProgress) {
     pullSucceeded = true;
   } finally {
     _isPulling = false;
-    ghLog('PULL_DONE', '-');
     if (!pullSucceeded) {
       // Restore snapshot so data is intact after a network/API failure
       toClear.forEach(k => localStorage.removeItem(k));
@@ -1017,7 +946,6 @@ async function pullCoreData() {
   if (!cfg?.owner || !cfg?.repo || !cfg?.pat) return false;
   if (Cache.has('players_summary')) return false;
 
-  ghLog('PULL_CORE', '-', 'start');
   const base = matchesBase();
 
   // ── 1. players.json ────────────────────────────────────────────────────────
@@ -1057,7 +985,6 @@ async function pullCoreData() {
     await _fetchOverview(base, ym);
   }
 
-  ghLog('PULL_CORE', '-', 'done');
   return true;
 }
 
@@ -1072,7 +999,6 @@ async function pullTournamentsPage() {
   if (!cfg?.owner || !cfg?.repo || !cfg?.pat) return false;
   if (Cache.has('players_summary')) return false;
 
-  ghLog('PULL_TOURNAMENTS_PAGE', '-', 'start');
   const base = matchesBase();
 
   // ── 1. players.json ────────────────────────────────────────────────────────
@@ -1104,7 +1030,6 @@ async function pullTournamentsPage() {
   // ── 3. Resolve active tournament from date file ────────────────────────────
   await pullActiveTournamentFromDateFile();
 
-  ghLog('PULL_TOURNAMENTS_PAGE', '-', 'done');
   return true;
 }
 
@@ -1118,7 +1043,6 @@ async function pullSettingsData() {
   if (!cfg?.owner || !cfg?.repo || !cfg?.pat) return false;
   if (Cache.has('players_summary')) return false;
 
-  ghLog('PULL_SETTINGS', '-', 'start');
   const base = matchesBase();
 
   const playersPath = base ? `${base}/players.json` : 'players.json';
@@ -1143,7 +1067,6 @@ async function pullSettingsData() {
     }
   } catch { /* players.json may not exist yet */ }
 
-  ghLog('PULL_SETTINGS', '-', 'done');
   return true;
 }
 
@@ -1246,7 +1169,6 @@ async function pullHomeData() {
   if (!cfg?.owner || !cfg?.repo || !cfg?.pat) return false;
   if (Cache.has('players_summary')) return false;
 
-  ghLog('PULL_HOME', '-', 'start');
   const base = matchesBase();
 
   // ── 1. players.json ──────────────────────────────────────────────────────────
@@ -1295,7 +1217,6 @@ async function pullHomeData() {
     }
   }
 
-  ghLog('PULL_HOME', '-', 'done');
   return true;
 }
 
@@ -1311,7 +1232,6 @@ async function pullEloChartsData() {
   if (!cfg?.owner || !cfg?.repo || !cfg?.pat) return false;
   if (Cache.has('players_summary')) return false;
 
-  ghLog('PULL_ELO_CHARTS', '-', 'start');
   const base = matchesBase();
 
   // ── 1. players.json ──────────────────────────────────────────────────────────
@@ -1359,7 +1279,6 @@ async function pullEloChartsData() {
     }
   }
 
-  ghLog('PULL_ELO_CHARTS', '-', 'done');
   return true;
 }
 
@@ -1610,19 +1529,16 @@ export function getSyncStatus() {
 async function executePush() {
   if (_pushInProgress) {
     _pushPending = true;
-    ghLog('AUTO_SYNC', '-', 'queued (push already in progress)');
     return new Promise(resolve => { _afterAllPushResolvers.push(resolve); });
   }
   _pushInProgress = true;
   setSyncStatus('syncing');
-  ghLog('AUTO_SYNC', '-', 'starting');
   try {
     await pushAll();
     setSyncStatus('success');
     setTimeout(() => setSyncStatus('idle'), 3000);
   } catch (e) {
     console.error('GitHub auto-sync failed:', e);
-    ghLog('AUTO_SYNC_FAIL', '-', e.message);
     setSyncStatus('error');
   } finally {
     _pushInProgress = false;
@@ -1649,7 +1565,6 @@ export function schedulePush(key) {
   // Doodle is pushed explicitly via pushDoodleNow — skip auto-sync to avoid race conditions
   if (key.startsWith('doodle_')) return;
 
-  ghLog('SCHEDULE_PUSH', '-', `triggered by key: ${key}`);
   clearTimeout(_syncTimer);
   _syncTimer = setTimeout(() => executePush(), 1500);
 }
@@ -1876,7 +1791,6 @@ export async function pushDoodleNow(yearMonth) {
   if (!sha || JSON.stringify(entriesToPush) !== JSON.stringify(remoteContent)) {
     await writeFile(filePath, entriesToPush, sha);
   } else {
-    ghLog('WRITE_SKIP', filePath, 'no change');
   }
 
   const changelogKey = `doodle_changelog_${yearMonth}`;
@@ -1906,10 +1820,8 @@ export async function pushDoodleNow(yearMonth) {
     await writeFile(changelogPath, changelogToPush, changelogSha);
     localStorage.setItem(`mexicano_doodle_changelog_${yearMonth}`, JSON.stringify(changelogToPush));
     if (changelogMissing && changelogToPush.length === 0) {
-      ghLog('WRITE', changelogPath, 'created empty monthly doodle changelog');
     }
   } else {
-    ghLog('WRITE_SKIP', changelogPath, 'no change');
   }
 }
 

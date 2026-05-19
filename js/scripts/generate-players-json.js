@@ -13,7 +13,6 @@ import {
   listContents,
   readFile,
   writeFile,
-  ghLog,
 } from '../services/github.js';
 
 function normalizePlayerKey(name) {
@@ -190,6 +189,5 @@ export async function generatePlayersJson(onProgress, options) {
   onProgress?.('Writing players.json…', 1, 1);
   await writeFile(playersPath, result, existingPlayersResult?.sha);
 
-  ghLog('GENERATE_PLAYERS_JSON', playersPath, `${result.length} players`);
   return { written: result.length };
 }
