@@ -16,9 +16,6 @@ Show round-by-round results during active tournaments. Each entry captures match
   "roundNumber": 2,
   "matches": [
     { "team1": ["Alice", "Bob"], "team2": ["Carol", "Dave"], "score1": 14, "score2": 11 }
-  ],
-  "standings": [
-    { "name": "Alice", "totalPoints": 27, "wins": 2, "gamesPlayed": 2 }
   ]
 }
 ```
@@ -30,7 +27,6 @@ Show round-by-round results during active tournaments. Each entry captures match
 | `tournamentDate` | Tournament date (yyyy-MM-dd) |
 | `roundNumber` | Which round just finished (1, 2, or 3) |
 | `matches` | Array of match results for that round |
-| `standings` | Player standings snapshot (sorted by rank) |
 
 ## When Logged
 - When `startNextRound()` fires (logs the just-completed round)
@@ -39,7 +35,7 @@ Show round-by-round results during active tournaments. Each entry captures match
 ## UI — `/logs` page
 - Bottom nav tab: 📝 Logs
 - Shows entries newest-first
-- Each entry: round card with match scores + standings table
+- Each entry: one header line (`2026-05-19 Round 1`) + one line per match (`Player1 & Player2 13 – 12 Player3 & Player4`)
 - "🗑 Clear" button in header removes all entries from localStorage
 
 ## Access Control

@@ -1,5 +1,4 @@
 import { Store } from '../store.js';
-import { rankPlayers } from './ranking.js';
 
 const LOG_KEY = 'mexicano_round_log';
 const MAX_ENTRIES = 200;
@@ -17,19 +16,11 @@ export function logRoundResult(tournament, roundNumber) {
     score2: m.team2Score,
   }));
 
-  const standings = rankPlayers(tournament.players).map(p => ({
-    name: p.name,
-    totalPoints: p.totalPoints,
-    wins: p.wins,
-    gamesPlayed: p.gamesPlayed,
-  }));
-
   const entry = {
     ts: new Date().toISOString(),
     tournamentDate: tournament.tournamentDate,
     roundNumber,
     matches,
-    standings,
   };
 
   const log = getRoundLog();
