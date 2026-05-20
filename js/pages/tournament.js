@@ -51,12 +51,29 @@ export function renderTournament(container, params) {
       // bypassing the session-level pull guard that runs only once per page load.
       if (Store.getGitHubConfig()?.pat) {
         import('../services/github.js')
-          .then(({ fetchActiveTournamentJson }) => fetchActiveTournamentJson())
-          .then(fresh => {
-            if (fresh && !fresh.isCompleted && fresh.tournamentDate === date) {
-              tournament = fresh;
-              render();
-            }
+          .then(({ fetchActiveTournamentJson, ensureDayMatchesLoaded, readDayMatches }) => {
+            return fetchActiveTournamentJson().then(fresh => {
+              if (fresh && !fresh.isCompleted && fresh.tournamentDate === date) {
+                tournament = fresh;
+                render();
+                return;
+              }
+              // GitHub has no in-progress tournament — stale local state.
+              // Clear active tournament, force-fetch completed matches.
+              if (!fresh && active && !active.isCompleted) {
+                Store.clearActiveTournament();
+                return readDayMatches(date).then(fetched => {
+                  if (fetched.length > 0) {
+                    const cached = JSON.parse(localStorage.getItem('mexicano_matches') || '[]');
+                    const withoutDate = cached.filter(m => m.date !== date);
+                    localStorage.setItem('mexicano_matches', JSON.stringify([...withoutDate, ...fetched]));
+                  }
+                  tournament = loadTournamentByDate(date);
+                  if (tournament?.isCompleted) currentTab = 'leaderboard';
+                  render();
+                });
+              }
+            });
           })
           .catch(() => {});
       }
