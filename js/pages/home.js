@@ -445,7 +445,7 @@ export function renderHome(container, params) {
 
   container.innerHTML = `
     <header class="page-header">
-      <h1>🎾 Mexicano</h1>
+      <h1 id="home-title" style="cursor:pointer;user-select:none;" title="Tap to clear cached data">🎾 Mexicano</h1>
       <div class="flex items-center gap-sm" id="home-header-right"></div>
     </header>
     <div class="page-content" style="padding-left:0;padding-right:0;">
@@ -559,6 +559,19 @@ export function renderHome(container, params) {
     }).catch(() => {
       const nd = container.querySelector('#current-month-no-data');
       if (nd && nd.isConnected) nd.textContent = 'No data for this month';
+    });
+  }
+
+  // Title = force-clear cached tournament data
+  const titleEl = container.querySelector('#home-title');
+  if (titleEl) {
+    titleEl.addEventListener('click', () => {
+      if (!confirm('Clear all cached tournament data and reload?')) return;
+      Store.remove('matches');
+      Store.remove('matches_fully_loaded');
+      Store.clearActiveTournament();
+      Store.remove('completion_marker');
+      location.reload();
     });
   }
 }
