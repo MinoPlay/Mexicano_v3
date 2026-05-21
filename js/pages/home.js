@@ -536,10 +536,16 @@ export function renderHome(container, params) {
   // Render current month table
   if (currentMonthStats.length > 0) {
     renderCurrentMonthTable();
-  } else if (Store.getGitHubConfig()?.pat) {
-    // Lazy-fetch current month overview from GitHub
+  }
+
+  // Always fetch monthly overview to get correct month-over-month ELO change.
+  // The fallback from local matches uses players_summary.previousElo which is
+  // per-tournament, not per-month — so we must replace it once overview arrives.
+  if (Store.getGitHubConfig()?.pat) {
     const noDataEl = container.querySelector('#current-month-no-data');
-    if (noDataEl) noDataEl.textContent = '⏳ Loading…';
+    if (currentMonthStats.length === 0 && noDataEl) {
+      noDataEl.textContent = '⏳ Loading…';
+    }
     import('../services/github.js').then(({ pullMonthlyOverview }) =>
       Promise.all([
         pullMonthlyOverview(currentYearMonth),
@@ -548,8 +554,9 @@ export function renderHome(container, params) {
     ).then(() => {
       const tableEl = container.querySelector('#current-month-table');
       if (!tableEl) return;
-      currentMonthStats = resolveCurrentMonthStats();
-      if (currentMonthStats.length > 0) {
+      const freshStats = resolveCurrentMonthStats();
+      if (freshStats.length > 0) {
+        currentMonthStats = freshStats;
         tableEl.innerHTML = '';
         renderCurrentMonthTable();
       } else {
@@ -558,7 +565,9 @@ export function renderHome(container, params) {
       }
     }).catch(() => {
       const nd = container.querySelector('#current-month-no-data');
-      if (nd && nd.isConnected) nd.textContent = 'No data for this month';
+      if (nd && nd.isConnected && currentMonthStats.length === 0) {
+        nd.textContent = 'No data for this month';
+      }
     });
   }
 
