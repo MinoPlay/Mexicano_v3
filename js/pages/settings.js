@@ -54,14 +54,16 @@ export function renderSettings(container, params) {
 
       <!-- Members -->
       <div class="settings-section">
-        <details class="members-collapsible">
-          <summary class="settings-section-title members-summary">Members</summary>
-          <div id="members-list"></div>
-          <form id="add-member-form" class="flex gap-sm mt-md">
+        <div class="members-header">
+          <details class="members-collapsible">
+            <summary class="settings-section-title members-summary">Members</summary>
+            <div id="members-list"></div>
+          </details>
+          <form id="add-member-form" class="flex gap-sm">
             <input type="text" id="new-member-input" placeholder="New member name" maxlength="50" style="flex:1;" />
             <button type="submit" class="btn btn-primary">Add</button>
           </form>
-        </details>
+        </div>
       </div>
 
       <!-- GitHub Backend -->
@@ -208,7 +210,7 @@ export function renderSettings(container, params) {
   // Only Members has no GitHub gate — controlled directly here.
   // All other Mino-only sections are gated by their own refresh functions
   // (refreshRemoteDataSection, refreshSummariesSection, etc.) which check isMino().
-  const membersSection = container.querySelector('.members-collapsible')?.closest('.settings-section');
+  const membersSection = container.querySelector('.members-header')?.closest('.settings-section');
 
   function refreshMinoVisibility() {
     const isMino = Store.isMino();
