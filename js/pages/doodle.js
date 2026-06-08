@@ -3,7 +3,7 @@ import { Store } from '../store.js';
 import { State } from '../state.js';
 import { showToast } from '../components/toast.js';
 import { calculateAllEloRankings } from '../services/elo.js';
-import { pushDoodleNow, cancelPendingSync, pullDoodleMonth, clearSessionTTL } from '../services/github.js';
+import { pushDoodleNow, cancelPendingSync, pullDoodleMonth, clearSessionTTL, pullMonthlyOverview, ensureDayMatchesLoaded } from '../services/github.js';
 import { sendDoodleAlert } from '../services/whatsapp.js';
 
 const WEEKDAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -243,6 +243,18 @@ export function renderDoodle(container, params = {}) {
   matrixContainer.className = 'mt-sm';
   overallDetails.appendChild(matrixContainer);
   content.appendChild(overallDetails);
+
+  // Player Overview collapsible
+  const playerOverviewDetails = document.createElement('details');
+  playerOverviewDetails.className = 'doodle-overall mt-lg';
+  const playerOverviewSummary = document.createElement('summary');
+  playerOverviewSummary.className = 'doodle-overall-summary';
+  playerOverviewSummary.textContent = 'Player Overview';
+  playerOverviewDetails.appendChild(playerOverviewSummary);
+  const playerOverviewContainer = document.createElement('div');
+  playerOverviewContainer.className = 'mt-sm';
+  playerOverviewDetails.appendChild(playerOverviewContainer);
+  content.appendChild(playerOverviewDetails);
 
   // Fixed top save bar (non-blocking, appears when dirty)
   const saveBar = document.createElement('div');
@@ -544,6 +556,149 @@ export function renderDoodle(container, params = {}) {
     matrixContainer.appendChild(wrapper);
   }
 
+  function renderPlayerOverview() {
+    playerOverviewContainer.innerHTML = '';
+
+    const ym = `${currentYear}-${String(currentMonth).padStart(2, '0')}`;
+    const monthPrefix = ym;
+
+    // Players from players_overview.json for this month
+    const monthlyOverview = Store.getMonthlyOverview(ym);
+
+    // Build matchPadelId map from players_summary
+    const matchPadelIdMap = {};
+    for (const p of Store.getPlayersSummary()) {
+      if (p.name) matchPadelIdMap[p.name] = p.matchPadelId ?? null;
+    }
+
+    // Derive tournament dates + per-date participation from match data
+    const allMatches = Store.getMatches();
+    const datePlayerMap = {};
+    for (const m of allMatches) {
+      if (!m.date || !m.date.startsWith(monthPrefix)) continue;
+      if (!datePlayerMap[m.date]) datePlayerMap[m.date] = new Set();
+      [m.team1Player1Name, m.team1Player2Name, m.team2Player1Name, m.team2Player2Name]
+        .filter(Boolean)
+        .forEach(n => datePlayerMap[m.date].add(n));
+    }
+    const tournamentDates = Object.keys(datePlayerMap).sort();
+
+    // Build player list from monthly overview; fall back to match participants
+    let players;
+    if (monthlyOverview && monthlyOverview.length > 0) {
+      players = monthlyOverview.map(p => p.name).sort((a, b) => a.localeCompare(b));
+    } else {
+      const fromMatches = new Set();
+      tournamentDates.forEach(d => datePlayerMap[d].forEach(n => fromMatches.add(n)));
+      players = [...fromMatches].sort((a, b) => a.localeCompare(b));
+    }
+
+    if (!players.length || !tournamentDates.length) {
+      playerOverviewContainer.innerHTML = '<p class="text-secondary text-center">No tournament data this month</p>';
+      return;
+    }
+
+    const wrapper = document.createElement('div');
+    wrapper.className = 'doodle-matrix';
+
+    const table = document.createElement('table');
+    table.className = 'doodle-table doodle-overview-table';
+
+    // ── Header ──
+    const thead = document.createElement('thead');
+    const hRow = document.createElement('tr');
+
+    const cornerTh = document.createElement('th');
+    cornerTh.className = 'player-col';
+    cornerTh.textContent = 'Player';
+    hRow.appendChild(cornerTh);
+
+    // Dates toggle button in a single th
+    const toggleTh = document.createElement('th');
+    toggleTh.style.cssText = 'padding:2px 4px;white-space:nowrap;border:none;background:var(--bg-secondary);';
+    const toggleBtn = document.createElement('button');
+    toggleBtn.className = 'btn btn-ghost btn-sm doodle-dates-toggle';
+    toggleBtn.textContent = '◀ Dates';
+    toggleBtn.title = 'Toggle date columns';
+    let datesVisible = true;
+    toggleBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      datesVisible = !datesVisible;
+      table.classList.toggle('dates-hidden', !datesVisible);
+      toggleBtn.textContent = datesVisible ? '◀ Dates' : '▶ Dates';
+    });
+    toggleTh.appendChild(toggleBtn);
+    hRow.appendChild(toggleTh);
+
+    tournamentDates.forEach(dateStr => {
+      const { day, weekday } = formatDay(dateStr);
+      const th = document.createElement('th');
+      th.setAttribute('data-date-col', '');
+      th.innerHTML = `${day}<br><span style="font-weight:normal;font-size:0.6rem">${weekday}</span>`;
+      hRow.appendChild(th);
+    });
+
+    const idTh = document.createElement('th');
+    idTh.textContent = 'ID';
+    idTh.style.cssText = 'min-width:50px;';
+    hRow.appendChild(idTh);
+
+    thead.appendChild(hRow);
+    table.appendChild(thead);
+
+    // ── Body ──
+    const tbody = document.createElement('tbody');
+    players.forEach(player => {
+      const tr = document.createElement('tr');
+
+      const mpId = matchPadelIdMap[player] ?? null;
+      const isFree = mpId === 0;
+
+      const nameTd = document.createElement('td');
+      nameTd.className = 'player-col';
+      nameTd.innerHTML = `${player}${isFree ? ' <span class="doodle-cost-badge" title="No MatchPadel account — 90kr/session">💰</span>' : ''}`;
+      if (player === currentUser) {
+        nameTd.style.fontWeight = 'var(--font-weight-bold)';
+        nameTd.style.color = 'var(--color-primary)';
+      }
+      tr.appendChild(nameTd);
+
+      // Empty spacer under toggle-th
+      const spaceTd = document.createElement('td');
+      spaceTd.style.cssText = 'padding:0;border:none;background:transparent;';
+      tr.appendChild(spaceTd);
+
+      let playedCount = 0;
+      tournamentDates.forEach(dateStr => {
+        const td = document.createElement('td');
+        td.setAttribute('data-date-col', '');
+        const played = datePlayerMap[dateStr]?.has(player);
+        if (played) playedCount++;
+        const cell = document.createElement('div');
+        cell.className = 'doodle-cell readonly' + (played ? ' selected' : '');
+        cell.textContent = played ? '✓' : '';
+        td.appendChild(cell);
+        tr.appendChild(td);
+      });
+
+      const idTd = document.createElement('td');
+      if (isFree) {
+        idTd.innerHTML = `<span style="color:var(--color-warning,#f59e0b);font-weight:var(--font-weight-bold);">${playedCount * 90}kr</span>`;
+      } else {
+        idTd.textContent = mpId !== null ? mpId : '—';
+        idTd.style.color = 'var(--text-secondary)';
+      }
+      idTd.style.cssText = (idTd.style.cssText || '') + 'font-size:var(--font-size-xs);text-align:right;';
+      tr.appendChild(idTd);
+
+      tbody.appendChild(tr);
+    });
+    table.appendChild(tbody);
+
+    wrapper.appendChild(table);
+    playerOverviewContainer.appendChild(wrapper);
+  }
+
   function renderChangelog() {
     changelogSection.innerHTML = '';
     const changelog = getChangelog(currentYear, currentMonth);
@@ -656,6 +811,7 @@ export function renderDoodle(container, params = {}) {
         editSession = null;
         renderUserCalendar();
         renderMatrix();
+        renderPlayerOverview();
         renderChangelog();
       } else {
         saveBarSaveBtn.disabled = false;
@@ -829,6 +985,7 @@ export function renderDoodle(container, params = {}) {
     renderNav();
     renderUserCalendar();
     renderMatrix();
+    renderPlayerOverview();
     renderChangelog();
     updateFooter();
     const ym = `${currentYear}-${String(currentMonth).padStart(2, '0')}`;
@@ -841,6 +998,17 @@ export function renderDoodle(container, params = {}) {
           State.emit('doodle-changed', { year: currentYear, month: currentMonth });
         }
       }).catch(() => {});
+
+      // Pull players_overview.json + day match files for the viewed month
+      pullMonthlyOverview(ym).then(({ updated: overviewUpdated }) => {
+        const tournamentDates = Store.getTournamentDates().filter(d => d.startsWith(ym));
+        const cached = Store.getMatches();
+        const missingDates = tournamentDates.filter(d => !cached.some(m => m.date === d));
+        const fetches = missingDates.map(d => ensureDayMatchesLoaded(d).catch(() => {}));
+        if (overviewUpdated || missingDates.length > 0) {
+          Promise.allSettled(fetches).then(() => renderPlayerOverview());
+        }
+      }).catch(() => {});
     }
   }
 
@@ -849,6 +1017,7 @@ export function renderDoodle(container, params = {}) {
       if (!editSession) {
         renderUserCalendar();
         renderMatrix();
+        renderPlayerOverview();
         renderChangelog();
       }
     }

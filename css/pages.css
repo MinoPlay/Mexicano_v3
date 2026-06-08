@@ -570,6 +570,29 @@
   transform: rotate(90deg);
 }
 
+/* ─── Doodle Player Overview Table ─── */
+.doodle-dates-toggle {
+  font-size: var(--font-size-xs);
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+}
+
+.doodle-overview-table.dates-hidden [data-date-col] {
+  display: none;
+}
+
+.doodle-cost-badge {
+  font-size: 0.75rem;
+  cursor: help;
+}
+
+.doodle-cost-row td {
+  font-weight: var(--font-weight-bold);
+  background: var(--bg-secondary);
+  color: var(--color-warning, #f59e0b);
+  font-size: var(--font-size-xs);
+}
+
 
 /* ─── Attendance Calendar ─── */
 .attendance-calendar {

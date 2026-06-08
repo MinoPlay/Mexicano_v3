@@ -798,6 +798,7 @@ export async function pullAll(onProgress) {
           points: p.TotalPoints ?? null,
           average: p.Average ?? null,
           tournaments: p.Tournaments ?? null,
+          matchPadelId: p.MatchPadelId ?? null,
         }));
         Store.setPlayersSummaryCache(camelPlayers);
         // Update members list from the authoritative players.json
@@ -963,6 +964,7 @@ async function pullCoreData() {
         points: p.TotalPoints ?? null,
         average: p.Average ?? null,
         tournaments: p.Tournaments ?? null,
+        matchPadelId: p.MatchPadelId ?? null,
       }));
       Store.setPlayersSummaryCache(camelPlayers);
       const memberNames = camelPlayers.map(p => p.name).sort();
@@ -1016,6 +1018,7 @@ async function pullTournamentsPage() {
         points: p.TotalPoints ?? null,
         average: p.Average ?? null,
         tournaments: p.Tournaments ?? null,
+        matchPadelId: p.MatchPadelId ?? null,
       }));
       Store.setPlayersSummaryCache(camelPlayers);
       const memberNames = camelPlayers.map(p => p.name).sort();
@@ -1059,6 +1062,7 @@ async function pullSettingsData() {
         points: p.TotalPoints ?? null,
         average: p.Average ?? null,
         tournaments: p.Tournaments ?? null,
+        matchPadelId: p.MatchPadelId ?? null,
       }));
       Store.setPlayersSummaryCache(camelPlayers);
       const memberNames = camelPlayers.map(p => p.name).sort();
@@ -1186,6 +1190,7 @@ async function pullHomeData() {
         points: p.TotalPoints ?? null,
         average: p.Average ?? null,
         tournaments: p.Tournaments ?? null,
+        matchPadelId: p.MatchPadelId ?? null,
       }));
       Store.setPlayersSummaryCache(camelPlayers);
       const memberNames = camelPlayers.map(p => p.name).sort();
@@ -1249,6 +1254,7 @@ async function pullEloChartsData() {
         points: p.TotalPoints ?? null,
         average: p.Average ?? null,
         tournaments: p.Tournaments ?? null,
+        matchPadelId: p.MatchPadelId ?? null,
       }));
       Store.setPlayersSummaryCache(camelPlayers);
       const memberNames = camelPlayers.map(p => p.name).sort();
