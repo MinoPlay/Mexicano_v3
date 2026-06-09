@@ -95,14 +95,69 @@ export function renderCreateTournament(container, params = {}) {
         <span class="player-slot-number">${i + 1}</span>
         <input type="text" placeholder="Player ${i + 1}" list="member-suggestions"
                maxlength="50" autocomplete="off">
+        <button class="player-slot-shift-btn shift-up" title="Shift up" data-index="${i}">▲</button>
+        <button class="player-slot-shift-btn shift-down" title="Shift down" data-index="${i}">▼</button>
       `;
       const input = slot.querySelector('input');
       input.addEventListener('focus', updateSuggestions);
-      input.addEventListener('input', updateSuggestions);
+      input.addEventListener('input', () => { updateSuggestions(); refreshShiftButtons(); });
       playerInputs.push(input);
       slotsContainer.appendChild(slot);
     }
+
+    slotsContainer.addEventListener('click', (e) => {
+      const btn = e.target.closest('.player-slot-shift-btn');
+      if (!btn || btn.disabled) return;
+      const idx = parseInt(btn.dataset.index, 10);
+      if (btn.classList.contains('shift-down')) shiftDown(idx);
+      else if (btn.classList.contains('shift-up')) shiftUp(idx);
+    });
+
+    refreshShiftButtons();
     startBtn.disabled = false;
+  }
+
+  function shiftDown(idx) {
+    const total = playerInputs.length;
+    // Find end of consecutive filled block starting at idx
+    let end = idx;
+    while (end < total - 1 && playerInputs[end].value.trim() !== '') end++;
+    // end is either last filled or hit boundary; check slot after end is free
+    if (end >= total - 1 && playerInputs[end].value.trim() !== '') return; // no room
+    // Shift: move from end down to idx, one slot forward
+    for (let i = end; i > idx; i--) {
+      playerInputs[i].value = playerInputs[i - 1].value;
+    }
+    playerInputs[idx].value = '';
+    refreshShiftButtons();
+    updateSuggestions();
+  }
+
+  function shiftUp(idx) {
+    if (idx === 0) return;
+    if (playerInputs[idx - 1].value.trim() !== '') return; // slot above occupied
+    playerInputs[idx - 1].value = playerInputs[idx].value;
+    playerInputs[idx].value = '';
+    refreshShiftButtons();
+    updateSuggestions();
+  }
+
+  function refreshShiftButtons() {
+    const total = playerInputs.length;
+    slotsContainer.querySelectorAll('.player-slot-shift-btn').forEach(btn => {
+      const idx = parseInt(btn.dataset.index, 10);
+      const val = playerInputs[idx].value.trim();
+      if (btn.classList.contains('shift-down')) {
+        // Needs: slot has value, and there's an empty slot somewhere after the filled block
+        if (!val) { btn.disabled = true; return; }
+        let end = idx;
+        while (end < total - 1 && playerInputs[end].value.trim() !== '') end++;
+        btn.disabled = end >= total - 1 && playerInputs[end].value.trim() !== '';
+      } else {
+        // shift-up: needs value and slot above is empty
+        btn.disabled = !val || idx === 0 || playerInputs[idx - 1].value.trim() !== '';
+      }
+    });
   }
 
   // Prepopulate from params (e.g. coming from Doodle)
@@ -125,6 +180,7 @@ export function renderCreateTournament(container, params = {}) {
       namesToFill.forEach((name, i) => {
         if (playerInputs[i]) playerInputs[i].value = name;
       });
+      refreshShiftButtons();
     }
   }
 

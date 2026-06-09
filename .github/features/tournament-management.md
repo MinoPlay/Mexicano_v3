@@ -58,6 +58,16 @@ Match: Team1 = (player1 + player2). Team2 = (player3 + player4).
 
 Admins: **Mino**, **Kikke** — both have full tournament management rights.
 
+## Player Slot Shift (Create Phase)
+
+During tournament creation, each player slot has ▲ and ▼ buttons to reorder players:
+
+- **Shift Down (▼)**: Moves the selected player and all consecutive filled players below it one slot down. Requires an empty slot to exist after the filled block. The vacated slot becomes empty.
+- **Shift Up (▲)**: Moves the selected player one slot up. Requires the slot immediately above to be empty. The vacated slot becomes empty.
+- Buttons auto-disable when the move is not possible (no room, slot empty, or at boundary).
+
+Example: 8 players in a 12-slot tournament. Select player 4, click ▼ — players 4–8 shift to slots 5–9, slot 4 becomes empty for a new name.
+
 ## Edge Cases & Constraints
 
 ### Edge Cases
