@@ -560,7 +560,6 @@ export function renderDoodle(container, params = {}) {
     playerOverviewContainer.innerHTML = '';
 
     const ym = `${currentYear}-${String(currentMonth).padStart(2, '0')}`;
-    const monthPrefix = ym;
 
     // Players from players_overview.json for this month
     const monthlyOverview = Store.getMonthlyOverview(ym);
@@ -571,11 +570,11 @@ export function renderDoodle(container, params = {}) {
       if (p.name) matchPadelIdMap[p.name] = p.matchPadelId ?? null;
     }
 
-    // Derive tournament dates + per-date participation from match data
+    // Derive per-player play count from match data
     const allMatches = Store.getMatches();
     const datePlayerMap = {};
     for (const m of allMatches) {
-      if (!m.date || !m.date.startsWith(monthPrefix)) continue;
+      if (!m.date || !m.date.startsWith(ym)) continue;
       if (!datePlayerMap[m.date]) datePlayerMap[m.date] = new Set();
       [m.team1Player1Name, m.team1Player2Name, m.team2Player1Name, m.team2Player2Name]
         .filter(Boolean)
@@ -613,30 +612,10 @@ export function renderDoodle(container, params = {}) {
     cornerTh.textContent = 'Player';
     hRow.appendChild(cornerTh);
 
-    // Dates toggle button in a single th
-    const toggleTh = document.createElement('th');
-    toggleTh.style.cssText = 'padding:2px 4px;white-space:nowrap;border:none;background:var(--bg-secondary);';
-    const toggleBtn = document.createElement('button');
-    toggleBtn.className = 'btn btn-ghost btn-sm doodle-dates-toggle';
-    toggleBtn.textContent = '◀ Dates';
-    toggleBtn.title = 'Toggle date columns';
-    let datesVisible = true;
-    toggleBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      datesVisible = !datesVisible;
-      table.classList.toggle('dates-hidden', !datesVisible);
-      toggleBtn.textContent = datesVisible ? '◀ Dates' : '▶ Dates';
-    });
-    toggleTh.appendChild(toggleBtn);
-    hRow.appendChild(toggleTh);
-
-    tournamentDates.forEach(dateStr => {
-      const { day, weekday } = formatDay(dateStr);
-      const th = document.createElement('th');
-      th.setAttribute('data-date-col', '');
-      th.innerHTML = `${day}<br><span style="font-weight:normal;font-size:0.6rem">${weekday}</span>`;
-      hRow.appendChild(th);
-    });
+    const playedTh = document.createElement('th');
+    playedTh.textContent = 'Played';
+    playedTh.style.cssText = 'min-width:54px;';
+    hRow.appendChild(playedTh);
 
     const idTh = document.createElement('th');
     idTh.textContent = 'ID';
@@ -663,23 +642,12 @@ export function renderDoodle(container, params = {}) {
       }
       tr.appendChild(nameTd);
 
-      // Empty spacer under toggle-th
-      const spaceTd = document.createElement('td');
-      spaceTd.style.cssText = 'padding:0;border:none;background:transparent;';
-      tr.appendChild(spaceTd);
+      const playedCount = tournamentDates.filter(d => datePlayerMap[d]?.has(player)).length;
 
-      let playedCount = 0;
-      tournamentDates.forEach(dateStr => {
-        const td = document.createElement('td');
-        td.setAttribute('data-date-col', '');
-        const played = datePlayerMap[dateStr]?.has(player);
-        if (played) playedCount++;
-        const cell = document.createElement('div');
-        cell.className = 'doodle-cell readonly' + (played ? ' selected' : '');
-        cell.textContent = played ? '✓' : '';
-        td.appendChild(cell);
-        tr.appendChild(td);
-      });
+      const playedTd = document.createElement('td');
+      playedTd.textContent = playedCount;
+      playedTd.style.cssText = 'text-align:center;font-weight:var(--font-weight-semibold);';
+      tr.appendChild(playedTd);
 
       const idTd = document.createElement('td');
       if (isFree) {
