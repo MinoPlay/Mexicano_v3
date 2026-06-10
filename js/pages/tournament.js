@@ -14,6 +14,7 @@ import { rankPlayers } from '../services/ranking.js';
 import { State } from '../state.js';
 import { Store } from '../store.js';
 import { showToast } from '../components/toast.js';
+import { renderDayStatsInto, showPlayerProfile } from './statistics.js';
 
 function formatDate(dateStr) {
   try {
@@ -197,7 +198,7 @@ export function renderTournament(container, params) {
     if (currentTab === 'matches') {
       renderMatchesTab(content, roundIdx, totalRounds, isLatestRound);
     } else {
-      renderLeaderboardTab(content);
+      renderLeaderboardTab(content).catch(() => {});
     }
   }
 
@@ -351,7 +352,16 @@ export function renderTournament(container, params) {
   }
 
   // ─── Leaderboard Tab ───
-  function renderLeaderboardTab(content) {
+  async function renderLeaderboardTab(content) {
+    const allMatches = Store.getMatches();
+    const dayMatches = allMatches.filter(m => m.date === date);
+
+    if (dayMatches.length > 0) {
+      await renderDayStatsInto(content, dayMatches, date, false, name => showPlayerProfile(name));
+      return;
+    }
+
+    // No match history in store — fall back to tournament.players[] (active/in-progress)
     const players = tournament.players || [];
     const ranked = rankPlayers(players);
 

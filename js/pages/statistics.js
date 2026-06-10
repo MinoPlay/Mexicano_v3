@@ -151,7 +151,7 @@ function overviewToStats(overview, prevOverview = []) {
 
 // ─── Sortable Table Renderer ───
 
-function renderSortableTable(container, stats, onPlayerClick, columns = STAT_COLUMNS, defaultSort = 'average') {
+export function renderSortableTable(container, stats, onPlayerClick, columns = STAT_COLUMNS, defaultSort = 'average') {
   let sortCol = defaultSort;
   let sortDir = defaultSort === 'name' ? 'asc' : 'desc';
   let hasUserSelectedSort = false;
@@ -308,7 +308,7 @@ function renderSortableTable(container, stats, onPlayerClick, columns = STAT_COL
 
 // ─── Player Profile Dialog ───
 
-function showPlayerProfile(playerName) {
+export function showPlayerProfile(playerName) {
   const overlay = document.createElement('div');
   overlay.className = 'dialog-overlay active';
 
@@ -477,6 +477,117 @@ function showPlayerProfile(playerName) {
   });
 }
 
+// ─── Shared ELO helpers (used by both statistics page and tournament leaderboard) ───
+
+export function attachEloFromSummary(stats, mode) {
+  const summary = Store.getPlayersSummary();
+  if (summary.length === 0) return;
+  const summaryMap = {};
+  for (const p of summary) summaryMap[p.name] = p;
+  for (const stat of stats) {
+    const p = summaryMap[stat.name];
+    if (!p) continue;
+    stat.elo = p.elo;
+    if (mode === 'alltime') {
+      stat.eloChange = Math.round((p.elo - 1000) * 100) / 100;
+    } else {
+      stat.eloChange = Math.round(((p.elo ?? 1000) - (p.previousElo ?? 1000)) * 100) / 100;
+    }
+  }
+}
+
+export function attachEloFromSnapshots(stats, eloMap) {
+  for (const stat of stats) {
+    const data = eloMap[stat.name];
+    if (data) {
+      stat.elo = data.elo;
+      stat.eloChange = data.eloChange;
+    } else {
+      stat.elo = null;
+      stat.eloChange = null;
+    }
+  }
+}
+
+export async function attachEloFromPlayerHistoryFiles(stats, targetDate) {
+  const summary = Store.getPlayersSummary();
+  if (!summary.length) return;
+
+  const playerIdMap = {};
+  for (const p of summary) {
+    if (p.id && p.name) playerIdMap[p.name] = p.id;
+  }
+
+  const playerIds = stats.map(s => playerIdMap[s.name]).filter(Boolean);
+  if (!playerIds.length) return;
+
+  try {
+    const { pullEloHistoryForPlayerIds, getCachedEloHistoryForPlayerIds } = await import('../services/github.js');
+    await pullEloHistoryForPlayerIds(playerIds);
+    const files = getCachedEloHistoryForPlayerIds(playerIds);
+
+    const eloAtDate = {};
+    for (const file of files) {
+      if (!file.playerName || !Array.isArray(file.points)) continue;
+      const point = file.points.find(p => p.date === targetDate);
+      if (point) {
+        eloAtDate[file.playerName] = { elo: point.elo, eloChange: point.delta ?? null };
+      }
+    }
+
+    for (const stat of stats) {
+      const data = eloAtDate[stat.name];
+      if (data) {
+        stat.elo = data.elo;
+        stat.eloChange = data.eloChange;
+      }
+    }
+  } catch { /* no-op: fallback handles it */ }
+}
+
+export function attachEloFromEmbeddedMatchData(stats, matches, targetDate) {
+  const { players: embeddedPlayers } = getEloFromEmbeddedMatches(matches, targetDate);
+  for (const stat of stats) {
+    if (stat.elo != null) continue;
+    const rounds = embeddedPlayers[stat.name];
+    if (rounds && rounds.length > 0) {
+      stat.elo = rounds[rounds.length - 1].elo;
+    }
+  }
+}
+
+export async function renderDayStatsInto(container, matches, targetDate, isLatest, onPlayerClick = null) {
+  const stats = calculatePlayerStatistics(matches);
+  container.innerHTML = '';
+  if (!stats.length) {
+    container.innerHTML = '<p class="text-secondary text-center mt-lg">No data for this filter</p>';
+    return;
+  }
+
+  if (isLatest) {
+    attachEloFromSummary(stats, 'latest');
+  }
+
+  const needsElo = stats.some(s => s.elo == null);
+  if (needsElo) {
+    if (Store.isMatchesFullyLoaded()) {
+      const freshMatches = Store.getMatches();
+      if (freshMatches.length > 0) {
+        const { snapshots } = getEloSnapshots(freshMatches);
+        const eloMap = getEloForDate(snapshots, targetDate);
+        attachEloFromSnapshots(stats, eloMap);
+      }
+    } else {
+      await attachEloFromPlayerHistoryFiles(stats, targetDate);
+      if (stats.some(s => s.elo == null)) {
+        attachEloFromEmbeddedMatchData(stats, matches, targetDate);
+      }
+    }
+  }
+
+  renderSortableTable(container, stats, onPlayerClick);
+}
+
 // ─── Main Render ───
 
 export function renderStatistics(container, params = {}) {
@@ -598,36 +709,6 @@ export function renderStatistics(container, params = {}) {
     }
   }
 
-  function attachEloFromSummary(stats, mode) {
-    const summary = Store.getPlayersSummary();
-    if (summary.length === 0) return;
-    const summaryMap = {};
-    for (const p of summary) summaryMap[p.name] = p;
-    for (const stat of stats) {
-      const p = summaryMap[stat.name];
-      if (!p) continue;
-      stat.elo = p.elo;
-      if (mode === 'alltime') {
-        stat.eloChange = Math.round((p.elo - 1000) * 100) / 100;
-      } else {
-        stat.eloChange = Math.round(((p.elo ?? 1000) - (p.previousElo ?? 1000)) * 100) / 100;
-      }
-    }
-  }
-
-  function attachEloFromSnapshots(stats, eloMap) {
-    for (const stat of stats) {
-      const data = eloMap[stat.name];
-      if (data) {
-        stat.elo = data.elo;
-        stat.eloChange = data.eloChange;
-      } else {
-        stat.elo = null;
-        stat.eloChange = null;
-      }
-    }
-  }
-
   async function renderTable() {
     // "All Time" — use players.json (players_summary); fall back to local match calculation only
     if (activeFilter === 'all') {
@@ -732,7 +813,7 @@ export function renderStatistics(container, params = {}) {
     // Check locally cached matches first
     let dayMatches = allMatches.filter(m => m.date === targetDate);
     if (dayMatches.length > 0) {
-      await renderDayStats(dayMatches, targetDate, isLatest);
+      await renderDayStatsInto(tableContainer, dayMatches, targetDate, isLatest, name => showPlayerProfile(name));
       return;
     }
 
@@ -743,7 +824,7 @@ export function renderStatistics(container, params = {}) {
         ensureDayMatchesLoaded(targetDate)
       ).then(async matches => {
         if (matches.length > 0) {
-          await renderDayStats(matches, targetDate, isLatest);
+          await renderDayStatsInto(tableContainer, matches, targetDate, isLatest, name => showPlayerProfile(name));
         } else {
           tableContainer.innerHTML = '<p class="text-secondary text-center mt-lg">No data for this date</p>';
         }
@@ -753,92 +834,6 @@ export function renderStatistics(container, params = {}) {
     } else {
       tableContainer.innerHTML = '<p class="text-secondary text-center mt-lg">No data for this filter</p>';
     }
-  }
-
-  // ─── Per-player ELO history helper ───
-
-  async function attachEloFromPlayerHistoryFiles(stats, targetDate) {
-    const summary = Store.getPlayersSummary();
-    if (!summary.length) return;
-
-    const playerIdMap = {};
-    for (const p of summary) {
-      if (p.id && p.name) playerIdMap[p.name] = p.id;
-    }
-
-    const playerIds = stats.map(s => playerIdMap[s.name]).filter(Boolean);
-    if (!playerIds.length) return;
-
-    try {
-      const { pullEloHistoryForPlayerIds, getCachedEloHistoryForPlayerIds } = await import('../services/github.js');
-      await pullEloHistoryForPlayerIds(playerIds);
-      const files = getCachedEloHistoryForPlayerIds(playerIds);
-
-      const eloAtDate = {};
-      for (const file of files) {
-        if (!file.playerName || !Array.isArray(file.points)) continue;
-        const point = file.points.find(p => p.date === targetDate);
-        if (point) {
-          eloAtDate[file.playerName] = { elo: point.elo, eloChange: point.delta ?? null };
-        }
-      }
-
-      for (const stat of stats) {
-        const data = eloAtDate[stat.name];
-        if (data) {
-          stat.elo = data.elo;
-          stat.eloChange = data.eloChange;
-        }
-      }
-    } catch { /* no-op: fallback handles it */ }
-  }
-
-  function attachEloFromEmbeddedMatchData(stats, matches, targetDate) {
-    const { players: embeddedPlayers } = getEloFromEmbeddedMatches(matches, targetDate);
-    for (const stat of stats) {
-      if (stat.elo != null) continue;
-      const rounds = embeddedPlayers[stat.name];
-      if (rounds && rounds.length > 0) {
-        stat.elo = rounds[rounds.length - 1].elo;
-      }
-    }
-  }
-
-  async function renderDayStats(matches, targetDate, isLatest) {
-    const stats = calculatePlayerStatistics(matches);
-    tableContainer.innerHTML = '';
-    if (!stats.length) {
-      tableContainer.innerHTML = '<p class="text-secondary text-center mt-lg">No data for this filter</p>';
-      return;
-    }
-
-    if (isLatest) {
-      // Use stored ELO/previousElo from players_summary
-      attachEloFromSummary(stats, 'latest');
-    }
-
-    // For non-latest dates (or if summary didn't have data), compute from matches
-    const needsElo = stats.some(s => s.elo == null);
-    if (needsElo) {
-      if (Store.isMatchesFullyLoaded()) {
-        // Full history in store — on-the-fly computation is accurate
-        const freshMatches = Store.getMatches();
-        if (freshMatches.length > 0) {
-          const { snapshots } = getEloSnapshots(freshMatches);
-          const eloMap = getEloForDate(snapshots, targetDate);
-          attachEloFromSnapshots(stats, eloMap);
-        }
-      } else {
-        // Partial history — use canonical per-player history files
-        await attachEloFromPlayerHistoryFiles(stats, targetDate);
-        // Fallback for any remaining null elo: embedded match ELOs
-        if (stats.some(s => s.elo == null)) {
-          attachEloFromEmbeddedMatchData(stats, matches, targetDate);
-        }
-      }
-    }
-
-    renderSortableTable(tableContainer, stats, name => showPlayerProfile(name));
   }
 
   renderFilterBar();

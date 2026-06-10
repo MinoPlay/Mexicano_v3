@@ -52,7 +52,17 @@ tournament: {
 
 Match: Team1 = (player1 + player2). Team2 = (player3 + player4).
 
-## Admin Access
+## Leaderboard Tab
+
+The **Leaderboard** tab on a completed (or in-progress) tournament shows the same rich statistics table as the Statistics page per-date view:
+
+- Columns: `#, NAME, W/T, PTS, AVG, WIN%, ELO, ELO Δ`
+- Sortable by any column
+- Clicking a player name opens the player profile dialog
+- ELO data loaded from cached match history or per-player history files
+- Falls back to a basic `Pts / W / L / PPG / Win%` table if no match data is available in the store (e.g. active tournament before data is loaded)
+
+
 
 `Store.isMino()` gates tournament create/modify/run actions.
 
