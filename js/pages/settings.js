@@ -1,7 +1,7 @@
 import { Store } from '../store.js';
 import { getMembers, addMember, removeMember } from '../services/members.js';
 import { showToast } from '../components/toast.js';
-import { testConnection, onSyncStatus, getSyncStatus, readFile, pushDoodleNow } from '../services/github.js';
+import { testConnection, onSyncStatus, getSyncStatus, readFile, pushDoodleNow, addPlayerToPlayersJson } from '../services/github.js';
 import { writeDoodle } from '../services/local.js';
 import { State } from '../state.js';
 import { generatePlayersJson } from '../scripts/generate-players-json.js';
@@ -243,8 +243,9 @@ export function renderSettings(container, params) {
   // Add member form
   const addForm = container.querySelector('#add-member-form');
   const nameInput = container.querySelector('#new-member-input');
+  const addBtn = addForm.querySelector('button[type="submit"]');
 
-  addForm.addEventListener('submit', (e) => {
+  addForm.addEventListener('submit', async (e) => {
     e.preventDefault();
     const name = nameInput.value.trim();
     if (!name) return;
@@ -257,11 +258,22 @@ export function renderSettings(container, params) {
       showToast('Member already exists');
       return;
     }
-    addMember(name);
-    nameInput.value = '';
-    renderMembersList(membersListEl);
-    refreshUserSelect();
-    showToast(`${name} added`);
+
+    addBtn.disabled = true;
+    addBtn.textContent = 'Adding…';
+    try {
+      await addPlayerToPlayersJson(name);
+      addMember(name);
+      nameInput.value = '';
+      renderMembersList(membersListEl);
+      refreshUserSelect();
+      showToast(`${name} added`);
+    } catch (err) {
+      showToast(`Error: ${err.message}`);
+    } finally {
+      addBtn.disabled = false;
+      addBtn.textContent = 'Add';
+    }
   });
 
   function refreshUserSelect() {

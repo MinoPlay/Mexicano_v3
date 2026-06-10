@@ -1037,6 +1037,67 @@ async function pullTournamentsPage() {
 }
 
 /**
+ * Append a brand-new player entry to players.json on GitHub.
+ * Throws if GitHub is not configured, players.json is missing, or the name
+ * already exists (case-insensitive).
+ * @param {string} name - The player's display name (already trimmed/validated)
+ */
+export async function addPlayerToPlayersJson(name) {
+  const cfg = getConfig();
+  if (!cfg?.owner || !cfg?.repo || !cfg?.pat) {
+    throw new Error('GitHub is not configured. Configure it in Settings before adding members.');
+  }
+
+  const base = matchesBase();
+  const playersPath = base ? `${base}/players.json` : 'players.json';
+
+  const result = await readFile(playersPath);
+  if (!result || !Array.isArray(result.content)) {
+    throw new Error('players.json not found in the GitHub repository.');
+  }
+
+  const players = result.content;
+  const lowerName = name.toLowerCase();
+  if (players.some(p => (p.Name ?? '').toLowerCase() === lowerName)) {
+    throw new Error(`Player "${name}" already exists in players.json.`);
+  }
+
+  const newPlayer = {
+    Name: name,
+    ELO: 1000,
+    PreviousELO: 1000,
+    Wins: 0,
+    Losses: 0,
+    TotalPoints: 0,
+    Average: 0,
+    Tournaments: 0,
+    Id: crypto.randomUUID(),
+    MatchPadelId: 0,
+  };
+
+  players.push(newPlayer);
+  await writeFile(playersPath, players, result.sha);
+
+  // Refresh local cache from the updated array
+  const camelPlayers = players.map(p => ({
+    id: p.Id ?? null,
+    name: p.Name,
+    elo: p.ELO,
+    previousElo: p.PreviousELO ?? p.ELO,
+    wins: p.Wins ?? null,
+    losses: p.Losses ?? null,
+    points: p.TotalPoints ?? null,
+    average: p.Average ?? null,
+    tournaments: p.Tournaments ?? null,
+    matchPadelId: p.MatchPadelId ?? null,
+  }));
+  Store.setPlayersSummaryCache(camelPlayers);
+  const memberNames = camelPlayers.map(p => p.name).sort();
+  Cache.set('members', memberNames);
+  Store.setMembers(memberNames);
+}
+
+/**
  * Pull only players.json for the settings page.
  * Lightweight fetch that skips expensive directory walk and tournament data.
  * No-op if already fresh in this session.
