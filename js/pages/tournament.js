@@ -168,13 +168,27 @@ export function renderTournament(container, params) {
     const roundIdx = getViewingRoundIndex();
     const isLatestRound = roundIdx === totalRounds - 1;
 
+    // Tournament prev/next navigation
+    const isMino = Store.isMino();
+    const index = Store.getTournamentsIndex();
+    const accessible = [...index]
+      .filter(e => e.isComplete || isMino)
+      .sort((a, b) => b.date.localeCompare(a.date));
+    const currentPos = accessible.findIndex(e => e.date === date);
+    const prevDate = currentPos >= 0 && currentPos < accessible.length - 1 ? accessible[currentPos + 1].date : null;
+    const nextDate = currentPos > 0 ? accessible[currentPos - 1].date : null;
+
     container.innerHTML = `
       <div class="page-header">
-        <div>
+        <button class="btn btn-ghost btn-sm" id="tournament-prev" ${prevDate ? `data-date="${prevDate}"` : 'disabled'} aria-label="Previous tournament">◀</button>
+        <div style="text-align:center;flex:1">
           <h1 style="font-size:var(--font-size-base)">${formatDate(date)}</h1>
           <span class="text-sm text-secondary">${totalRounds > 0 ? `Round ${roundIdx + 1}/${totalRounds}` : 'No rounds'}</span>
         </div>
-        <div>${getStatusBadge(tournament)}</div>
+        <div style="display:flex;align-items:center;gap:var(--space-xs)">
+          ${getStatusBadge(tournament)}
+          <button class="btn btn-ghost btn-sm" id="tournament-next" ${nextDate ? `data-date="${nextDate}"` : 'disabled'} aria-label="Next tournament">▶</button>
+        </div>
       </div>
 
       <div class="tabs" id="tournament-tabs">
@@ -184,6 +198,12 @@ export function renderTournament(container, params) {
 
       <div class="page-content" id="tournament-content"></div>
     `;
+
+    // Tournament prev/next navigation
+    const prevBtn = container.querySelector('#tournament-prev');
+    const nextBtn = container.querySelector('#tournament-next');
+    if (prevBtn?.dataset.date) prevBtn.addEventListener('click', () => { window.location.hash = `/tournament/${prevBtn.dataset.date}`; });
+    if (nextBtn?.dataset.date) nextBtn.addEventListener('click', () => { window.location.hash = `/tournament/${nextBtn.dataset.date}`; });
 
     // Tab switching
     container.querySelector('#tournament-tabs').addEventListener('click', (e) => {

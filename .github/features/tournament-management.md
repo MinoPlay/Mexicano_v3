@@ -52,6 +52,15 @@ tournament: {
 
 Match: Team1 = (player1 + player2). Team2 = (player3 + player4).
 
+## Tournament Navigation
+
+The tournament detail page header contains **◀** and **▶** buttons to navigate to the previous (older) or next (newer) tournament:
+
+- Tournaments are ordered by date descending (newest first); ◀ goes older, ▶ goes newer.
+- Buttons are disabled at boundaries (oldest / newest tournament).
+- Locked tournaments (incomplete + non-admin) are excluded from navigation — non-admin users skip over them.
+- Clicking navigates to `#/tournament/<date>`.
+
 ## Leaderboard Tab
 
 The **Leaderboard** tab on a completed (or in-progress) tournament shows the same rich statistics table as the Statistics page per-date view:
