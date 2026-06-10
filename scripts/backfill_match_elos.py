@@ -2,24 +2,25 @@
 """
 backfill_match_elos.py
 
-Backfills embedded ELO fields into all tournament day JSON files.
-Processes files in chronological order, chaining player ELO state across all days.
-Skips files where all matches already have ELO fields (idempotent).
+WHEN TO USE: One-time (or recovery) operation when tournament day JSON files are
+missing the embedded per-match ELO fields (Team1Player1Elo, etc.). Safe to re-run
+— skips files where all matches already have ELO fields.
 
-Usage:
-    python scripts/backfill_match_elos.py [backup-data-path]
+WHAT IT DOES:
+  Walks all YYYY-MM-DD.json files in chronological order, chains player ELO state
+  across every day, and writes the post-match ELO values directly into each match
+  object. Does NOT update players.json or players_overview — run fix_elo_pipeline
+  afterward if those also need rebuilding.
 
-Default path: /Users/mino/Documents/GitHub/DataHub_Mexicano/mexicano_v3/backup-data
+HOW TO RUN:
+    python scripts/backfill_match_elos.py --data-root /path/to/backup-data
 """
 
+import argparse
 import json
 import math
 import os
 import re
-import sys
-
-BACKUP = sys.argv[1] if len(sys.argv) > 1 else \
-    "/Users/mino/Documents/GitHub/DataHub_Mexicano/mexicano_v3/backup-data"
 
 DATE_PATTERN = re.compile(r"^\d{4}-\d{2}-\d{2}\.json$")
 K = 32
@@ -92,6 +93,11 @@ def collect_day_files(root):
 
 
 def main():
+    parser = argparse.ArgumentParser(description="Backfill embedded ELO fields into tournament day JSON files.")
+    parser.add_argument("--data-root", required=True, help="Path to backup-data directory (e.g. /path/to/DataHub_Mexicano/mexicano_v3/backup-data)")
+    args = parser.parse_args()
+    BACKUP = args.data_root
+
     day_files = collect_day_files(BACKUP)
     print(f"Found {len(day_files)} day files in {BACKUP}")
 

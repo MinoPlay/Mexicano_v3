@@ -67,6 +67,9 @@ async function loadLocalData() {
 }
 
 async function init() {
+  // One-time migration: remove stale Azure connection string from localStorage
+  localStorage.removeItem('mexicano_azure_conn_str');
+
   await loadDevSecrets();
 
   await showOnboardingDialog();

@@ -429,42 +429,17 @@ export function completeTournament(tournament) {
   }).catch(() => {});
 
   // Immediately sync completed tournament to GitHub
-  import('./github.js').then(({ flushPush, markMatchDateDirty, updateTournamentIndexEntry, generateMonthlyOverviews, generatePlayersJson, generateEloHistory, readFile }) => {
+  import('./github.js').then(({ flushPush, markMatchDateDirty, updateTournamentIndexEntry }) => {
     markMatchDateDirty(tournament.tournamentDate);
 
-    const yearMonth = tournament.tournamentDate.slice(0, 7);
-    const participantNames = [...new Set((tournament.players || []).map(p => String(p?.name || '').trim()).filter(Boolean))];
-    const normalizeName = name => String(name || '').trim().toLowerCase();
-    // Order is critical: overview must be written before players.json.
-    // generateMonthlyOverviews seeds ELO from the previous month's overview and
-    // writes the current month's players_overview.json.  generatePlayersJson then
-    // increments from the existing players.json using those same match files.
-    // Writing them in this order keeps the ELO values shown on the Statistics page
-    // (overview) and the Home page (players.json) consistent.  If the overview
-    // write fails the whole chain aborts — players.json is never updated with a
-    // partial/stale state.
     Promise.resolve(flushPush())
       .then(() => {
         // Push succeeded — safe to clear local tournament data
         Store.clearActiveTournament();
         localStorage.removeItem('mexicano_completion_marker');
-        return generateMonthlyOverviews(yearMonth);
-      })
-      .then(() => generatePlayersJson(undefined, { playerNames: participantNames }))
-      .then(async () => {
-        const base = Store.getGitHubConfig()?.basePath?.trim().replace(/\/$/, '') || '';
-        const playersPath = base ? `${base}/players.json` : 'players.json';
-        const playersResult = await readFile(playersPath);
-        const rows = Array.isArray(playersResult?.content) ? playersResult.content : [];
-        const idByName = new Map(rows.map(r => [normalizeName(r?.Name), r?.Id]).filter(([k, v]) => k && typeof v === 'string' && v.trim()));
-        const participantIds = participantNames.map(name => idByName.get(normalizeName(name))).filter(Boolean);
-        if (participantIds.length === 0) {
-          throw new Error('No participant Id values found in players.json for ELO history update.');
-        }
-        return generateEloHistory(undefined, { playerIds: participantIds });
       })
       .catch(e => {
-        console.warn('[tournament] post-complete push/generation failed:', e);
+        console.warn('[tournament] post-complete push failed:', e);
         // Push failed — local data preserved. Will retry on reconnect.
       });
 
@@ -488,14 +463,9 @@ export function retryCompletedTournamentPush() {
 
   console.log('[tournament] retrying push for completed tournament:', marker);
 
-  import('./github.js').then(({ flushPush, markMatchDateDirty, updateTournamentIndexEntry, generateMonthlyOverviews, generatePlayersJson, generateEloHistory, readFile }) => {
+  import('./github.js').then(({ flushPush, markMatchDateDirty, updateTournamentIndexEntry }) => {
     markMatchDateDirty(tournament.tournamentDate);
 
-    const yearMonth = tournament.tournamentDate.slice(0, 7);
-    const participantNames = [...new Set((tournament.players || []).map(p => String(p?.name || '').trim()).filter(Boolean))];
-    const normalizeName = name => String(name || '').trim().toLowerCase();
-
-    // Rebuild index entry for updateTournamentIndexEntry
     const indexPlayers = new Set();
     const indexRoundNums = new Set();
     let indexMatchCount = 0;
@@ -525,18 +495,6 @@ export function retryCompletedTournamentPush() {
         Store.clearActiveTournament();
         localStorage.removeItem('mexicano_completion_marker');
         console.log('[tournament] retry push succeeded, local data cleared');
-        return generateMonthlyOverviews(yearMonth);
-      })
-      .then(() => generatePlayersJson(undefined, { playerNames: participantNames }))
-      .then(async () => {
-        const base = Store.getGitHubConfig()?.basePath?.trim().replace(/\/$/, '') || '';
-        const playersPath = base ? `${base}/players.json` : 'players.json';
-        const playersResult = await readFile(playersPath);
-        const rows = Array.isArray(playersResult?.content) ? playersResult.content : [];
-        const idByName = new Map(rows.map(r => [normalizeName(r?.Name), r?.Id]).filter(([k, v]) => k && typeof v === 'string' && v.trim()));
-        const participantIds = participantNames.map(name => idByName.get(normalizeName(name))).filter(Boolean);
-        if (participantIds.length === 0) return;
-        return generateEloHistory(undefined, { playerIds: participantIds });
       })
       .catch(e => {
         console.warn('[tournament] retry push failed, will try again on next reconnect:', e);

@@ -1,15 +1,8 @@
 import { Store } from '../store.js';
 import { getMembers, addMember, removeMember } from '../services/members.js';
 import { showToast } from '../components/toast.js';
-import { testConnection, onSyncStatus, getSyncStatus, readFile, pushDoodleNow, addPlayerToPlayersJson } from '../services/github.js';
-import { writeDoodle } from '../services/local.js';
-import { State } from '../state.js';
-import { generatePlayersJson } from '../scripts/generate-players-json.js';
-import { generateEloHistory } from '../scripts/generate-elo-history.js';
-import { generateMonthlyOverviews } from '../scripts/generate-monthly-overviews.js';
+import { testConnection, onSyncStatus, getSyncStatus, pushDoodleNow, addPlayerToPlayersJson } from '../services/github.js';
 import { generateOrUpdatePlayerSummary } from '../scripts/generate-player-summary.js';
-import { uploadToAzure } from '../scripts/azure-upload.js';
-import { syncDoodleFromAzure } from '../scripts/azure-doodle-sync.js';
 import { isInstalled } from '../components/install-prompt.js';
 import { getWhatsAppConfig, sendWhatsAppTestAlert } from '../services/whatsapp.js';
 
@@ -89,34 +82,6 @@ export function renderSettings(container, params) {
         <div id="github-status-msg" class="text-sm mt-sm" style="min-height:1.25rem;"></div>
       </div>
 
-      <!-- Remote Data Tools -->
-      <div class="settings-section" id="remote-data-section" style="display:none;">
-        <div class="settings-section-title">Remote Data Tools</div>
-        <p class="text-sm text-secondary" style="margin-bottom:var(--space-sm);">
-          Regenerate pre-computed data files in the GitHub repository.
-          Reads all match files, recomputes stats &amp; ELO, and commits results directly to the repo.
-        </p>
-        <div class="flex flex-col gap-sm">
-          <p class="text-sm text-secondary" style="margin:0;">
-            Reads all monthly <code>backup-data/YYYY/YYYY-MM/players_overview.json</code> files, sums stats across months per player, and writes <code>backup-data/players.json</code>. Full rebuild — requires all monthly overviews to be up to date first.
-          </p>
-          <button id="gen-players-btn" class="btn btn-primary" style="width:100%;">Generate players.json</button>
-          <p class="text-sm text-secondary" style="margin:0;">
-            Reads monthly <code>players_overview.json</code> files and writes per-player history files to <code>backup-data/elo_history/elo_history_{playerId}.json</code>. Full rebuild for all players.
-          </p>
-          <button id="gen-elo-history-btn" class="btn btn-secondary" style="width:100%;">Generate per-player ELO history</button>
-          <p class="text-sm text-secondary" style="margin:0;">
-            Reads day-match files for the selected month (<code>backup-data/YYYY/YYYY-MM/*.json</code>), seeds starting ELO from the previous month's <code>players_overview.json</code>, and writes <code>backup-data/YYYY/YYYY-MM/players_overview.json</code>.
-          </p>
-          <div class="flex gap-sm">
-            <input type="month" id="gen-overviews-month" style="flex:1;" />
-            <button id="gen-overviews-btn" class="btn btn-secondary">Generate monthly overview</button>
-          </div>
-        </div>
-        <div id="remote-data-status" class="text-sm mt-sm" style="min-height:1.25rem;"></div>
-      </div>
-
-
       <div class="settings-section" id="player-summaries-section" style="display:none;">
         <div class="settings-section-title">Player Summary</div>
         <p class="text-sm text-secondary" style="margin-bottom:var(--space-sm);">
@@ -125,53 +90,6 @@ export function renderSettings(container, params) {
         </p>
         <button id="generate-summaries-btn" class="btn btn-primary" style="width:100%;" disabled>Select a user first</button>
         <div id="summaries-status-msg" class="text-sm mt-sm" style="min-height:1.25rem;"></div>
-      </div>
-
-      <!-- Azure Doodle Sync -->
-      <div class="settings-section" id="azure-doodle-section" style="display:none;">
-        <div class="settings-section-title">Azure Doodle Sync</div>
-        <p class="text-sm text-secondary" style="margin:var(--space-sm) 0;">
-          Pull doodle availability from the Azure <code>Doodle</code> table and overwrite the
-          local doodle JSON for the selected month. Uses the same connection string as Azure Upload.
-        </p>
-        <div class="flex flex-col gap-sm">
-          <label class="text-sm" for="azure-doodle-month">Month</label>
-          <div class="flex gap-sm">
-            <input type="month" id="azure-doodle-month" style="flex:1;" />
-            <button id="azure-doodle-sync-btn" class="btn btn-primary">Sync from Azure</button>
-          </div>
-        </div>
-        <div id="azure-doodle-status" class="text-sm mt-sm" style="min-height:1.25rem;"></div>
-      </div>
-
-      <!-- Azure Upload -->
-      <div class="settings-section" id="azure-upload-section" style="display:none;">
-        <div class="settings-section-title">Azure Upload</div>
-        <p class="text-sm text-secondary" style="margin:var(--space-sm) 0;">
-          Upload a backup JSON file directly to Azure Tables storage.
-          Enter the backup date, save your connection string, then click Upload.
-        </p>
-        <p class="text-sm" style="margin:0 0 var(--space-sm);color:var(--color-warning,#f59e0b);">
-          ⚠️ First-time CORS setup (applies to both Azure sections): Azure Storage must allow
-          <code>https://minoplay.github.io</code>. In the
-          <a href="https://portal.azure.com" target="_blank" rel="noopener">Azure Portal</a>
-          → Storage account → <strong>Resource sharing (CORS)</strong> → Table service tab → add a rule:
-          origins <code>https://minoplay.github.io</code>, methods <code>DELETE GET HEAD OPTIONS PUT</code>,
-          headers <code>*</code>, max age <code>3600</code>.
-        </p>
-        <div class="flex flex-col gap-sm">
-          <label class="text-sm" for="azure-conn-str">Connection String</label>
-          <div class="flex gap-sm">
-            <input type="password" id="azure-conn-str" placeholder="DefaultEndpointsProtocol=https;AccountName=…" style="flex:1;" autocomplete="off" />
-            <button id="azure-conn-save-btn" class="btn btn-primary">Save</button>
-          </div>
-          <label class="text-sm" for="azure-date-input">Backup Date</label>
-          <div class="flex gap-sm">
-            <input type="date" id="azure-date-input" style="flex:1;" autocomplete="off" />
-            <button id="azure-upload-btn" class="btn btn-primary">Upload</button>
-          </div>
-        </div>
-        <div id="azure-upload-status" class="text-sm mt-sm" style="min-height:1.25rem;"></div>
       </div>
 
       <!-- WhatsApp Alerts -->
@@ -187,14 +105,6 @@ export function renderSettings(container, params) {
         <div id="wa-status-msg" class="text-sm mt-sm" style="min-height:1.25rem;"></div>
       </div>
 
-      <!-- Install App -->
-      <div class="settings-section">
-        <div class="settings-section-title">Install App</div>
-        ${isInstalled()
-          ? `<p class="text-sm text-secondary">✅ App is installed.</p>`
-          : `<p class="text-sm text-secondary">Use your browser menu or address bar to install Mexicano on your device.</p>`
-        }
-      </div>
 
     </div>
   `;
@@ -209,7 +119,7 @@ export function renderSettings(container, params) {
   // ─── Mino-only section visibility ─────────────────────────────────────────
   // Only Members has no GitHub gate — controlled directly here.
   // All other Mino-only sections are gated by their own refresh functions
-  // (refreshRemoteDataSection, refreshSummariesSection, etc.) which check isMino().
+  // (refreshSummariesSection, etc.) which check isMino().
   const membersSection = container.querySelector('.members-header')?.closest('.settings-section');
 
   function refreshMinoVisibility() {
@@ -226,8 +136,6 @@ export function renderSettings(container, params) {
     refreshMinoVisibility();
     showToast(userSelect.value ? `Switched to ${userSelect.value}` : 'User cleared');
   });
-
-  // Delete members
   membersListEl.addEventListener('click', (e) => {
     const btn = e.target.closest('.member-delete');
     if (!btn) return;
@@ -383,7 +291,6 @@ export function renderSettings(container, params) {
   // Keep button label in sync when user changes
   userSelect.addEventListener('change', () => {
     refreshSummariesSection();
-    refreshRemoteDataSection();
   });
 
   summariesBtn.addEventListener('click', async () => {
@@ -416,233 +323,6 @@ export function renderSettings(container, params) {
     summariesSection.style.display = 'none';
     setSummariesMsg('');
   }, { capture: true });
-
-  // ─── Remote Data Tools ────────────────────────────────────────────────────
-
-  const remoteDataSection  = container.querySelector('#remote-data-section');
-  const genPlayersBtn      = container.querySelector('#gen-players-btn');
-  const genEloHistoryBtn   = container.querySelector('#gen-elo-history-btn');
-  const genOverviewsBtn    = container.querySelector('#gen-overviews-btn');
-  const genOverviewsMonth  = container.querySelector('#gen-overviews-month');
-  const remoteDataStatus   = container.querySelector('#remote-data-status');
-
-  // Default month input to current month
-  const now = new Date();
-  genOverviewsMonth.value = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-
-  function setRemoteDataMsg(msg, isError = false) {
-    remoteDataStatus.textContent = msg;
-    remoteDataStatus.style.color = isError ? 'var(--color-danger, #ef4444)' : 'var(--color-success, #22c55e)';
-  }
-
-  function refreshRemoteDataSection() {
-    remoteDataSection.style.display = (Store.getGitHubConfig()?.pat && Store.isMino()) ? '' : 'none';
-  }
-  refreshRemoteDataSection();
-
-  function setRemoteBtnsDisabled(disabled) {
-    genPlayersBtn.disabled    = disabled;
-    genEloHistoryBtn.disabled = disabled;
-    genOverviewsBtn.disabled  = disabled;
-  }
-
-  genPlayersBtn.addEventListener('click', async () => {
-    setRemoteBtnsDisabled(true);
-    setRemoteDataMsg('Loading match files…');
-    try {
-      const { written } = await generatePlayersJson((label) => setRemoteDataMsg(label));
-      setRemoteDataMsg(`Done! players.json written with ${written} players.`);
-      showToast('players.json generated');
-    } catch (e) {
-      setRemoteDataMsg(`Error: ${e.message}`, true);
-      showToast('Failed to generate players.json', 'error');
-    } finally {
-      setRemoteBtnsDisabled(false);
-    }
-  });
-
-  genEloHistoryBtn.addEventListener('click', async () => {
-    setRemoteBtnsDisabled(true);
-    setRemoteDataMsg('Loading monthly overview files…');
-    try {
-      const { written } = await generateEloHistory((label) => setRemoteDataMsg(label));
-      setRemoteDataMsg(`Done! ${written} per-player ELO history files written.`);
-      showToast('Per-player ELO history generated');
-    } catch (e) {
-      setRemoteDataMsg(`Error: ${e.message}`, true);
-      showToast('Failed to generate per-player ELO history', 'error');
-    } finally {
-      setRemoteBtnsDisabled(false);
-    }
-  });
-
-  genOverviewsBtn.addEventListener('click', async () => {
-    const month = genOverviewsMonth.value.trim();
-    if (!month) {
-      setRemoteDataMsg('Select a month first.', true);
-      return;
-    }
-    setRemoteBtnsDisabled(true);
-    setRemoteDataMsg('Loading match files…');
-    try {
-      const { month: written } = await generateMonthlyOverviews(month, (label) => setRemoteDataMsg(label));
-      setRemoteDataMsg(`Done! players_overview.json written for ${month}.`);
-      showToast(`Overview generated for ${month}`);
-    } catch (e) {
-      setRemoteDataMsg(`Error: ${e.message}`, true);
-      showToast('Failed to generate overview', 'error');
-    } finally {
-      setRemoteBtnsDisabled(false);
-    }
-  });
-
-  // Keep remote data section in sync with GitHub config changes
-  container.querySelector('#github-save-btn').addEventListener('click', refreshRemoteDataSection, { capture: true });
-  container.querySelector('#github-clear-btn').addEventListener('click', () => {
-    remoteDataSection.style.display = 'none';
-    setRemoteDataMsg('');
-  }, { capture: true });
-
-  // ─── Azure Upload ──────────────────────────────────────────────────────────
-
-  const azureSection   = container.querySelector('#azure-upload-section');
-  const azureConnInput = container.querySelector('#azure-conn-str');
-  const azureConnSave  = container.querySelector('#azure-conn-save-btn');
-  const azureDateInput = container.querySelector('#azure-date-input');
-  const azureUploadBtn = container.querySelector('#azure-upload-btn');
-  const azureStatus    = container.querySelector('#azure-upload-status');
-
-  const AZURE_CONN_KEY = 'mexicano_azure_conn_str';
-
-  function setAzureStatus(msg, isError = false) {
-    azureStatus.textContent = msg;
-    azureStatus.style.color = isError ? 'var(--color-danger, #ef4444)' : 'var(--color-success, #22c55e)';
-  }
-
-  function refreshAzureSection() {
-    azureSection.style.display = (Store.getGitHubConfig()?.pat && Store.isMino()) ? '' : 'none';
-  }
-  refreshAzureSection();
-
-  const savedConn = localStorage.getItem(AZURE_CONN_KEY);
-  if (savedConn) azureConnInput.value = savedConn;
-
-  function dateToRepoPath(date) {
-    const m = date.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-    if (!m) return null;
-    const [, year, month] = m;
-    return `mexicano_v3/backup-data/${year}/${year}-${month}/${date}.json`;
-  }
-
-  azureConnSave.addEventListener('click', () => {
-    const conn = azureConnInput.value.trim();
-    if (!conn) { setAzureStatus('Enter a connection string first.', true); return; }
-    localStorage.setItem(AZURE_CONN_KEY, conn);
-    setAzureStatus('Connection string saved.');
-  });
-
-  azureDateInput.addEventListener('input', () => setAzureStatus(''));
-
-  azureUploadBtn.addEventListener('click', async () => {
-    const conn = azureConnInput.value.trim();
-    const date = azureDateInput.value.trim();
-
-    if (!conn) { setAzureStatus('Enter a connection string first.', true); return; }
-    if (!date) { setAzureStatus('Enter a backup date first.', true); return; }
-
-    const repoPath = dateToRepoPath(date);
-    if (!repoPath) { setAzureStatus('Invalid date format (use YYYY-MM-DD).', true); return; }
-
-    azureUploadBtn.disabled = true;
-    setAzureStatus('Loading backup from GitHub…');
-
-    try {
-      const result = await readFile(repoPath);
-      if (!result) { setAzureStatus(`File not found: ${repoPath}`, true); return; }
-
-      const total = await uploadToAzure(conn, result.content, (uploaded, total) => {
-        setAzureStatus(`Uploading ${uploaded} / ${total}…`);
-      });
-
-      setAzureStatus(`Done — ${total} entities uploaded.`);
-    } catch (err) {
-      setAzureStatus(`Upload failed: ${err.message}`, true);
-    } finally {
-      azureUploadBtn.disabled = false;
-    }
-  });
-
-  // Show/hide Azure section when GitHub config changes
-  container.querySelector('#github-save-btn').addEventListener('click', refreshAzureSection, { capture: true });
-  container.querySelector('#github-clear-btn').addEventListener('click', () => {
-    azureSection.style.display = 'none';
-  }, { capture: true });
-
-  // ─── Azure Doodle Sync ─────────────────────────────────────────────────────
-
-  const azureDoodleSection  = container.querySelector('#azure-doodle-section');
-  const azureDoodleMonth    = container.querySelector('#azure-doodle-month');
-  const azureDoodleSyncBtn  = container.querySelector('#azure-doodle-sync-btn');
-  const azureDoodleStatus   = container.querySelector('#azure-doodle-status');
-
-  const now2 = new Date();
-  azureDoodleMonth.value = `${now2.getFullYear()}-${String(now2.getMonth() + 1).padStart(2, '0')}`;
-
-  function setDoodleSyncStatus(msg, isError = false) {
-    azureDoodleStatus.textContent = msg;
-    azureDoodleStatus.style.color = isError ? 'var(--color-danger, #ef4444)' : 'var(--color-success, #22c55e)';
-  }
-
-  function refreshAzureDoodleSection() {
-    azureDoodleSection.style.display = (Store.getGitHubConfig()?.pat && Store.isMino()) ? '' : 'none';
-  }
-  refreshAzureDoodleSection();
-
-  azureDoodleSyncBtn.addEventListener('click', async () => {
-    const conn = localStorage.getItem(AZURE_CONN_KEY) || '';
-    const ym   = azureDoodleMonth.value.trim();
-
-    if (!conn) { setDoodleSyncStatus('No Azure connection string saved. Enter it in Azure Upload first.', true); return; }
-    if (!ym)   { setDoodleSyncStatus('Select a month first.', true); return; }
-
-    const [year, month] = ym.split('-').map(Number);
-
-    azureDoodleSyncBtn.disabled = true;
-    setDoodleSyncStatus('');
-
-    try {
-      const entries = await syncDoodleFromAzure(conn, ym, msg => setDoodleSyncStatus(msg));
-
-      Store.setDoodle(ym, entries);
-
-      setDoodleSyncStatus('Writing to GitHub…');
-      await pushDoodleNow(ym);
-
-      await writeDoodle(year, month, entries).catch(() => {});
-
-      State.emit('doodle-changed', { year, month });
-
-      const total = entries.reduce((s, e) => s + e.selectedDates.length, 0);
-      setDoodleSyncStatus(`Done — ${entries.length} player(s), ${total} selection(s) synced for ${ym}.`);
-      showToast(`Doodle synced for ${ym}`);
-    } catch (err) {
-      setDoodleSyncStatus(`Sync failed: ${err.message}`, true);
-      showToast('Doodle sync failed', 'error');
-    } finally {
-      azureDoodleSyncBtn.disabled = false;
-    }
-  });
-
-  container.querySelector('#github-save-btn').addEventListener('click', refreshAzureDoodleSection, { capture: true });
-  container.querySelector('#github-clear-btn').addEventListener('click', () => {
-    azureDoodleSection.style.display = 'none';
-  }, { capture: true });
-
-  // Re-evaluate all GitHub+Mino-gated sections when user switches
-  userSelect.addEventListener('change', () => {
-    refreshAzureSection();
-    refreshAzureDoodleSection();
-  });
 
   // ─── WhatsApp Alerts ───────────────────────────────────────────────────────
 

@@ -1751,12 +1751,6 @@ export function mergeSummary(existing, delta, newLastDate) {
 
 export { generateOrUpdatePlayerSummary } from '../scripts/generate-player-summary.js';
 
-// ─── Remote Data Generation ───────────────────────────────────────────────────
-
-export { generatePlayersJson }    from '../scripts/generate-players-json.js';
-export { generateEloHistory }     from '../scripts/generate-elo-history.js';
-export { generateMonthlyOverviews } from '../scripts/generate-monthly-overviews.js';
-
 function playerEloHistoryPath(playerId) {
   const base = matchesBase();
   const safeId = encodeURIComponent(String(playerId || '').trim());
@@ -1923,7 +1917,7 @@ function mergeDoodleChangelogEntries(localEntries = [], remoteEntries = []) {
 /**
  * List all backup day-match files available in the GitHub backend.
  * Returns an array of { label, localPath } where localPath is the project-relative
- * path suitable for passing to upload_to_azure.py (e.g. "backup-data/2026/2026-04/2026-04-28.json").
+ * path (e.g. "backup-data/2026/2026-04/2026-04-28.json").
  * The basePath prefix (e.g. "mexicano_v3/") is stripped from localPath.
  */
 export async function listBackupFiles() {

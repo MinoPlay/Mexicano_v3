@@ -461,7 +461,7 @@ This spec is technology-agnostic, but here are proven options:
 
 ### Storage Options
 
-- **Key-Value / Document:** Azure Table Storage, DynamoDB, Firestore
+- **Key-Value / Document:** DynamoDB, Firestore
 - **Relational:** PostgreSQL, MySQL, SQLite
 - **Document:** MongoDB, CouchDB
 - **File-Based:** JSON files on disk (simplest, great for small scale)

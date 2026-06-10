@@ -1,15 +1,23 @@
 """
 fix_elo_pipeline.py
 
-Full ELO pipeline fix — runs locally against backup-data.
-Produces:
-  1. backup-data/YYYY/YYYY-MM/players_overview.json  (all months)
-  2. backup-data/elo_history/elo_history_<id>.json   (per player)
-  3. backup-data/players.json                         (with IDs preserved)
+WHEN TO USE: After adding/editing tournament data in backup-data. Rebuilds all
+derived JSON files so the app reflects the latest results.
 
-Algorithm mirrors js/services/elo.js exactly (sequential within each match).
+WHAT IT DOES:
+  Replays the full ELO history chronologically (mirrors js/services/elo.js),
+  then writes:
+    - <data-root>/players.json                        (all-time rankings + IDs)
+    - <data-root>/YYYY/YYYY-MM/players_overview.json  (per-month stats + ELO)
+    - <data-root>/elo_history/elo_history_<id>.json   (per-player ELO timeline)
+
+HOW TO RUN:
+    python scripts/fix_elo_pipeline.py --data-root /path/to/backup-data
+
+  After it finishes, commit and push the backup-data repo to publish changes.
 """
 
+import argparse
 import json
 import math
 import os
@@ -17,8 +25,6 @@ import re
 import glob
 from collections import defaultdict
 from datetime import datetime
-
-DATA_ROOT = r"C:\Private\DataHub_Mexicano\mexicano_v3\backup-data"
 
 K = 32
 INITIAL_ELO = 1000
@@ -82,7 +88,16 @@ def sort_key(m):
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 
+def parse_args():
+    parser = argparse.ArgumentParser(description="Rebuild players.json, players_overview.json and elo_history files from backup-data.")
+    parser.add_argument("--data-root", required=True, help="Path to backup-data directory (e.g. /path/to/DataHub_Mexicano/mexicano_v3/backup-data)")
+    return parser.parse_args()
+
+
 def main():
+    args = parse_args()
+    DATA_ROOT = args.data_root
+
     print("Loading matches…")
     all_matches = load_matches(DATA_ROOT)
     valid = [m for m in all_matches if not (m["ScoreTeam1"] == 0 and m["ScoreTeam2"] == 0)]

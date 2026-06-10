@@ -42,7 +42,7 @@ Notify a WhatsApp number via CallMeBot whenever a doodle entry is saved or delet
 - Console logs when config load starts/ends, when queueing alerts, and when dispatching requests
 - Logs explicit skip reason when phone/apiKey missing
 - Logs explicit skip reason when both `selectedAdded` and `selectedRemoved` are empty
-- Only fires on explicit user saves (not background syncs like syncDoodleFromAzure)
+- Only fires on explicit user saves
 - Trigger happens post-commit: alerts start only after GitHub write of monthly doodle + changelog succeeds
 - Alerts are serialized client-side (single queue) to preserve commit/change order
 - Alerts enforce minimum send gap (6.5s) to avoid CallMeBot batching multiple changes into one WhatsApp message

@@ -262,12 +262,9 @@ Cross-tournament lifetime statistics for a player. Can be fully recomputed from 
 
 > **Note:** A score of 14–11 (margin of 3) does not fall into any special win category — it is counted only as a regular win.
 
-**Storage (Azure Table Storage):**
+**Storage (GitHub JSON):**
 
-| Key | Value |
-|-----|-------|
-| PartitionKey | `"PlayerSummary"` |
-| RowKey | player name (e.g., `"Alex"`, `"Morten Westergaard"`) |
+Data stored as JSON files in the GitHub repository under `backup-data/`.
 
 ---
 
@@ -318,14 +315,9 @@ Tracks player availability for tournament scheduling. Stored per player per mont
 
 **Composite key:** `(year, month, playerName)`
 
-**Storage (Azure Table Storage):**
+**Storage (GitHub JSON):**
 
-| Key | Value | Example |
-|-----|-------|---------|
-| PartitionKey | `"YYYY-MM"` | `"2025-01"` |
-| RowKey | player name | `"Alex"` |
-
-**Example:** PartitionKey=`"2025-01"`, RowKey=`"Alex"`, SelectedDates=`"2025-01-09,2025-01-14,2025-01-21"`
+Stored in `YYYY/YYYY-MM/doodle_YYYY-MM.json` in the GitHub repository.
 
 ---
 
@@ -351,14 +343,9 @@ Audit trail for doodle modifications. Keep the last **20 entries** for display.
 | `date` | string | yes | `""` | format: `yyyy-MM-dd` | Date of the change |
 | `selectedDates` | string | no | `""` | comma-separated `yyyy-MM-dd` | The new date selections |
 
-**Storage (Azure Table Storage):**
+**Storage (GitHub JSON):**
 
-| Key | Value | Example |
-|-----|-------|---------|
-| PartitionKey | `"changelog"` | always `"changelog"` |
-| RowKey | `"{Ticks}-{PlayerName}"` | `"637012345678901234-Alex"` |
-
-The Ticks-based RowKey ensures chronological ordering and uniqueness.
+Stored in `YYYY/YYYY-MM/doodle_changelog_YYYY-MM.json` in the GitHub repository.
 
 ---
 
@@ -596,25 +583,22 @@ The members list is a static configuration — not stored in a database. It serv
 
 ---
 
-## 4. Storage Strategy Options
+## 4. Storage Strategy
 
-### Option A: Key-Value / Table Storage (Azure Table Storage) — Current Implementation
+### GitHub JSON Files — Current Implementation
 
-The primary storage pattern used by the application.
+All app data is stored as JSON files in a GitHub repository (`backup-data/` folder), accessed via the GitHub Contents API.
 
-| Table | PartitionKey | RowKey | Description |
-|-------|-------------|--------|-------------|
-| **Matches** | `"match"` | `"{yyyy-MM-dd}-Round{N}-{Seq}"` | All match results |
-| **PlayerSummaries** | `"PlayerSummary"` | `"{playerName}"` | Lifetime statistics |
-| **Doodles** | `"{YYYY-MM}"` | `"{playerName}"` | Monthly availability |
-| **Changelogs** | `"changelog"` | `"{Ticks}-{playerName}"` | Doodle audit trail |
-
-**Key characteristics:**
-
-- Tournaments are **not stored as separate entities** — reconstructed by grouping matches by date
-- Partition key design optimized for common query patterns
-- RowKey ordering enables efficient range queries
-- ETag-based optimistic concurrency
+| File | Description |
+|------|-------------|
+| `players.json` | All-time player stats + ELO |
+| `tournaments.json` | Index of all tournament dates |
+| `YYYY/YYYY-MM/YYYY-MM-DD.json` | Tournament day match data |
+| `YYYY/YYYY-MM/players_overview.json` | Monthly stats snapshot |
+| `YYYY/YYYY-MM/doodle_YYYY-MM.json` | Attendance schedule |
+| `YYYY/YYYY-MM/doodle_changelog_YYYY-MM.json` | Doodle change audit |
+| `elo_history/elo_history_<id>.json` | Per-player ELO timeline |
+| `players_summaries/summary_<slug>.json` | Per-player deep stats |
 
 ### Option B: Relational Database (SQL)
 

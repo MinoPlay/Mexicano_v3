@@ -16,8 +16,6 @@ vi.mock('../../js/services/github.js', () => ({
   keyToPath: vi.fn().mockReturnValue(null),
   readFile: vi.fn().mockResolvedValue(null),
   deleteFile: vi.fn().mockResolvedValue(undefined),
-  generateMonthlyOverviews: vi.fn().mockResolvedValue(undefined),
-  generatePlayersJson: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock('../../js/services/local.js', () => ({
