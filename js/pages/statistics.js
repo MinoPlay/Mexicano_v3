@@ -578,6 +578,7 @@ export async function renderDayStatsInto(container, matches, targetDate, isLates
         attachEloFromSnapshots(stats, eloMap);
       }
     } else {
+      container.innerHTML = '<p class="text-center mt-lg">🎾 Loading…</p>';
       await attachEloFromPlayerHistoryFiles(stats, targetDate);
       if (stats.some(s => s.elo == null)) {
         attachEloFromEmbeddedMatchData(stats, matches, targetDate);

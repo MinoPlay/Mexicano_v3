@@ -373,6 +373,7 @@ export function renderTournament(container, params) {
 
   // ─── Leaderboard Tab ───
   async function renderLeaderboardTab(content) {
+    content.innerHTML = '<p class="text-center mt-lg">🎾 Loading…</p>';
     const allMatches = Store.getMatches();
     const dayMatches = allMatches.filter(m => m.date === date);
 
