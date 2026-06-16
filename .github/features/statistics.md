@@ -66,3 +66,94 @@ Restored on page load. Falls back to `'latest'` if not set.
 - **Page logic**: `js/pages/statistics.js` — `renderTable()` function
 - **Data fetch**: `js/services/github.js` — `pullCoreData()`, `pullMonthlyOverview()`
 - **Store**: `js/store.js` — `getPlayersSummary()`, `getMonthlyOverview(yearMonth)`
+
+---
+
+## Sub-Feature: Attendance Bar Chart + Table
+
+### Overview
+A new section appended inside `content` div (after `tableContainer`) in `renderStatistics()`.
+Two collapsible elements: a **bar chart** (canvas) and a **table** (Name / Attendance columns).
+Both share one filter row (separate from the existing stats filter bar).
+
+### Filters
+| Filter label | Semantic |
+|---|---|
+| **Latest** | Current month only (`YYYY-MM` of `new Date()`) |
+| **30** | Last 30 days ending today (cutoff = today − 30 days) |
+| **60** | Last 60 days |
+| **90** | Last 90 days |
+| **120** | Last 120 days |
+
+Filter value persisted at `localStorage` key `stats_attendance_filter` (plain `localStorage.setItem/getItem`, same pattern as `stats_active_filter`).
+
+### Data Source
+- **File**: `YYYY/YYYY-MM/players_overview.json`
+- **Fetch function**: `pullMonthlyOverview(yearMonth)` exported from `js/services/github.js`
+- **Cache key**: `monthly_YYYY-MM` (in-memory `Cache`)
+- **Feed `computeAttendance` the RAW overview arrays** (`[{Name, ELO:[{Date,ELO}], ...}]`), keyed by `YYYY-MM`.
+
+#### ⚠️ Do NOT use `Store.getMonthlyOverview()` as the attendance source
+`Store.getMonthlyOverview()` runs `fromOverview()` (github.js:905), which reduces `p.ELO`
+(array of `{Date,ELO}`) to a single final `elo` number — the per-date entries are gone.
+`computeAttendance` needs those `Date` strings.
+
+**Approach**: the UI must read the raw `players_overview.json` arrays (with full ELO arrays
+intact) and pass them straight to `computeAttendance`. No change to `fromOverview` / `Store` is
+required.
+
+### Month Enumeration Logic (`getMonthsForAttendanceFilter`)
+```
+"latest"  → [ currentYearMonth ]
+"30"      → all YYYY-MM from month(today-30d) to currentYearMonth inclusive
+"60"      → all YYYY-MM from month(today-60d) to currentYearMonth inclusive
+"90"      → all YYYY-MM from month(today-90d) to currentYearMonth inclusive
+"120"     → all YYYY-MM from month(today-120d) to currentYearMonth inclusive
+```
+Months enumerated by decrementing from current month until cutoff month is reached.
+
+### Attendance Computation (`computeAttendance`)
+- Input: raw `players_overview.json` arrays keyed by YYYY-MM, filter string, today as `Date`
+- For each player in each month's file, count ELO-array entries whose `Date` string falls within the window
+- Combine (sum) counts per player `Name` across all months
+- Exclude players with final attendance === 0
+- Sort: attendance descending, then name ascending (tie-break)
+
+### New Pure Functions (add to `js/services/statistics.js`)
+| Function | Signature |
+|---|---|
+| `getMonthsForAttendanceFilter(filter, today)` | `(string, Date) → string[]` YYYY-MM array |
+| `computeAttendance(monthlyRawByMonth, filter, today)` | `(Object, string, Date) → {name,attendance}[]` |
+
+`monthlyRawByMonth` shape: `{ [yearMonth: string]: Array<{Name:string, ELO:Array<{Date:string,ELO:number}>|number, ...}> }`
+
+### Collapsible Sections — localStorage Keys
+Stored in a single prefs blob (same pattern as `elo-charts-prefs`):
+- **Key**: `stats-attendance-prefs`
+- **Fields**: `{ 'chart-collapsed': boolean, 'table-collapsed': boolean }`
+- Collapse toggled via chevron (▼/▶), written on each toggle.
+
+### DOM Structure (inside `content`)
+```
+content
+  filterBar           ← existing
+  tableContainer      ← existing
+  attendanceSection   ← NEW
+    attendanceFilterBar  (chip buttons: Latest / 30 / 60 / 90 / 120)
+    chartWrap (collapsible, storageKey 'attendance-chart')
+      header + chevron "Attendance"
+      canvas.chart-canvas  (bar chart, vanilla Canvas, height ~240px)
+    tableWrap (collapsible, storageKey 'attendance-table')
+      header + chevron "Attendance Table"
+      data-table > table (thead: Name | Attendance; tbody rows)
+```
+
+### Charting
+No external library. Build a vanilla Canvas bar chart following the same Canvas patterns as `drawLineChart` in `js/components/chart.js`:
+- DPR scaling, padding, grid lines
+- X axis: player names (rotated labels if needed)
+- Y axis: attendance count (integer ticks)
+- One bar per player, color from `generateChartColors(count)` (exported from `js/components/chart.js`)
+
+### "Current date" source
+No global clock helper in codebase. Use `new Date()` directly (same as `pullCoreData` in github.js:983).

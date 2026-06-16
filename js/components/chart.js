@@ -134,6 +134,87 @@ export function drawLineChart(canvas, datasets, options = {}) {
 }
 
 /**
+ * Simple vertical bar chart using HTML Canvas.
+ * @param {HTMLCanvasElement} canvas
+ * @param {Array} items - [{label, value, color}]
+ */
+export function drawBarChart(canvas, items, options = {}) {
+  const ctx = canvas.getContext('2d');
+  const dpr = window.devicePixelRatio || 1;
+  const rect = canvas.getBoundingClientRect();
+
+  canvas.width = rect.width * dpr;
+  canvas.height = rect.height * dpr;
+  ctx.scale(dpr, dpr);
+
+  const width = rect.width;
+  const height = rect.height;
+  const padding = { top: 20, right: 15, bottom: 70, left: 40 };
+  const chartW = width - padding.left - padding.right;
+  const chartH = height - padding.top - padding.bottom;
+
+  ctx.clearRect(0, 0, width, height);
+
+  const textColor = getComputedStyle(document.documentElement).getPropertyValue('--text-secondary').trim();
+  const gridColor = 'rgba(148, 163, 184, 0.25)';
+
+  if (!items || items.length === 0 || width === 0) {
+    ctx.fillStyle = textColor;
+    ctx.font = '14px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('No data available', width / 2 || 0, height / 2 || 0);
+    return;
+  }
+
+  const maxVal = Math.max(...items.map(i => i.value), 1);
+  const ySteps = Math.min(maxVal, 5);
+
+  // Horizontal grid lines + integer Y ticks
+  ctx.fillStyle = textColor;
+  ctx.font = '11px sans-serif';
+  ctx.textAlign = 'right';
+  for (let i = 0; i <= ySteps; i++) {
+    const yVal = (maxVal / ySteps) * i;
+    const yPos = padding.top + chartH - (chartH / ySteps) * i;
+    ctx.strokeStyle = gridColor;
+    ctx.lineWidth = i === 0 ? 1 : 0.5;
+    ctx.setLineDash(i === 0 ? [] : [4, 4]);
+    ctx.beginPath();
+    ctx.moveTo(padding.left, yPos);
+    ctx.lineTo(padding.left + chartW, yPos);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillText(Math.round(yVal).toString(), padding.left - 8, yPos + 4);
+  }
+
+  // Bars
+  const n = items.length;
+  const slot = chartW / n;
+  const barW = Math.min(slot * 0.6, 48);
+  items.forEach((item, i) => {
+    const x = padding.left + slot * i + (slot - barW) / 2;
+    const h = (item.value / maxVal) * chartH;
+    const y = padding.top + chartH - h;
+
+    ctx.fillStyle = item.color || 'hsl(210, 70%, 55%)';
+    ctx.fillRect(x, y, barW, h);
+
+    ctx.fillStyle = textColor;
+    ctx.font = '10px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(String(item.value), x + barW / 2, y - 4);
+
+    ctx.save();
+    ctx.translate(x + barW / 2, padding.top + chartH + 12);
+    ctx.rotate(-Math.PI / 4);
+    ctx.textAlign = 'right';
+    const label = String(item.label);
+    ctx.fillText(label.length > 12 ? label.slice(0, 12) + '…' : label, 0, 0);
+    ctx.restore();
+  });
+}
+
+/**
  * Generate distinct colors for chart datasets.
  */
 export function generateChartColors(count) {

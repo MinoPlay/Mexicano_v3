@@ -177,6 +177,63 @@ export function calculatePartnershipStats(playerName, allMatches) {
   }));
 }
 
+function toYearMonth(d) {
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+}
+
+export function getMonthsForAttendanceFilter(filter, today) {
+  if (filter === 'latest') return [toYearMonth(today)];
+
+  const days = parseInt(filter, 10);
+  const cutoff = new Date(today.getTime() - days * 86400000);
+
+  const months = [];
+  let y = cutoff.getUTCFullYear();
+  let m = cutoff.getUTCMonth();
+  const endY = today.getUTCFullYear();
+  const endM = today.getUTCMonth();
+
+  while (y < endY || (y === endY && m <= endM)) {
+    months.push(`${y}-${String(m + 1).padStart(2, '0')}`);
+    m++;
+    if (m > 11) { m = 0; y++; }
+  }
+  return months;
+}
+
+export function computeAttendance(monthlyRawByMonth, filter, today) {
+  const months = getMonthsForAttendanceFilter(filter, today);
+
+  let cutoffStr = null;
+  if (filter !== 'latest') {
+    const days = parseInt(filter, 10);
+    const cutoff = new Date(today.getTime() - days * 86400000);
+    cutoffStr = `${cutoff.getUTCFullYear()}-${String(cutoff.getUTCMonth() + 1).padStart(2, '0')}-${String(cutoff.getUTCDate()).padStart(2, '0')}`;
+  }
+
+  const counts = {};
+  for (const month of months) {
+    const players = monthlyRawByMonth[month];
+    if (!Array.isArray(players)) continue;
+
+    for (const p of players) {
+      if (!Array.isArray(p.ELO)) continue;
+
+      let c = 0;
+      for (const e of p.ELO) {
+        if (!e || typeof e.Date !== 'string') continue;
+        if (cutoffStr && e.Date < cutoffStr) continue;
+        c++;
+      }
+      if (c > 0) counts[p.Name] = (counts[p.Name] || 0) + c;
+    }
+  }
+
+  return Object.entries(counts)
+    .map(([name, attendance]) => ({ name, attendance }))
+    .sort((a, b) => b.attendance - a.attendance || a.name.localeCompare(b.name));
+}
+
 export function generatePlayerSummary(playerName, allMatches) {
   const validMatches = allMatches.filter(m =>
     !(m.scoreTeam1 === 0 && m.scoreTeam2 === 0) && involvesPlayer(m, playerName)

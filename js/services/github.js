@@ -1153,6 +1153,35 @@ export async function pullMonthlyOverview(yearMonth) {
 }
 
 /**
+ * Pull a single month's RAW players_overview.json (full ELO arrays intact).
+ * Unlike pullMonthlyOverview, this does NOT run fromOverview() — the per-date
+ * ELO entries are preserved, which the attendance feature needs.
+ * Cached in-memory under `monthly_raw_YYYY-MM`. Returns the raw array or null.
+ * @param {string} yearMonth - 'YYYY-MM'
+ * @returns {Promise<Array|null>}
+ */
+export async function pullMonthlyOverviewRaw(yearMonth) {
+  const cfg = getConfig();
+  if (!cfg?.owner || !cfg?.repo || !cfg?.pat) return null;
+
+  const cacheKey = `monthly_raw_${yearMonth}`;
+  if (Cache.has(cacheKey)) return Cache.get(cacheKey);
+
+  const base = matchesBase();
+  const year = yearMonth.slice(0, 4);
+  const prefix = base ? `${base}/` : '';
+  const path = `${prefix}${year}/${yearMonth}/players_overview.json`;
+  try {
+    const result = await readFile(path);
+    if (result?.content && Array.isArray(result.content)) {
+      Cache.set(cacheKey, result.content);
+      return result.content;
+    }
+  } catch { /* overview may not exist for this month */ }
+  return null;
+}
+
+/**
  * Pull all monthly overviews from GitHub (one per unique YYYY-MM in tournament_dates).
  * Skips months already loaded in the current page session (in-memory Cache).
  * @returns {Promise<{ updated: boolean }>}

@@ -1,7 +1,8 @@
-import { calculatePlayerStatistics } from '../services/statistics.js';
+import { calculatePlayerStatistics, getMonthsForAttendanceFilter, computeAttendance } from '../services/statistics.js';
 import { calculateAllEloRankings, getEloSnapshots, getEloForDate, getEloForMonth, getEloFromEmbeddedMatches } from '../services/elo.js';
 import { Store } from '../store.js';
 import { getLatestCompleteTournamentDate } from '../services/tournament.js';
+import { drawBarChart } from '../components/chart.js';
 
 // ─── Text measurement helper for column auto-fit ───
 let _measureCanvas;
@@ -839,4 +840,167 @@ export function renderStatistics(container, params = {}) {
 
   renderFilterBar();
   renderTable();
+  renderAttendanceSection(content);
+}
+
+// ─── Attendance Bar Chart + Table ───
+function renderAttendanceSection(content) {
+  const ATT_LS = 'stats_attendance_filter';
+  const PREFS_LS = 'stats-attendance-prefs';
+  let attFilter = localStorage.getItem(ATT_LS) || '30';
+  let lastResult = [];
+
+  function loadAttPrefs() {
+    try { return JSON.parse(localStorage.getItem(PREFS_LS) || '{}'); } catch { return {}; }
+  }
+  function saveAttPrefs(p) {
+    try { localStorage.setItem(PREFS_LS, JSON.stringify(p)); } catch { /* ignore */ }
+  }
+
+  const section = document.createElement('div');
+  section.className = 'attendance-section mt-lg';
+  section.style.padding = '0 var(--space-md)';
+  content.appendChild(section);
+
+  const attFilterBar = document.createElement('div');
+  attFilterBar.className = 'stats-filter-bar';
+  attFilterBar.style.cssText = 'display:flex;gap:6px;flex-wrap:wrap;padding:var(--space-sm) 0;';
+  section.appendChild(attFilterBar);
+
+  const FILTERS = [
+    { id: 'latest', label: 'Current' },
+    { id: '30', label: '30' },
+    { id: '60', label: '60' },
+    { id: '90', label: '90' },
+    { id: '120', label: '120' },
+  ];
+
+  function buildCollapsible(title, storageKey, onToggle) {
+    const wrap = document.createElement('div');
+    wrap.style.cssText = 'margin-bottom:var(--space-lg);';
+
+    const header = document.createElement('div');
+    header.className = 'elo-section-header elo-section-header--collapsible';
+    header.style.cssText = 'cursor:pointer;user-select:none;';
+    const chevron = document.createElement('span');
+    chevron.className = 'elo-section-chevron';
+    const titleEl = document.createElement('span');
+    titleEl.className = 'elo-section-title';
+    titleEl.textContent = title;
+    const titleRow = document.createElement('div');
+    titleRow.style.cssText = 'display:flex;align-items:center;gap:6px;';
+    titleRow.appendChild(chevron);
+    titleRow.appendChild(titleEl);
+    header.appendChild(titleRow);
+    wrap.appendChild(header);
+
+    const body = document.createElement('div');
+    body.className = 'elo-section-body';
+    wrap.appendChild(body);
+
+    let collapsed = loadAttPrefs()[storageKey + '-collapsed'] === true;
+    function apply() {
+      chevron.textContent = collapsed ? '▶' : '▼';
+      chevron.style.color = collapsed ? 'var(--color-primary)' : '';
+      body.style.display = collapsed ? 'none' : '';
+    }
+    apply();
+    header.addEventListener('click', () => {
+      collapsed = !collapsed;
+      apply();
+      const p = loadAttPrefs();
+      p[storageKey + '-collapsed'] = collapsed;
+      saveAttPrefs(p);
+      if (onToggle) onToggle(collapsed);
+    });
+    return { wrap, body };
+  }
+
+  const chartC = buildCollapsible('Attendance', 'attendance-chart', collapsed => {
+    if (!collapsed) renderChart(lastResult);
+  });
+  const tableC = buildCollapsible('Attendance Table', 'attendance-table');
+
+  const chartBox = document.createElement('div');
+  chartBox.className = 'chart-container-bleed';
+  const canvas = document.createElement('canvas');
+  canvas.className = 'chart-canvas';
+  canvas.style.width = '100%';
+  canvas.style.height = '240px';
+  chartBox.appendChild(canvas);
+  chartC.body.appendChild(chartBox);
+
+  const tableBox = document.createElement('div');
+  tableBox.className = 'data-table';
+  tableC.body.appendChild(tableBox);
+
+  section.appendChild(chartC.wrap);
+  section.appendChild(tableC.wrap);
+
+  function renderChips() {
+    attFilterBar.innerHTML = '';
+    for (const f of FILTERS) {
+      const chip = document.createElement('button');
+      chip.className = 'chip' + (f.id === attFilter ? ' selected' : '');
+      chip.textContent = f.label;
+      chip.addEventListener('click', () => {
+        attFilter = f.id;
+        localStorage.setItem(ATT_LS, attFilter);
+        renderChips();
+        loadAndRender();
+      });
+      attFilterBar.appendChild(chip);
+    }
+  }
+
+  function renderChart(result) {
+    const items = result.map(r => ({ label: r.name, value: r.attendance, color: 'hsl(210, 75%, 52%)' }));
+    drawBarChart(canvas, items);
+  }
+
+  function renderTableRows(result) {
+    tableBox.innerHTML = '';
+    if (!result.length) {
+      tableBox.innerHTML = '<p class="text-secondary text-center mt-md">No attendance data</p>';
+      return;
+    }
+    const table = document.createElement('table');
+    table.innerHTML = '<thead><tr><th>Name</th><th>Attendance</th></tr></thead>';
+    const tbody = document.createElement('tbody');
+    for (const r of result) {
+      const tr = document.createElement('tr');
+      const tdName = document.createElement('td');
+      tdName.textContent = r.name;
+      const tdAtt = document.createElement('td');
+      tdAtt.textContent = String(r.attendance);
+      tr.appendChild(tdName);
+      tr.appendChild(tdAtt);
+      tbody.appendChild(tr);
+    }
+    table.appendChild(tbody);
+    tableBox.appendChild(table);
+  }
+
+  async function loadAndRender() {
+    const today = new Date();
+    const months = getMonthsForAttendanceFilter(attFilter, today);
+    const raw = {};
+    let pull = null;
+    try {
+      ({ pullMonthlyOverviewRaw: pull } = await import('../services/github.js'));
+    } catch { pull = null; }
+    for (const ym of months) {
+      let arr = null;
+      if (pull) {
+        try { arr = await pull(ym); } catch { arr = null; }
+      }
+      if (Array.isArray(arr)) raw[ym] = arr;
+    }
+    lastResult = computeAttendance(raw, attFilter, today);
+    renderChart(lastResult);
+    renderTableRows(lastResult);
+  }
+
+  renderChips();
+  loadAndRender();
 }
