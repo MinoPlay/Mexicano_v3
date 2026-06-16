@@ -23,6 +23,11 @@ export function renderCreateTournament(container, params = {}) {
       </div>
 
       <div class="form-group">
+        <label class="form-label" for="tournament-access-code">Access Code</label>
+        <input type="text" id="tournament-access-code" placeholder="Optional access code" maxlength="50">
+      </div>
+
+      <div class="form-group">
         <label class="form-label">Number of Players</label>
         <div class="player-count-selector" id="count-selector">
           ${PLAYER_COUNTS.map(n => `
@@ -47,6 +52,7 @@ export function renderCreateTournament(container, params = {}) {
   `;
 
   const dateInput = container.querySelector('#tournament-date');
+  const accessCodeInput = container.querySelector('#tournament-access-code');
   const countSelector = container.querySelector('#count-selector');
   const slotsContainer = container.querySelector('#player-slots');
   const countError = container.querySelector('#count-error');
@@ -249,7 +255,8 @@ export function renderCreateTournament(container, params = {}) {
     }
 
     try {
-      const tournament = createTournament(date, names);
+      const accessCode = accessCodeInput.value.trim() || null;
+      const tournament = createTournament(date, names, accessCode);
       startTournament(tournament);
       window.location.hash = `#/tournament/${date}`;
     } catch (err) {

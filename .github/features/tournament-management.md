@@ -26,6 +26,7 @@
 tournament: {
   id: uuid,
   tournamentDate: "yyyy-MM-dd",
+  accessCode: string | null,  // Optional access code (e.g. "ABC-123"), set at creation or edited later
   players: [
     { id, name, totalPoints, gamesPlayed, wins, losses }
   ],
@@ -52,6 +53,35 @@ tournament: {
 
 Match: Team1 = (player1 + player2). Team2 = (player3 + player4).
 
+## Access Code Field
+
+### Create Form
+- **Position**: New input field inserted BETWEEN the date field and the number-of-players field.
+- **Label**: "Access Code" (optional)
+- **Type**: Text input, max 20 characters
+- **Default**: Empty (null or empty string)
+- **Placement in form**:
+  1. Date field
+  2. **[NEW] Access Code input** ← HERE
+  3. Number of Players selector
+  4. Players slots
+
+### Tournament View Header
+- Access code (if present) displayed **next to** the "Matches" and "Leaderboard" tab labels
+- Format: `"Access Code: ABC-123"` (or similar display, admin-configurable)
+- When no access code is set, display is omitted or shows placeholder (e.g., "— no access code —")
+
+### Access Code Edit (Admin Only)
+- **Who**: Only Mino or Kikke (gated by `Store.isMino()`)
+- **Where**: Small pen/edit **✎** icon displayed next to the access code label/display (in the header)
+- **Interaction**:
+  1. Click pen icon → inline edit or modal appears
+  2. User types/modifies/clears the access code
+  3. Click "Save" or "Update" button
+  4. Code is updated in tournament object in Store
+  5. **Push to GitHub**: Triggers `saveTournamentState()` → `markMatchDateDirty()` → `flushPush()` to sync to backend
+- **Validation**: No hard constraints; max 20 chars suggested
+
 ## Tournament Navigation
 
 The tournament detail page header contains **◀** and **▶** buttons to navigate to the previous (older) or next (newer) tournament:
@@ -76,6 +106,49 @@ The **Leaderboard** tab on a completed (or in-progress) tournament shows the sam
 `Store.isMino()` gates tournament create/modify/run actions.
 
 Admins: **Mino**, **Kikke** — both have full tournament management rights.
+
+## Access Control Policy
+
+### Read Access (View Tournaments)
+- **Admins** (Mino, Kikke): Can view ALL tournaments (completed + active/in-progress)
+- **Non-Admins**: Can view COMPLETED tournaments + ACTIVE/IN-PROGRESS tournaments (read-only)
+
+### Write Access (Modify Tournaments)
+**Only Admins** can:
+- Create new tournaments (`createTournament()`)
+- Start tournaments (`startTournament()`)
+- Edit match scores (`setMatchScore()`)
+- Advance rounds (`startNextRound()`)
+- Complete tournaments (`completeTournament()`)
+- Edit access code (`updateAccessCode()`)
+
+**Non-Admins**:
+- Cannot perform ANY mutations on tournaments (all write endpoints guarded in service layer)
+- Edit UI (score buttons, round actions, access code edit) hidden/disabled
+
+### Navigation (Prev/Next Arrows)
+- **Admins**: Navigate through ALL tournaments (completed + active)
+- **Non-Admins**: Navigate through COMPLETED tournaments + ACTIVE tournaments (both included, not locked)
+
+### Tournament List (Home Page)
+- **Admins**: See all tournaments, clickable, no locks
+- **Non-Admins**: See all tournaments (completed + active), all clickable, no locks. No "🔒" badges.
+
+### UI Layer Gating (Score & Round Control)
+In `renderMatchesTab()` (`js/pages/tournament.js`):
+- **Line ~325**: "Tap to score" hint rendered only if `Store.isMino() === true`
+- **Lines ~332–344**: Action buttons (Next Round, End Tournament) rendered only if `Store.isMino() === true`
+- **Line ~359**: Click-to-score listener attached only if `Store.isMino() === true`
+
+**Result**: Non-admins see match cards (read-only) but NO score-entry UI, NO action buttons, NO click listeners.
+
+### Service Layer Guards
+- Service layer (`js/services/tournament.js`): All mutation functions check `Store.isMino()` at entry; throw or return error if non-admin
+- Router (`js/router.js`): No access gate; page loads, but mutations fail safely at service layer
+
+### Implementation Details
+- UI layer (`js/pages/tournament.js`, create-tournament.js): Hide/disable edit controls conditionally on `isMino()`
+- Non-admins blocked at TWO layers: UI (components hidden) + service (mutations rejected)
 
 ## Player Slot Shift (Create Phase)
 
@@ -121,6 +194,76 @@ Tournament (1)
 ```
 
 **Seeding for Round 2+**: Calls `rankPlayers()` from ranking.js. Ranks players by totalPoints (desc), then wins (desc), then points-per-game (desc), then alphabetically. Top-ranked paired with bottom in new groups.
+
+## View-Access Audit
+
+### Contradiction Found
+**MD Policy (Line 114)**: "Non-Admins: Can view COMPLETED tournaments + ACTIVE/IN-PROGRESS tournaments (read-only)"
+**Code Reality**: THREE gates BLOCK non-admins from viewing active tournaments (🔒 icons, disabled UI, filtered nav).
+
+### Current Gates
+
+| Gate | File | Lines | Behavior | Issue |
+|---|---|---|---|---|
+| **Home Card** | `js/pages/home.js` | 452-476 | If `isMino`: `<a>` link (clickable). Else: `<div>` w/ `opacity:0.4;cursor:not-allowed;` + 🔒 title="Only admins can access active tournaments" | Non-admin sees grayed-out card, no navigation |
+| **Tournament List** | `js/pages/tournaments.js` | 37-56 | `const locked = !entry.isComplete && !isMino;` Adds `tournament-list-item--locked` class, 🔒 badge, no click handler | Non-admin list items unclickable, locked appearance |
+| **Prev/Next Nav** | `js/pages/tournament.js` | 175-177 | `accessible = [...index].filter(e => e.isComplete \|\| isMino)` Filters out active tournaments for non-admins | Non-admin cannot navigate to active tournaments via arrows |
+
+### Solution
+Remove all three gates. Non-admins **can READ** active tournaments (view is read-only; mutations already gated at service layer `js/services/tournament.js`).
+
+### Acceptance Criteria
+
+**Input → Expected Output:**
+
+1. **Home: Active Tournament Card (Non-Admin)**
+   - Input: Non-admin user, active tournament exists
+   - Expected: Card is clickable `<a href="#/tournament/2026-06-16">` (no disabled state, no 🔒)
+
+2. **Home: Active Tournament Card (Admin)**
+   - Input: Admin (isMino=true), active tournament exists
+   - Expected: Card remains clickable (regression: same as non-admin now)
+
+3. **Tournament List: Active Tournament Item (Non-Admin)**
+   - Input: Non-admin user, list contains active tournament (isComplete=false)
+   - Expected: Item is clickable (no `tournament-list-item--locked` class, no 🔒, click handler fires)
+
+4. **Tournament List: Active Tournament Item (Admin)**
+   - Input: Admin (isMino=true), list contains active tournament
+   - Expected: Item is clickable (regression: same behavior)
+
+5. **Tournament List: Completed Tournament (Non-Admin)**
+   - Input: Non-admin user, completed tournament (isComplete=true)
+   - Expected: Item is clickable, no lock (regression: already working)
+
+6. **Tournament: Prev/Next Navigation (Non-Admin)**
+   - Input: Non-admin viewing active tournament, accessible tournaments to navigate to include both completed + active
+   - Expected: `accessible` array includes active tournaments; prev/next buttons navigate across all (not filtered by `isMino`)
+
+7. **Tournament: Prev/Next Navigation (Admin)**
+   - Input: Admin (isMino=true) viewing tournament
+   - Expected: `accessible` includes all tournaments (regression: same behavior)
+
+8. **Write Access (All Roles)**
+   - Input: Non-admin attempts score entry, round advance, or tournament creation
+   - Expected: Service layer (`js/services/tournament.js`) rejects mutations; UI buttons remain hidden/disabled (no regression)
+
+### Implementation Status: ✅ COMPLETED
+
+**Edits Applied** (TDD: RED → GREEN):
+1. `js/pages/home.js` lines 452-475: Removed `if (isMino)` conditional. Card always renders as clickable `<a href="#/tournament/${date}">` for all users.
+2. `js/pages/tournaments.js` lines 37-56: Removed `const locked = !entry.isComplete && !isMino;` guard. List items clickable for all users (no lock class, no 🔒).
+3. `js/pages/tournament.js` lines 175-177: Removed `.filter(e => e.isComplete || isMino)` gate. Prev/next navigation includes all tournaments for all users.
+
+**Test Coverage**: `tests/tournament/tournament-view-access.test.js` (5 tests, all GREEN).
+
+**Security**: Service layer mutations remain protected (`js/services/tournament.js`). Non-admins can **READ** active tournaments but **CANNOT WRITE** (edits, score entry, round advance all rejected at service layer). UI edit controls remain hidden/disabled for non-admins.
+
+**Final Behavior**:
+- **Read Access**: Everyone (admin + non-admin) can view active tournaments (view-only, no locks)
+- **Write Access**: Admins only (Mino, Kikke) can modify
+- **Navigation**: Prev/next arrows include all tournaments for everyone
+- **List Display**: Active tournaments shown in home/tournaments pages (no 🔒, clickable)
 
 ## File References
 

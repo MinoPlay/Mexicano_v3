@@ -16,3 +16,4 @@ local-config.json
 # Local dev secrets (contains PAT — never commit)
 local-secrets.json
 test-results/.last-run.json
+vitest-output.txt

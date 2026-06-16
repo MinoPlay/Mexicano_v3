@@ -8,7 +8,8 @@ import {
   isMatchComplete,
   isRoundComplete,
   isTournamentEditable,
-  recalculateAllPlayerStats
+  recalculateAllPlayerStats,
+  updateAccessCode
 } from '../services/tournament.js';
 import { rankPlayers } from '../services/ranking.js';
 import { State } from '../state.js';
@@ -172,7 +173,6 @@ export function renderTournament(container, params) {
     const isMino = Store.isMino();
     const index = Store.getTournamentsIndex();
     const accessible = [...index]
-      .filter(e => e.isComplete || isMino)
       .sort((a, b) => b.date.localeCompare(a.date));
     const currentPos = accessible.findIndex(e => e.date === date);
     const prevDate = currentPos >= 0 && currentPos < accessible.length - 1 ? accessible[currentPos + 1].date : null;
@@ -194,6 +194,10 @@ export function renderTournament(container, params) {
       <div class="tabs" id="tournament-tabs">
         <button class="tab ${currentTab === 'matches' ? 'active' : ''}" data-tab="matches">Matches</button>
         <button class="tab ${currentTab === 'leaderboard' ? 'active' : ''}" data-tab="leaderboard">Leaderboard</button>
+        <div style="display:flex;align-items:center;gap:var(--space-xs);margin-left:auto" id="access-code-area">
+          ${tournament.accessCode ? `<span class="text-sm text-secondary"><strong>Access Code: ${tournament.accessCode}</strong></span>` : ''}
+          ${isMino ? `<button class="btn btn-ghost btn-xs" id="edit-access-code" title="Edit access code">✎</button>` : ''}
+        </div>
       </div>
 
       <div class="page-content" id="tournament-content"></div>
@@ -212,6 +216,36 @@ export function renderTournament(container, params) {
       currentTab = tab.dataset.tab;
       render();
     });
+
+    // Edit access code (inline editor; prompt() unsupported in PWA)
+    const editBtn = container.querySelector('#edit-access-code');
+    if (editBtn) {
+      editBtn.addEventListener('click', () => {
+        const area = container.querySelector('#access-code-area');
+        const currentCode = tournament.accessCode || '';
+        area.innerHTML = `
+          <input type="text" id="access-code-input" class="input input-sm" maxlength="20"
+            value="${currentCode}" placeholder="Access code" style="width:8rem">
+          <button class="btn btn-ghost btn-xs" id="save-access-code" title="Save">✓</button>
+          <button class="btn btn-ghost btn-xs" id="cancel-access-code" title="Cancel">✕</button>
+        `;
+        const input = area.querySelector('#access-code-input');
+        input.focus();
+        input.select();
+        const save = () => {
+          const codeToSave = input.value.trim() || null;
+          updateAccessCode(date, codeToSave);
+          showToast('Access code updated');
+          render();
+        };
+        area.querySelector('#save-access-code').addEventListener('click', save);
+        area.querySelector('#cancel-access-code').addEventListener('click', () => render());
+        input.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter') { e.preventDefault(); save(); }
+          else if (e.key === 'Escape') { e.preventDefault(); render(); }
+        });
+      });
+    }
 
     const content = container.querySelector('#tournament-content');
 
@@ -288,14 +322,14 @@ export function renderTournament(container, params) {
               </div>`
             : tournament.isCompleted
               ? ''
-              : `<div class="text-center text-sm text-secondary mt-sm">Tap to score</div>`
+              : Store.isMino() ? `<div class="text-center text-sm text-secondary mt-sm">Tap to score</div>` : ''
           }
         </div>
       `;
     });
 
-    // Action buttons
-    if (isLatestRound && !tournament.isCompleted) {
+    // Action buttons (admin only)
+    if (Store.isMino() && isLatestRound && !tournament.isCompleted) {
       const allScored = tournament.rounds.every(r => isRoundComplete(r));
 
       html += '<div class="mt-lg flex flex-col gap-sm">';
@@ -321,8 +355,8 @@ export function renderTournament(container, params) {
       render();
     });
 
-    // Event: click match to score (disabled for completed tournaments)
-    if (!tournament.isCompleted) {
+    // Event: click match to score (disabled for completed tournaments or non-admin)
+    if (Store.isMino() && !tournament.isCompleted) {
       content.querySelectorAll('.match-card').forEach(card => {
         card.addEventListener('click', () => {
           const matchIdx = parseInt(card.dataset.matchIdx, 10);

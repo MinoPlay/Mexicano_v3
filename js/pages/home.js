@@ -449,10 +449,7 @@ export function renderHome(container, params) {
       <div class="flex items-center gap-sm" id="home-header-right"></div>
     </header>
     <div class="page-content" style="padding-left:0;padding-right:0;">
-      ${activeTournament ? (() => {
-        const isMino = Store.isMino();
-        if (isMino) {
-          return `<a href="#/tournament/${activeTournament.tournamentDate}" class="card" style="display:block;margin:0 0 var(--space-md);border-radius:0;border-left:3px solid var(--color-success);border-right:none;text-decoration:none;color:inherit;background:none;border-top:none;border-bottom:none;">
+      ${activeTournament ? `<a href="#/tournament/${activeTournament.tournamentDate}" class="card" style="display:block;margin:0 0 var(--space-md);border-radius:0;border-left:3px solid var(--color-success);border-right:none;text-decoration:none;color:inherit;background:none;border-top:none;border-bottom:none;">
             <div class="card-header">
               <span class="card-title">Active Tournament</span>
               <span class="badge badge-success">Live</span>
@@ -460,20 +457,7 @@ export function renderHome(container, params) {
             <div class="text-sm text-secondary">
               ${formatDate(activeTournament.tournamentDate)} · ${activeTournament.players?.length || 0} players
             </div>
-          </a>`;
-        } else {
-          return `<div class="card" style="display:block;margin:0 0 var(--space-md);border-radius:0;border-left:3px solid var(--color-success);border-right:none;color:inherit;background:none;border-top:none;border-bottom:none;opacity:0.4;cursor:not-allowed;" title="Only admins can access active tournaments">
-            <div class="card-header">
-              <span class="card-title">Active Tournament</span>
-              <span class="badge badge-success">Live</span>
-              <span class="text-sm" style="margin-left:auto;">🔒</span>
-            </div>
-            <div class="text-sm text-secondary">
-              ${formatDate(activeTournament.tournamentDate)} · ${activeTournament.players?.length || 0} players
-            </div>
-          </div>`;
-        }
-      })() : ''}
+          </a>` : ''}
 
       <div class="card" style="margin:0 0 var(--space-md);border-radius:0;padding:0;overflow:hidden;border-left:none;border-right:none;background:none;border-top:none;border-bottom:none;">
         <div class="card-header" style="padding:var(--space-md);">

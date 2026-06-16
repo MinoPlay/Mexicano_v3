@@ -34,22 +34,20 @@ export function renderTournaments(container, params) {
       `;
       return;
     }
-    const isMino = Store.isMino();
     list.innerHTML = sorted.map(entry => {
-      const locked = !entry.isComplete && !isMino;
       return `
-        <div class="tournament-list-item${locked ? ' tournament-list-item--locked' : ''}" data-date="${entry.date}" ${locked ? 'title="Only admins can access active tournaments"' : ''}>
+        <div class="tournament-list-item" data-date="${entry.date}">
           <div>
             <div class="tournament-list-date">${formatDate(entry.date)}</div>
             <div class="tournament-list-meta">
               ${entry.playerCount ? `${entry.playerCount} players · ${entry.roundCount} round${entry.roundCount !== 1 ? 's' : ''}` : ''}
             </div>
           </div>
-          <div>${locked ? '🔒' : statusBadge(entry)}</div>
+          <div>${statusBadge(entry)}</div>
         </div>
       `;
     }).join('');
-    list.querySelectorAll('.tournament-list-item:not(.tournament-list-item--locked)').forEach(item => {
+    list.querySelectorAll('.tournament-list-item').forEach(item => {
       item.addEventListener('click', () => {
         window.location.hash = `/tournament/${item.dataset.date}`;
       });

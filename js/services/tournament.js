@@ -79,7 +79,7 @@ export function createMexicanoMatches(rankedPlayers) {
 
 // ─── Tournament lifecycle ───
 
-export function createTournament(date, playerNames) {
+export function createTournament(date, playerNames, accessCode = null) {
   if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
     throw new Error('Invalid date format, expected yyyy-MM-dd');
   }
@@ -118,7 +118,8 @@ export function createTournament(date, playerNames) {
     isStarted: false,
     isCompleted: false,
     startedAt: null,
-    completedAt: null
+    completedAt: null,
+    accessCode
   };
 
   Store.setActiveTournament(tournament);
@@ -164,6 +165,7 @@ export function startTournament(tournament) {
 }
 
 export function setMatchScore(tournament, roundNumber, matchId, team1Score, team2Score) {
+  if (Store.getCurrentUser() && !Store.isMino()) throw new Error("Tournament mutations require admin access");
   if (team1Score + team2Score !== 25) {
     throw new Error('Scores must sum to 25');
   }
@@ -248,6 +250,7 @@ export function recalculateAllPlayerStats(tournament) {
 }
 
 export function startNextRound(tournament) {
+  if (Store.getCurrentUser() && !Store.isMino()) throw new Error("Tournament mutations require admin access");
   const currentRound = tournament.rounds.find(r => r.roundNumber === tournament.currentRoundNumber);
   if (!currentRound) throw new Error('No current round found');
   if (!isRoundComplete(currentRound)) throw new Error('Current round is not complete');
@@ -282,6 +285,7 @@ export function startNextRound(tournament) {
 }
 
 export function completeTournament(tournament) {
+  if (Store.getCurrentUser() && !Store.isMino()) throw new Error("Tournament mutations require admin access");
   // Idempotent guard: if already completed, just retry the push
   if (tournament.isCompleted && tournament.completedAt) {
     retryCompletedTournamentPush();
@@ -657,3 +661,22 @@ export function saveTournamentState(tournament) {
     markMatchDateDirty(tournament.tournamentDate);
   }).catch(() => {});
 }
+
+export function updateAccessCode(date, code) {
+  if (Store.getCurrentUser() && !Store.isMino()) throw new Error("Tournament mutations require admin access");
+  const tournament = Store.getActiveTournament();
+  if (!tournament || tournament.tournamentDate !== date) {
+    throw new Error('No active tournament for date: ' + date);
+  }
+
+  tournament.accessCode = code;
+  Store.setActiveTournament(tournament);
+  State.emit('tournament-changed', tournament);
+
+  // Push to GitHub with same pattern as other mutations
+  import('./github.js').then(({ markMatchDateDirty, flushPush }) => {
+    markMatchDateDirty(date);
+    flushPush();
+  }).catch(() => {});
+}
+
