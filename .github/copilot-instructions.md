@@ -31,3 +31,4 @@ Rules:
 - Failing test (hardcoded expected data) FIRST, then implementation to green.
 - Tester edits only `tests/**`; Developer only `js/**`; Researcher only `.github/features/*.md`; feature agent owns the `sw.js` cache bump (once per feature).
 - TDD runner: `npx vitest run <file>` (targeted), `npx vitest run` (full).
+- Never push to github without explicit user request. Always report findings, blockers, and results in clear format (see below).
