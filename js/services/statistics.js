@@ -177,6 +177,22 @@ export function calculatePartnershipStats(playerName, allMatches) {
   }));
 }
 
+function compareTableValues(a, b, direction) {
+  if (typeof a === 'string') {
+    const cmp = a.localeCompare(b);
+    return direction === 'asc' ? cmp : -cmp;
+  }
+  return direction === 'asc' ? a - b : b - a;
+}
+
+export function sortHeadToHeadTable(data, columnKey, direction) {
+  return [...data].sort((a, b) => compareTableValues(a[columnKey], b[columnKey], direction));
+}
+
+export function sortPartnersTable(data, columnKey, direction) {
+  return [...data].sort((a, b) => compareTableValues(a[columnKey], b[columnKey], direction));
+}
+
 function toYearMonth(d) {
   return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
 }

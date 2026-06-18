@@ -1,5 +1,5 @@
 import { Store } from '../store.js';
-import { calculatePlayerStatistics, calculateOpponentStats, calculatePartnershipStats, generatePlayerSummary } from '../services/statistics.js';
+import { calculatePlayerStatistics, calculateOpponentStats, calculatePartnershipStats, generatePlayerSummary, sortHeadToHeadTable, sortPartnersTable } from '../services/statistics.js';
 
 /**
  * Open player profile dialog.
@@ -17,6 +17,53 @@ export function openPlayerProfile(playerName) {
   dialog.className = 'dialog';
 
   let activeTab = 'overview';
+  let opponentSort = { col: 'gamesPlayed', dir: 'desc' };
+  let partnerSort = { col: 'gamesPlayed', dir: 'desc' };
+
+  function nextSort(current, clickedCol) {
+    if (current.col === clickedCol) {
+      return { col: clickedCol, dir: current.dir === 'asc' ? 'desc' : 'asc' };
+    }
+    return { col: clickedCol, dir: clickedCol.endsWith('Name') ? 'asc' : 'desc' };
+  }
+
+  function buildSortableTable(data, columns, sortState, onSortChange) {
+    const wrapper = document.createElement('div');
+    wrapper.className = 'data-table';
+    const table = document.createElement('table');
+    const thead = document.createElement('thead');
+    const headerRow = document.createElement('tr');
+
+    columns.forEach(col => {
+      const th = document.createElement('th');
+      if (col.cls) th.className = col.cls;
+      th.textContent = col.label;
+      if (sortState.col === col.key) {
+        th.classList.add(sortState.dir === 'asc' ? 'sort-asc' : 'sort-desc');
+      }
+      th.addEventListener('click', () => onSortChange(col.key));
+      headerRow.appendChild(th);
+    });
+
+    thead.appendChild(headerRow);
+    table.appendChild(thead);
+
+    const tbody = document.createElement('tbody');
+    data.forEach(row => {
+      const tr = document.createElement('tr');
+      columns.forEach(col => {
+        const td = document.createElement('td');
+        if (col.cls) td.className = col.cls;
+        td.textContent = col.format ? col.format(row[col.key]) : row[col.key];
+        tr.appendChild(td);
+      });
+      tbody.appendChild(tr);
+    });
+
+    table.appendChild(tbody);
+    wrapper.appendChild(table);
+    return wrapper;
+  }
 
   function renderContent() {
     let tabContent = '';
@@ -57,52 +104,10 @@ export function openPlayerProfile(playerName) {
     } else if (activeTab === 'opponents') {
       if (opponents.length === 0) {
         tabContent = '<div class="empty-state"><div class="empty-state-text">No opponent data</div></div>';
-      } else {
-        tabContent = `
-          <div class="data-table">
-            <table>
-              <thead><tr>
-                <th>Opponent</th><th class="num-cell">Games</th><th class="num-cell">W</th><th class="num-cell">L</th><th class="num-cell">Win%</th>
-              </tr></thead>
-              <tbody>
-                ${opponents.sort((a, b) => b.gamesPlayed - a.gamesPlayed).map(o => `
-                  <tr>
-                    <td class="name-cell">${o.opponentName}</td>
-                    <td class="num-cell">${o.gamesPlayed}</td>
-                    <td class="num-cell">${o.wins}</td>
-                    <td class="num-cell">${o.losses}</td>
-                    <td class="num-cell">${(o.winRate).toFixed(0)}%</td>
-                  </tr>
-                `).join('')}
-              </tbody>
-            </table>
-          </div>
-        `;
       }
     } else if (activeTab === 'partners') {
       if (partners.length === 0) {
         tabContent = '<div class="empty-state"><div class="empty-state-text">No partner data</div></div>';
-      } else {
-        tabContent = `
-          <div class="data-table">
-            <table>
-              <thead><tr>
-                <th>Partner</th><th class="num-cell">Games</th><th class="num-cell">W</th><th class="num-cell">L</th><th class="num-cell">Avg Pts</th>
-              </tr></thead>
-              <tbody>
-                ${partners.sort((a, b) => b.gamesPlayed - a.gamesPlayed).map(p => `
-                  <tr>
-                    <td class="name-cell">${p.partnerName}</td>
-                    <td class="num-cell">${p.gamesPlayed}</td>
-                    <td class="num-cell">${p.wins}</td>
-                    <td class="num-cell">${p.losses}</td>
-                    <td class="num-cell">${p.averagePointsPerGame.toFixed(1)}</td>
-                  </tr>
-                `).join('')}
-              </tbody>
-            </table>
-          </div>
-        `;
       }
     }
 
@@ -126,6 +131,36 @@ export function openPlayerProfile(playerName) {
         renderContent();
       });
     });
+
+    const body = dialog.querySelector('.dialog-body');
+
+    if (activeTab === 'opponents' && opponents.length > 0) {
+      const sorted = sortHeadToHeadTable(opponents, opponentSort.col, opponentSort.dir);
+      const cols = [
+        { key: 'opponentName', label: 'Opponent', cls: 'name-cell' },
+        { key: 'gamesPlayed', label: 'Games', cls: 'num-cell' },
+        { key: 'wins', label: 'W', cls: 'num-cell' },
+        { key: 'losses', label: 'L', cls: 'num-cell' },
+        { key: 'winRate', label: 'Win%', cls: 'num-cell', format: v => v.toFixed(0) + '%' },
+      ];
+      body.appendChild(buildSortableTable(sorted, cols, opponentSort, key => {
+        opponentSort = nextSort(opponentSort, key);
+        renderContent();
+      }));
+    } else if (activeTab === 'partners' && partners.length > 0) {
+      const sorted = sortPartnersTable(partners, partnerSort.col, partnerSort.dir);
+      const cols = [
+        { key: 'partnerName', label: 'Partner', cls: 'name-cell' },
+        { key: 'gamesPlayed', label: 'Games', cls: 'num-cell' },
+        { key: 'wins', label: 'W', cls: 'num-cell' },
+        { key: 'losses', label: 'L', cls: 'num-cell' },
+        { key: 'averagePointsPerGame', label: 'Avg Pts', cls: 'num-cell', format: v => v.toFixed(1) },
+      ];
+      body.appendChild(buildSortableTable(sorted, cols, partnerSort, key => {
+        partnerSort = nextSort(partnerSort, key);
+        renderContent();
+      }));
+    }
   }
 
   function close() {

@@ -157,3 +157,134 @@ No external library. Build a vanilla Canvas bar chart following the same Canvas 
 
 ### "Current date" source
 No global clock helper in codebase. Use `new Date()` directly (same as `pullCoreData` in github.js:983).
+
+---
+
+## Sub-Feature: Sortable Column Headers in Player Profile Tables
+
+### Scope
+Player profile modal dialog (opened by clicking player name in Statistics page) displays two tabs with data tables:
+- **Head-to-Head**: opponent match records
+- **Partners**: partnership statistics
+
+**Feature**: Make column headers clickable to sort table data (ascending/descending toggle).
+
+### Current Behavior
+Both tables render in static sort order (by `gamesPlayed` descending only). Column headers are plain `<th>` elements with no click handlers or sort indicators.
+
+### Files Involved
+- **Render logic**: `js/components/player-profile.js` lines 57–106 (opponent + partner table generation)
+- **Data source**: `js/services/statistics.js` exports `calculateOpponentStats()` (lines 117–146) and `calculatePartnershipStats()` (lines 148–178)
+
+### Data Columns
+
+#### Head-to-Head Table
+| Column | Key | Data Type | Source |
+|--------|-----|-----------|--------|
+| Opponent | `opponentName` | string | opponent name |
+| Games | `gamesPlayed` | number | total games vs. this opponent |
+| W | `wins` | number | wins against this opponent |
+| L | `losses` | number | losses against this opponent |
+| Win% | `winRate` | number | `Math.round((wins / gamesPlayed) * 100 * 100) / 100` (0–100) |
+
+#### Partners Table
+| Column | Key | Data Type | Source |
+|--------|-----|-----------|--------|
+| Partner | `partnerName` | string | partner name |
+| Games | `gamesPlayed` | number | total games with this partner |
+| W | `wins` | number | wins with this partner |
+| L | `losses` | number | losses with this partner |
+| Avg Pts | `averagePointsPerGame` | number | `Math.round((totalPoints / gamesPlayed) * 100) / 100` |
+
+### Acceptance Criteria
+
+#### Head-to-Head Table Sorting
+
+**Input**: Player profile for "Alice" with opponent data
+```
+Opponent: "Bob",    Games: 8,  W: 5, L: 3, Win%: 62.5
+Opponent: "Charlie", Games: 12, W: 7, L: 5, Win%: 58.3
+Opponent: "Diana",   Games: 6,  W: 3, L: 3, Win%: 50.0
+```
+
+**When user clicks "Opponent" header (first time)**
+- **Expected**: Table sorted ascending by opponent name (A→Z)
+  - Row 1: Bob, 8, 5, 3, 62.5%
+  - Row 2: Charlie, 12, 7, 5, 58.3%
+  - Row 3: Diana, 6, 3, 3, 50.0%
+- **Visual**: Header shows "▲ Opponent" or similar ascending indicator
+
+**When user clicks "Opponent" header (second time)**
+- **Expected**: Table sorted descending by opponent name (Z→A)
+  - Row 1: Diana, 6, 3, 3, 50.0%
+  - Row 2: Charlie, 12, 7, 5, 58.3%
+  - Row 3: Bob, 8, 5, 3, 62.5%
+- **Visual**: Header shows "▼ Opponent"
+
+**When user clicks "Games" header (first time)**
+- **Expected**: Table sorted ascending by gamesPlayed (0→∞)
+  - Row 1: Diana, 6, 3, 3, 50.0%
+  - Row 2: Bob, 8, 5, 3, 62.5%
+  - Row 3: Charlie, 12, 7, 5, 58.3%
+- **Visual**: "Games" header shows ascending indicator; "Opponent" indicator cleared
+
+**When user clicks "Win%" header (first time)**
+- **Expected**: Table sorted ascending by winRate (0→100%)
+  - Row 1: Diana, 6, 3, 3, 50.0%
+  - Row 2: Charlie, 12, 7, 5, 58.3%
+  - Row 3: Bob, 8, 5, 3, 62.5%
+- **Visual**: "Win%" header shows ascending indicator
+
+**When user clicks "Win%" header (second time)**
+- **Expected**: Table sorted descending by winRate (100%→0%)
+  - Row 1: Bob, 8, 5, 3, 62.5%
+  - Row 2: Charlie, 12, 7, 5, 58.3%
+  - Row 3: Diana, 6, 3, 3, 50.0%
+- **Visual**: "Win%" header shows descending indicator
+
+#### Partners Table Sorting
+
+**Input**: Player profile for "Alice" with partnership data
+```
+Partner: "Eve",   Games: 10, W: 8, L: 2, Avg Pts: 14.3
+Partner: "Frank", Games: 5,  W: 3, L: 2, Avg Pts: 12.8
+Partner: "Grace", Games: 7,  W: 4, L: 3, Avg Pts: 13.5
+```
+
+**When user clicks "Partner" header (first time)**
+- **Expected**: Table sorted ascending by partner name (A→Z)
+  - Row 1: Eve, 10, 8, 2, 14.3
+  - Row 2: Frank, 5, 3, 2, 12.8
+  - Row 3: Grace, 7, 4, 3, 13.5
+- **Visual**: Header shows ascending indicator
+
+**When user clicks "Games" header (first time)**
+- **Expected**: Table sorted ascending by gamesPlayed (0→∞)
+  - Row 1: Frank, 5, 3, 2, 12.8
+  - Row 2: Grace, 7, 4, 3, 13.5
+  - Row 3: Eve, 10, 8, 2, 14.3
+- **Visual**: "Games" header shows ascending indicator
+
+**When user clicks "Avg Pts" header (first time)**
+- **Expected**: Table sorted ascending by averagePointsPerGame (0→∞)
+  - Row 1: Frank, 5, 3, 2, 12.8
+  - Row 2: Grace, 7, 4, 3, 13.5
+  - Row 3: Eve, 10, 8, 2, 14.3
+- **Visual**: "Avg Pts" header shows ascending indicator
+
+**When user clicks "Avg Pts" header (second time)**
+- **Expected**: Table sorted descending by averagePointsPerGame (∞→0)
+  - Row 1: Eve, 10, 8, 2, 14.3
+  - Row 2: Grace, 7, 4, 3, 13.5
+  - Row 3: Frank, 5, 3, 2, 12.8
+- **Visual**: "Avg Pts" header shows descending indicator
+
+#### Default Sort Behavior
+
+**When player profile dialog first opens**
+- **Expected**: Both tables use **current default** (Games descending; no indicator visible)
+  - Or after implementation: sort state may reset to column 1 (Opponent/Partner) ascending with visual indicator
+
+**When user navigates between tabs (Overview → Head-to-Head → Partners → back)**
+- **Expected**: Sort state persists during session (no reset on tab switch)
+- **Expected**: Sort state does NOT persist across profile re-open (fresh load = default sort)

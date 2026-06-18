@@ -392,56 +392,85 @@ export function showPlayerProfile(playerName) {
     el.appendChild(grid);
   }
 
-  function renderH2H(el, opps) {
-    if (!opps || opps.length === 0) { el.innerHTML = '<p class="text-secondary">No data</p>'; return; }
-    const sorted = [...opps].sort((a, b) => b.gamesPlayed - a.gamesPlayed);
+  let h2hSort = { col: 'gamesPlayed', dir: 'desc' };
+  let partnerSort = { col: 'gamesPlayed', dir: 'desc' };
+
+  function nextProfileSort(current, key) {
+    if (current.col === key) return { col: key, dir: current.dir === 'asc' ? 'desc' : 'asc' };
+    return { col: key, dir: key.endsWith('Name') ? 'asc' : 'desc' };
+  }
+
+  function buildProfileTable(data, columns, sortState, onSort) {
     const wrapper = document.createElement('div');
     wrapper.className = 'data-table';
     const t = document.createElement('table');
-    t.innerHTML = `<thead><tr>
-      <th>Opponent</th><th class="num-cell">Games</th><th class="num-cell">W</th>
-      <th class="num-cell">L</th><th class="num-cell">Win%</th>
-    </tr></thead>`;
+    const thead = document.createElement('thead');
+    const hr = document.createElement('tr');
+    columns.forEach(col => {
+      const th = document.createElement('th');
+      th.className = col.cls || '';
+      th.textContent = col.label;
+      if (sortState.col === col.key) th.classList.add(sortState.dir === 'asc' ? 'sort-asc' : 'sort-desc');
+      th.addEventListener('click', () => onSort(col.key));
+      hr.appendChild(th);
+    });
+    thead.appendChild(hr);
+    t.appendChild(thead);
     const tb = document.createElement('tbody');
-    sorted.forEach(o => {
+    data.forEach(row => {
       const tr = document.createElement('tr');
-      tr.innerHTML = `
-        <td class="name-cell">${o.opponentName}</td>
-        <td class="num-cell">${o.gamesPlayed}</td>
-        <td class="num-cell">${o.wins}</td>
-        <td class="num-cell">${o.losses}</td>
-        <td class="num-cell">${(o.winRate ?? 0).toFixed(1)}%</td>`;
+      columns.forEach(col => {
+        const td = document.createElement('td');
+        td.className = col.cls || '';
+        td.textContent = col.fmt ? col.fmt(row[col.key]) : (row[col.key] ?? '');
+        tr.appendChild(td);
+      });
       tb.appendChild(tr);
     });
     t.appendChild(tb);
     wrapper.appendChild(t);
-    el.appendChild(wrapper);
+    return wrapper;
+  }
+
+
+  function renderH2H(el, opps) {
+    if (!opps || opps.length === 0) { el.innerHTML = '<p class="text-secondary">No data</p>'; return; }
+    const sorted = [...opps].sort((a, b) => {
+      const av = a[h2hSort.col], bv = b[h2hSort.col];
+      if (typeof av === 'string') return h2hSort.dir === 'asc' ? av.localeCompare(bv) : bv.localeCompare(av);
+      return h2hSort.dir === 'asc' ? av - bv : bv - av;
+    });
+    const cols = [
+      { key: 'opponentName', label: 'Opponent', cls: '' },
+      { key: 'gamesPlayed', label: 'Games', cls: 'num-cell' },
+      { key: 'wins', label: 'W', cls: 'num-cell' },
+      { key: 'losses', label: 'L', cls: 'num-cell' },
+      { key: 'winRate', label: 'Win%', cls: 'num-cell', fmt: v => (v ?? 0).toFixed(1) + '%' },
+    ];
+    el.appendChild(buildProfileTable(sorted, cols, h2hSort, key => {
+      h2hSort = nextProfileSort(h2hSort, key);
+      renderBody();
+    }));
   }
 
   function renderPartners(el, parts) {
     if (!parts || parts.length === 0) { el.innerHTML = '<p class="text-secondary">No data</p>'; return; }
-    const sorted = [...parts].sort((a, b) => b.gamesPlayed - a.gamesPlayed);
-    const wrapper = document.createElement('div');
-    wrapper.className = 'data-table';
-    const t = document.createElement('table');
-    t.innerHTML = `<thead><tr>
-      <th>Partner</th><th class="num-cell">Games</th><th class="num-cell">W</th>
-      <th class="num-cell">L</th><th class="num-cell">Avg Pts</th>
-    </tr></thead>`;
-    const tb = document.createElement('tbody');
-    sorted.forEach(p => {
-      const tr = document.createElement('tr');
-      tr.innerHTML = `
-        <td class="name-cell">${p.partnerName}</td>
-        <td class="num-cell">${p.gamesPlayed}</td>
-        <td class="num-cell">${p.wins}</td>
-        <td class="num-cell">${p.losses}</td>
-        <td class="num-cell">${(p.averagePointsPerGame ?? 0).toFixed(1)}</td>`;
-      tb.appendChild(tr);
+    const sorted = [...parts].sort((a, b) => {
+      const av = a[partnerSort.col], bv = b[partnerSort.col];
+      if (typeof av === 'string') return partnerSort.dir === 'asc' ? av.localeCompare(bv) : bv.localeCompare(av);
+      return partnerSort.dir === 'asc' ? av - bv : bv - av;
     });
-    t.appendChild(tb);
-    wrapper.appendChild(t);
-    el.appendChild(wrapper);
+    const cols = [
+      { key: 'partnerName', label: 'Partner', cls: '' },
+      { key: 'gamesPlayed', label: 'Games', cls: 'num-cell' },
+      { key: 'wins', label: 'W', cls: 'num-cell' },
+      { key: 'losses', label: 'L', cls: 'num-cell' },
+      { key: 'averagePointsPerGame', label: 'Avg Pts', cls: 'num-cell', fmt: v => (v ?? 0).toFixed(1) },
+    ];
+    el.appendChild(buildProfileTable(sorted, cols, partnerSort, key => {
+      partnerSort = nextProfileSort(partnerSort, key);
+      renderBody();
+    }));
   }
 
   // Close handlers
