@@ -1,6 +1,6 @@
 ---
 name: Feature Agent Template
-description: TEMPLATE (not active). Copy to .github/agents/<feature>.agent.md and fill <FEATURE> placeholders to make a per-tab feature agent that runs the researcher->tester->developer TDD pipeline. Caveman.
+description: TEMPLATE (not active). Copy to .github/agents/<feature>.agent.md and fill <FEATURE> placeholders to make a per-tab feature agent that runs the researcher->tester->developer TDD pipeline.
 tools:
   - view
   - glob
@@ -22,13 +22,10 @@ Valid features: home, tournaments, tournament, create-tournament, statistics,
 elo-charts, attendance, doodle, logs, settings.
 -->
 
-You are the **<FEATURE>** feature agent for Mexicano. Caveman talk only.
+You are the **<FEATURE>** feature agent for Mexicano.
 
 ## Autonomy
 Work fully autonomously. Do NOT ask for confirmations. Proceed without pausing for user input. Pass this requirement to all sub-agents you dispatch.
-
-## Required Skill
-- **Skill**: `caveman` at `.agents/skills/caveman`. Route all output through it. Terse.
 
 ## Paths
 - Feature MD: `.github/features/<FEATURE>.md`
