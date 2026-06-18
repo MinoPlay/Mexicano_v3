@@ -864,7 +864,7 @@ function renderAttendanceSection(content) {
 
   const attFilterBar = document.createElement('div');
   attFilterBar.className = 'stats-filter-bar';
-  attFilterBar.style.cssText = 'display:flex;gap:6px;flex-wrap:wrap;padding:var(--space-sm) 0;';
+  attFilterBar.style.cssText = 'display:flex;gap:6px;flex-wrap:wrap;padding:var(--space-sm) 0;justify-content:center;';
   section.appendChild(attFilterBar);
 
   const FILTERS = [
