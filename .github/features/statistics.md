@@ -186,6 +186,7 @@ Both tables render in static sort order (by `gamesPlayed` descending only). Colu
 | W | `wins` | number | wins against this opponent |
 | L | `losses` | number | losses against this opponent |
 | Win% | `winRate` | number | `Math.round((wins / gamesPlayed) * 100 * 100) / 100` (0–100) |
+| Last 3 | `recentResults` | string[] | last up to 3 games as `W`/`L` badges (green/red); non-sortable; `—` when empty |
 
 #### Partners Table
 | Column | Key | Data Type | Source |
@@ -195,6 +196,7 @@ Both tables render in static sort order (by `gamesPlayed` descending only). Colu
 | W | `wins` | number | wins with this partner |
 | L | `losses` | number | losses with this partner |
 | Avg Pts | `averagePointsPerGame` | number | `Math.round((totalPoints / gamesPlayed) * 100) / 100` |
+| Last 3 | `recentResults` | string[] | last up to 3 games as `W`/`L` badges (green/red); non-sortable; `—` when empty |
 
 ### Acceptance Criteria
 

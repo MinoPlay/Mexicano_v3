@@ -1,4 +1,4 @@
-import { calculatePlayerStatistics, getMonthsForAttendanceFilter, computeAttendance } from '../services/statistics.js';
+import { calculatePlayerStatistics, getMonthsForAttendanceFilter, computeAttendance, formatRecentResults } from '../services/statistics.js';
 import { calculateAllEloRankings, getEloSnapshots, getEloForDate, getEloForMonth, getEloFromEmbeddedMatches } from '../services/elo.js';
 import { Store } from '../store.js';
 import { getLatestCompleteTournamentDate } from '../services/tournament.js';
@@ -410,6 +410,7 @@ export function showPlayerProfile(playerName) {
       const th = document.createElement('th');
       th.className = col.cls || '';
       th.textContent = col.label;
+      if (col.sortable === false) { hr.appendChild(th); return; }
       if (sortState.col === col.key) th.classList.add(sortState.dir === 'asc' ? 'sort-asc' : 'sort-desc');
       th.addEventListener('click', () => onSort(col.key));
       hr.appendChild(th);
@@ -422,7 +423,11 @@ export function showPlayerProfile(playerName) {
       columns.forEach(col => {
         const td = document.createElement('td');
         td.className = col.cls || '';
-        td.textContent = col.fmt ? col.fmt(row[col.key]) : (row[col.key] ?? '');
+        if (col.render) {
+          td.innerHTML = col.render(row);
+        } else {
+          td.textContent = col.fmt ? col.fmt(row[col.key]) : (row[col.key] ?? '');
+        }
         tr.appendChild(td);
       });
       tb.appendChild(tr);
@@ -446,6 +451,7 @@ export function showPlayerProfile(playerName) {
       { key: 'wins', label: 'W', cls: 'num-cell' },
       { key: 'losses', label: 'L', cls: 'num-cell' },
       { key: 'winRate', label: 'Win%', cls: 'num-cell', fmt: v => (v ?? 0).toFixed(1) + '%' },
+      { key: 'recentResults', label: 'Last 3', cls: 'recent-cell', sortable: false, render: row => formatRecentResults(row.recentResults) },
     ];
     el.appendChild(buildProfileTable(sorted, cols, h2hSort, key => {
       h2hSort = nextProfileSort(h2hSort, key);
@@ -466,6 +472,7 @@ export function showPlayerProfile(playerName) {
       { key: 'wins', label: 'W', cls: 'num-cell' },
       { key: 'losses', label: 'L', cls: 'num-cell' },
       { key: 'averagePointsPerGame', label: 'Avg Pts', cls: 'num-cell', fmt: v => (v ?? 0).toFixed(1) },
+      { key: 'recentResults', label: 'Last 3', cls: 'recent-cell', sortable: false, render: row => formatRecentResults(row.recentResults) },
     ];
     el.appendChild(buildProfileTable(sorted, cols, partnerSort, key => {
       partnerSort = nextProfileSort(partnerSort, key);

@@ -193,6 +193,19 @@ export function sortPartnersTable(data, columnKey, direction) {
   return [...data].sort((a, b) => compareTableValues(a[columnKey], b[columnKey], direction));
 }
 
+export function formatRecentResults(recentResults) {
+  if (!Array.isArray(recentResults)) return '—';
+  const cells = recentResults
+    .map(r => {
+      if (r === 'W') return '<span class="rr rr-w">W</span>';
+      if (r === 'L') return '<span class="rr rr-l">L</span>';
+      return '';
+    })
+    .filter(Boolean);
+  if (cells.length === 0) return '—';
+  return `<span class="recent-results">${cells.join('')}</span>`;
+}
+
 function toYearMonth(d) {
   return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
 }

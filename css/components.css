@@ -305,6 +305,28 @@
   text-align: right;
   font-variant-numeric: tabular-nums;
 }
+.data-table .recent-cell {
+  text-align: right;
+  white-space: nowrap;
+}
+.recent-results {
+  display: inline-flex;
+  gap: 2px;
+}
+.recent-results .rr {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 3px;
+  font-size: 10px;
+  font-weight: 700;
+  color: #fff;
+  line-height: 1;
+}
+.recent-results .rr-w { background: var(--color-success, #16a34a); }
+.recent-results .rr-l { background: var(--color-danger, #dc2626); }
 .col-resize-handle {
   position: absolute;
   right: 0;
