@@ -97,6 +97,13 @@ Members, theme, and current user are **local-only** and not synced to GitHub.
 
 ## Testing
 
+Unit / logic tests use [Vitest](https://vitest.dev/) (jsdom):
+
+```bash
+npm run test:unit            # full unit suite
+npx vitest run <test-file>   # targeted run (used by the TDD skill)
+```
+
 End-to-end tests use [Playwright](https://playwright.dev/):
 
 ```bash
@@ -104,6 +111,30 @@ npm test              # headless
 npm run test:headed   # with browser UI
 npm run test:ui       # Playwright interactive UI
 ```
+
+## Development Workflow (AI Skills)
+
+This repo ships caveman-style **skills** under `.github/skills/*/SKILL.md` that guide
+AI-assisted development. They replace the older `.github/agents/*` sub-agent setup.
+
+| Skill | Use when | Does |
+|---|---|---|
+| **mexicano-tdd** | Add, change, fix, or implement a feature/tab (home, tournaments, statistics, elo-charts, attendance, doodle, logs, settings, …) | Inline TDD pipeline: research (read/update feature MD + acceptance pairs) → failing Vitest (RED) → minimal `js/` change (GREEN) → finalize (full suite + bump `sw.js` `CACHE_NAME`) |
+| **mexicano-architect** | Design / tech decisions, PWA & service-worker questions, GitHub-as-backend data shape, general guidance not tied to one TDD change | MD-first architect guidance (PWA, Vanilla JS, GitHub-as-backend). No test pipeline |
+
+Rule of thumb: **"build / fix this"** → `mexicano-tdd`; **"how / why / what approach"** →
+`mexicano-architect`.
+
+Conventions enforced by the skills:
+
+- `.github/features/*.md` = source of truth. Read first, update on behavior change.
+- Failing test (hardcoded expected data) FIRST, then implementation to green.
+- Scope: tests only under `tests/**`, implementation only under `js/**`, feature docs only
+  under `.github/features/*.md`; `sw.js` `CACHE_NAME` bump is the finalize step (once per feature).
+- No frameworks, no build step, no new dependencies — Vanilla JS PWA.
+
+> Communication-style skills (`caveman`, etc.) live separately under `.agents/skills/` and are
+> orthogonal to the dev workflow.
 
 ## Project Structure
 
