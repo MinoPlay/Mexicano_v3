@@ -183,6 +183,18 @@ export async function sendDoodleAlert(playerName, yearMonth, selectedAdded = [],
   return queueAlert(url, meta);
 }
 
+export async function sendTournamentConfirmationAlert(playerName, tournamentDate) {
+  const { phone, apiKey } = await getWhatsAppConfig();
+  if (!phone || !apiKey) {
+    log('warn', 'Skipping confirmation alert: missing phone/apiKey in config.', { playerName, tournamentDate });
+    return;
+  }
+  const text = `🎾 ${playerName} confirmed attendance for tournament on ${tournamentDate}`;
+  const cleanPhone = phone.replace(/\s/g, '');
+  const url = `https://api.callmebot.com/whatsapp.php?phone=${cleanPhone}&text=${encodeURIComponent(text)}&apikey=${apiKey}`;
+  return queueAlert(url, { kind: 'tournament-confirmation', playerName, tournamentDate });
+}
+
 export async function sendWhatsAppTestAlert() {
   const { phone, apiKey } = await getWhatsAppConfig({ force: true });
   if (!phone || !apiKey) {

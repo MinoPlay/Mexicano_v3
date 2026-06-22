@@ -5,6 +5,18 @@ import { getLatestCompleteTournamentDate, getActiveTournament } from '../service
 import { getMembers } from '../services/members.js';
 import { calculatePlayerStatistics } from '../services/statistics.js';
 
+export function shouldShowConfirmationPopup(activeTournament, currentUser, alreadyConfirmed) {
+  if (!activeTournament || activeTournament.isCompleted) return false;
+  if (!currentUser) return false;
+  if (alreadyConfirmed) return false;
+  const players = activeTournament.players || [];
+  return players.some(p => p.name.toLowerCase() === currentUser.toLowerCase());
+}
+
+export function buildConfirmationAlertMessage(playerName, tournamentDate) {
+  return `🎾 ${playerName} confirmed attendance for tournament on ${tournamentDate}`;
+}
+
 function getCurrentYearMonth() {
   const now = new Date();
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
@@ -566,5 +578,46 @@ export function renderHome(container, params) {
       Store.remove('completion_marker');
       location.reload();
     });
+  }
+
+  // Tournament confirmation popup — once per tournament per user
+  if (activeTournament) {
+    const currentUser = Store.getCurrentUser();
+    const confirmKey = `confirmed_tournament_${activeTournament.tournamentDate}`;
+    const alreadyConfirmed = !!Store.get(confirmKey);
+    if (shouldShowConfirmationPopup(activeTournament, currentUser, alreadyConfirmed)) {
+      const overlay = document.createElement('div');
+      overlay.id = 'tournament-confirm-overlay';
+      overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:9999;display:flex;align-items:center;justify-content:center;padding:var(--space-md);';
+
+      const modal = document.createElement('div');
+      modal.style.cssText = 'background:var(--bg-card);border-radius:var(--radius-lg);padding:var(--space-xl);max-width:360px;width:100%;box-shadow:0 8px 32px rgba(0,0,0,0.4);';
+
+      const title = document.createElement('h2');
+      title.textContent = '🎾 Active Tournament';
+      title.style.cssText = 'margin:0 0 var(--space-md);font-size:var(--font-size-lg);';
+
+      const body = document.createElement('p');
+      body.textContent = `You are registered for the tournament on ${activeTournament.tournamentDate}. Please confirm your attendance.`;
+      body.style.cssText = 'margin:0 0 var(--space-xl);color:var(--text-secondary);font-size:var(--font-size-sm);';
+
+      const btn = document.createElement('button');
+      btn.textContent = 'CONFIRM';
+      btn.className = 'btn btn-primary';
+      btn.style.cssText = 'width:100%;font-size:var(--font-size-md);';
+      btn.addEventListener('click', () => {
+        Store.set(confirmKey, true);
+        overlay.remove();
+        import('../services/whatsapp.js').then(({ sendTournamentConfirmationAlert }) => {
+          sendTournamentConfirmationAlert(currentUser, activeTournament.tournamentDate);
+        }).catch(() => {});
+      });
+
+      modal.appendChild(title);
+      modal.appendChild(body);
+      modal.appendChild(btn);
+      overlay.appendChild(modal);
+      document.body.appendChild(overlay);
+    }
   }
 }
