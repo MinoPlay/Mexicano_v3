@@ -585,7 +585,8 @@ export function renderHome(container, params) {
     const currentUser = Store.getCurrentUser();
     const confirmKey = `confirmed_tournament_${activeTournament.tournamentDate}`;
     const alreadyConfirmed = !!Store.get(confirmKey);
-    if (shouldShowConfirmationPopup(activeTournament, currentUser, alreadyConfirmed)) {
+    if (shouldShowConfirmationPopup(activeTournament, currentUser, alreadyConfirmed) &&
+        !document.getElementById('tournament-confirm-overlay')) {
       const overlay = document.createElement('div');
       overlay.id = 'tournament-confirm-overlay';
       overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:9999;display:flex;align-items:center;justify-content:center;padding:var(--space-md);';

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'mexicano-v20260622083927';
+const CACHE_NAME = 'mexicano-v20260622122418';
 const ASSETS = [
   './',
   './index.html',
