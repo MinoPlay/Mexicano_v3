@@ -265,6 +265,29 @@ Remove all three gates. Non-admins **can READ** active tournaments (view is read
 - **Navigation**: Prev/next arrows include all tournaments for everyone
 - **List Display**: Active tournaments shown in home/tournaments pages (no 🔒, clickable)
 
+## Delete Tournament (Incomplete Only)
+
+An **incomplete** tournament can be deleted. A **completed** tournament cannot.
+
+### Rules
+- **Who**: Admins only (`Store.isMino()`).
+- **Guard**: Deletion is rejected if the tournament is completed — either the `tournaments.json` index entry has `isComplete: true`, or the active tournament has `isCompleted: true`. Throws `"Cannot delete a completed tournament"`.
+- **Non-admin**: `deleteTournament()` throws `"Tournament mutations require admin access"`.
+
+### Effects (`deleteTournament(date)` in `js/services/tournament.js`)
+1. Removes the entry for `date` from the in-memory tournaments index (`Store.setTournamentsIndex`).
+2. Purges all match entities for `date` from the Store (`Store.setMatches`).
+3. Clears the active tournament if it matches `date` (`Store.clearActiveTournament`).
+4. Emits `tournament-changed` (payload `null`).
+5. Remote cleanup (via `js/services/github.js`):
+   - `removeTournamentIndexEntry(date)` → rewrites `tournaments.json` without that date.
+   - `deleteTournamentDayFile(date)` → deletes the generated `YYYY/YYYY-MM/YYYY-MM-DD.json` file (no-op if 404 / not configured).
+
+### UI
+- **Where**: Tournament detail page (`js/pages/tournament.js`), Matches tab.
+- **Visibility**: "Delete Tournament" button shown only when `Store.isMino()` and `!tournament.isCompleted`.
+- **Flow**: Click → confirm dialog → `deleteTournament(date)` → toast → navigate to `#/tournaments`.
+
 ## File References
 
 | File | Responsibility |

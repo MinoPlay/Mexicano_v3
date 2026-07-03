@@ -662,6 +662,41 @@ export function saveTournamentState(tournament) {
   }).catch(() => {});
 }
 
+export async function deleteTournament(date) {
+  if (Store.getCurrentUser() && !Store.isMino()) throw new Error("Tournament mutations require admin access");
+
+  const index = Store.getTournamentsIndex();
+  const entry = index.find(e => e.date === date);
+  const active = Store.getActiveTournament();
+  const isActiveDate = !!(active && active.tournamentDate === date);
+
+  const completed = (entry && entry.isComplete) || (isActiveDate && active.isCompleted);
+  if (completed) throw new Error('Cannot delete a completed tournament');
+
+  // Drop the entry from the in-memory index
+  Store.setTournamentsIndex(index.filter(e => e.date !== date));
+
+  // Purge match entities for this date
+  Store.setMatches(Store.getMatches().filter(m => m.date !== date));
+
+  // Clear active tournament if it is the one being deleted
+  if (isActiveDate) Store.clearActiveTournament();
+
+  State.emit('tournament-changed', null);
+
+  // Remove remote copies: tournaments.json entry + the generated date file
+  try {
+    const { removeTournamentIndexEntry, deleteTournamentDayFile, cancelPendingSync } = await import('./github.js');
+    cancelPendingSync();
+    await removeTournamentIndexEntry(date);
+    await deleteTournamentDayFile(date);
+  } catch (e) {
+    console.warn('[tournament] failed to delete remote tournament:', e);
+  }
+
+  return true;
+}
+
 export function updateAccessCode(date, code) {
   if (Store.getCurrentUser() && !Store.isMino()) throw new Error("Tournament mutations require admin access");
   const tournament = Store.getActiveTournament();

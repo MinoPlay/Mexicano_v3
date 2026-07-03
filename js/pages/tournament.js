@@ -9,7 +9,8 @@ import {
   isRoundComplete,
   isTournamentEditable,
   recalculateAllPlayerStats,
-  updateAccessCode
+  updateAccessCode,
+  deleteTournament
 } from '../services/tournament.js';
 import { rankPlayers } from '../services/ranking.js';
 import { State } from '../state.js';
@@ -340,6 +341,12 @@ export function renderTournament(container, params) {
       if (!allScored) {
         html += `<p class="text-sm text-secondary text-center">Unscored matches will be removed when ending</p>`;
       }
+      html += `<button class="btn btn-ghost btn-block" id="delete-tournament-btn" style="color:var(--color-danger)">Delete Tournament</button>`;
+      html += '</div>';
+    } else if (Store.isMino() && !tournament.isCompleted) {
+      // Not the latest round view but still an incomplete tournament — allow delete
+      html += '<div class="mt-lg flex flex-col gap-sm">';
+      html += `<button class="btn btn-ghost btn-block" id="delete-tournament-btn" style="color:var(--color-danger)">Delete Tournament</button>`;
       html += '</div>';
     }
 
@@ -400,6 +407,22 @@ export function renderTournament(container, params) {
           render();
         } catch (err) {
           showToast(err.message || 'Failed to end tournament');
+        }
+      });
+    });
+
+    // Event: delete tournament (admin only, incomplete only)
+    content.querySelector('#delete-tournament-btn')?.addEventListener('click', () => {
+      const title = 'Delete Tournament?';
+      const message = 'This permanently removes the tournament from the index and deletes its match file. This cannot be undone.';
+
+      showConfirmDialog(title, message, async () => {
+        try {
+          await deleteTournament(date);
+          showToast('Tournament deleted');
+          window.location.hash = '/tournaments';
+        } catch (err) {
+          showToast(err.message || 'Failed to delete tournament');
         }
       });
     });

@@ -568,6 +568,59 @@ export async function updateTournamentIndexEntry(entry) {
 }
 
 /**
+ * Remove a tournament entry from tournaments.json by date.
+ * Reads the current file (for SHA), filters out the entry, writes back,
+ * and updates the in-memory Store index + tournament_dates cache.
+ * No-op if GitHub is not configured.
+ */
+export async function removeTournamentIndexEntry(date) {
+  const cfg = getConfig();
+  if (!cfg?.owner || !cfg?.repo || !cfg?.pat) return;
+  if (!date) return;
+
+  const path = tournamentsIndexPath();
+
+  let entries = [];
+  let sha = null;
+  try {
+    const result = await readFile(path);
+    if (result !== null) {
+      entries = Array.isArray(result.content) ? [...result.content] : [];
+      sha = result.sha;
+    }
+  } catch { /* file may not exist */ }
+
+  const filtered = entries.filter(e => e.date !== date);
+
+  if (sha !== null) {
+    try {
+      await writeFile(path, filtered, sha);
+    } catch (e) {
+      console.warn('[github] failed to update tournaments.json:', e);
+      return;
+    }
+  }
+
+  Store.setTournamentsIndex(filtered);
+  Cache.set('tournament_dates', filtered.map(e => e.date).sort());
+}
+
+/**
+ * Delete the generated match file for a given tournament date
+ * (e.g. YYYY/YYYY-MM/YYYY-MM-DD.json). No-op if the file or config is missing.
+ */
+export async function deleteTournamentDayFile(date) {
+  const cfg = getConfig();
+  if (!cfg?.owner || !cfg?.repo || !cfg?.pat) return;
+  if (!date) return;
+
+  const path = datePath(date);
+  const existing = await readFile(path);
+  if (!existing) return;
+  await deleteFile(path, existing.sha);
+}
+
+/**
  * Public wrapper for fetchTournamentsIndex with create:true.
  * Used by the Tournaments page for lazy-loading when index is empty.
  */
