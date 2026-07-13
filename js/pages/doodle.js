@@ -4,7 +4,7 @@ import { State } from '../state.js';
 import { showToast } from '../components/toast.js';
 import { calculateAllEloRankings } from '../services/elo.js';
 import { pushDoodleNow, cancelPendingSync, pullDoodleMonth, clearSessionTTL, pullMonthlyOverview, ensureDayMatchesLoaded } from '../services/github.js';
-import { sendDoodleAlert } from '../services/whatsapp.js';
+import { sendDoodleAlert } from '../services/telegram.js';
 
 const WEEKDAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
@@ -114,7 +114,7 @@ class DoodleEditSession {
             change.yearMonth,
             change.selectedAdded || [],
             change.selectedRemoved || []
-          ).catch(err => console.warn('[whatsapp] alert error:', err))
+          ).catch(err => console.warn('[telegram] alert error:', err))
         )
       );
       cancelPendingSync();

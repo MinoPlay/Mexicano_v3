@@ -47,7 +47,7 @@ describe('shouldShowConfirmationPopup', () => {
 // ─── buildConfirmationAlertMessage ───
 
 describe('buildConfirmationAlertMessage', () => {
-  it('builds correct WhatsApp message', () => {
+  it('builds correct Telegram message', () => {
     expect(buildConfirmationAlertMessage('Alice', '2024-06-22'))
       .toBe('🎾 Alice confirmed attendance for tournament on 2024-06-22');
   });

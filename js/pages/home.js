@@ -609,7 +609,7 @@ export function renderHome(container, params) {
       btn.addEventListener('click', () => {
         Store.set(confirmKey, true);
         overlay.remove();
-        import('../services/whatsapp.js').then(({ sendTournamentConfirmationAlert }) => {
+        import('../services/telegram.js').then(({ sendTournamentConfirmationAlert }) => {
           sendTournamentConfirmationAlert(currentUser, activeTournament.tournamentDate);
         }).catch(() => {});
       });

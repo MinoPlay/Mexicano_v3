@@ -1,13 +1,13 @@
 import { Store } from '../store.js';
 
-const EMPTY = Object.freeze({ phone: '', apiKey: '' });
+const EMPTY = Object.freeze({ botToken: '', chatId: '' });
 const GH_API = 'https://api.github.com';
 const GH_ACCEPT = 'application/vnd.github+json';
 const GH_API_VERSION = '2022-11-28';
 const CACHE_MS = 30000;
-const LS_KEY = 'mexicano_wa_config';
-const MIN_SEND_GAP_MS = 6500;
-const LOG_PREFIX = '[whatsapp]';
+const LS_KEY = 'mexicano_tg_config';
+const MIN_SEND_GAP_MS = 1100;
+const LOG_PREFIX = '[telegram]';
 
 let cached = EMPTY;
 let cachedAt = 0;
@@ -55,15 +55,19 @@ function getHeaders(pat) {
   };
 }
 
-function parseWaConfig(cfg) {
-  const wa = cfg?.whatsapp_alerts || {};
+export function parseTelegramConfig(cfg) {
+  const tg = cfg?.telegram_alerts || {};
   return {
-    phone: typeof wa.phone_number === 'string' ? wa.phone_number.trim() : '',
-    apiKey: typeof wa.api_key === 'string' ? wa.api_key.trim() : '',
+    botToken: typeof tg.bot_token === 'string' ? tg.bot_token.trim() : '',
+    chatId: typeof tg.chat_id === 'string' ? tg.chat_id.trim() : '',
   };
 }
 
-async function readWhatsAppConfigFromGitHub(gh) {
+export function buildTelegramUrl(botToken, chatId, text) {
+  return `https://api.telegram.org/bot${botToken}/sendMessage?chat_id=${chatId}&text=${encodeURIComponent(text)}`;
+}
+
+async function readTelegramConfigFromGitHub(gh) {
   if (!gh?.owner || !gh?.repo || !gh?.pat) {
     log('warn', 'GitHub backend not configured; alerts disabled.');
     return EMPTY;
@@ -84,18 +88,18 @@ async function readWhatsAppConfigFromGitHub(gh) {
 
   const file = await res.json();
   const cfg = decodeBase64Json(file.content || '');
-  const parsed = parseWaConfig(cfg);
-  if (!parsed.phone || !parsed.apiKey) {
-    log('warn', 'whatsapp_alerts config missing required fields.', {
+  const parsed = parseTelegramConfig(cfg);
+  if (!parsed.botToken || !parsed.chatId) {
+    log('warn', 'telegram_alerts config missing required fields.', {
       path,
-      hasPhone: !!parsed.phone,
-      hasApiKey: !!parsed.apiKey,
+      hasBotToken: !!parsed.botToken,
+      hasChatId: !!parsed.chatId,
     });
   }
   return parsed;
 }
 
-export async function getWhatsAppConfig({ force = false } = {}) {
+export async function getTelegramConfig({ force = false } = {}) {
   const gh = Store.getGitHubConfig();
   const key = getConfigIdentity(gh);
   if (!force && key === cachedKey && Date.now() - cachedAt < CACHE_MS) {
@@ -107,7 +111,7 @@ export async function getWhatsAppConfig({ force = false } = {}) {
   }
 
   configLoadKey = key;
-  configLoadPromise = readWhatsAppConfigFromGitHub(gh)
+  configLoadPromise = readTelegramConfigFromGitHub(gh)
     .then(result => {
       cached = result;
       cachedAt = Date.now();
@@ -116,7 +120,7 @@ export async function getWhatsAppConfig({ force = false } = {}) {
       return cached;
     })
     .catch(err => {
-      log('error', 'Failed to load WhatsApp config.', err);
+      log('error', 'Failed to load Telegram config.', err);
       throw err;
     })
     .finally(() => {
@@ -133,7 +137,7 @@ async function dispatchAlert(url, meta) {
   const elapsed = Date.now() - lastSentAt;
   const waitMs = Math.max(0, MIN_SEND_GAP_MS - elapsed);
   if (waitMs > 0) await sleep(waitMs);
-  log('info', 'Sending WhatsApp alert.', { kind: meta.kind, url });
+  log('info', 'Sending Telegram alert.', { kind: meta.kind, url });
   await fetch(url, { mode: 'no-cors' });
   lastSentAt = Date.now();
 }
@@ -157,15 +161,15 @@ function queueAlert(url, meta) {
 }
 
 export async function sendDoodleAlert(playerName, yearMonth, selectedAdded = [], selectedRemoved = []) {
-  const { phone, apiKey } = await getWhatsAppConfig();
+  const { botToken, chatId } = await getTelegramConfig();
   const baseMeta = {
     playerName,
     yearMonth,
     addedCount: selectedAdded.length,
     removedCount: selectedRemoved.length,
   };
-  if (!phone || !apiKey) {
-    log('warn', 'Skipping alert: missing phone/apiKey in config.', baseMeta);
+  if (!botToken || !chatId) {
+    log('warn', 'Skipping alert: missing bot_token/chat_id in config.', baseMeta);
     return;
   }
   if (!selectedAdded.length && !selectedRemoved.length) {
@@ -177,35 +181,32 @@ export async function sendDoodleAlert(playerName, yearMonth, selectedAdded = [],
   const removed = selectedRemoved.length ? selectedRemoved.join(', ') : 'none';
   const text    = `🎾 Doodle update — ${playerName} (${yearMonth})\n✅ Added: ${added}\n❌ Removed: ${removed}`;
 
-  const cleanPhone = phone.replace(/\s/g, '');
-  const url = `https://api.callmebot.com/whatsapp.php?phone=${cleanPhone}&text=${encodeURIComponent(text)}&apikey=${apiKey}`;
+  const url = buildTelegramUrl(botToken, chatId, text);
   const meta = { ...baseMeta, kind: 'doodle' };
   return queueAlert(url, meta);
 }
 
 export async function sendTournamentConfirmationAlert(playerName, tournamentDate) {
-  const { phone, apiKey } = await getWhatsAppConfig();
-  if (!phone || !apiKey) {
-    log('warn', 'Skipping confirmation alert: missing phone/apiKey in config.', { playerName, tournamentDate });
+  const { botToken, chatId } = await getTelegramConfig();
+  if (!botToken || !chatId) {
+    log('warn', 'Skipping confirmation alert: missing bot_token/chat_id in config.', { playerName, tournamentDate });
     return;
   }
   const text = `🎾 ${playerName} confirmed attendance for tournament on ${tournamentDate}`;
-  const cleanPhone = phone.replace(/\s/g, '');
-  const url = `https://api.callmebot.com/whatsapp.php?phone=${cleanPhone}&text=${encodeURIComponent(text)}&apikey=${apiKey}`;
+  const url = buildTelegramUrl(botToken, chatId, text);
   return queueAlert(url, { kind: 'tournament-confirmation', playerName, tournamentDate });
 }
 
-export async function sendWhatsAppTestAlert() {
-  const { phone, apiKey } = await getWhatsAppConfig({ force: true });
-  if (!phone || !apiKey) {
-    log('warn', 'Skipping test alert: missing phone/apiKey in config.');
-    throw new Error('Missing whatsapp_alerts.phone_number or whatsapp_alerts.api_key in config.json');
+export async function sendTelegramTestAlert() {
+  const { botToken, chatId } = await getTelegramConfig({ force: true });
+  if (!botToken || !chatId) {
+    log('warn', 'Skipping test alert: missing bot_token/chat_id in config.');
+    throw new Error('Missing telegram_alerts.bot_token or telegram_alerts.chat_id in config.json');
   }
 
   const currentUser = Store.getCurrentUser() || 'unknown';
   const timestamp = new Date().toISOString();
-  const cleanPhone = phone.replace(/\s/g, '');
   const text = `📞 Mexicano test alert\nUser: ${currentUser}\nTime: ${timestamp}`;
-  const url = `https://api.callmebot.com/whatsapp.php?phone=${cleanPhone}&text=${encodeURIComponent(text)}&apikey=${apiKey}`;
+  const url = buildTelegramUrl(botToken, chatId, text);
   return queueAlert(url, { kind: 'test', user: currentUser, timestamp });
 }

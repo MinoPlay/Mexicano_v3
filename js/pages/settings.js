@@ -3,7 +3,7 @@ import { getMembers, addMember, removeMember } from '../services/members.js';
 import { showToast } from '../components/toast.js';
 import { testConnection, onSyncStatus, getSyncStatus, pushDoodleNow, addPlayerToPlayersJson } from '../services/github.js';
 import { isInstalled } from '../components/install-prompt.js';
-import { getWhatsAppConfig, sendWhatsAppTestAlert } from '../services/whatsapp.js';
+import { getTelegramConfig, sendTelegramTestAlert } from '../services/telegram.js';
 
 function renderMembersList(listEl) {
   const members = getMembers();
@@ -81,17 +81,17 @@ export function renderSettings(container, params) {
         <div id="github-status-msg" class="text-sm mt-sm" style="min-height:1.25rem;"></div>
       </div>
 
-      <!-- WhatsApp Alerts -->
+      <!-- Telegram Alerts -->
       <div class="settings-section">
-        <div class="settings-section-title">WhatsApp Alerts</div>
+        <div class="settings-section-title">Telegram Alerts</div>
         <p class="text-sm text-secondary" style="margin-bottom:var(--space-sm);">
-          Receive a WhatsApp message via <a href="https://www.callmebot.com/blog/free-api-whatsapp-messages/" target="_blank" rel="noopener">CallMeBot</a>
+          Receive a Telegram message via a <a href="https://core.telegram.org/bots#botfather" target="_blank" rel="noopener">Telegram bot</a>
           whenever doodle availability is updated. Credentials are read from GitHub <code>config.json</code>.
         </p>
         <div class="flex gap-sm mt-sm">
-          <button id="wa-test-btn" class="btn btn-primary" style="flex:1;">📞 Send Test Alert</button>
+          <button id="tg-test-btn" class="btn btn-primary" style="flex:1;">📞 Send Test Alert</button>
         </div>
-        <div id="wa-status-msg" class="text-sm mt-sm" style="min-height:1.25rem;"></div>
+        <div id="tg-status-msg" class="text-sm mt-sm" style="min-height:1.25rem;"></div>
       </div>
 
 
@@ -246,38 +246,38 @@ export function renderSettings(container, params) {
     showToast('GitHub config cleared');
   });
 
-  // ─── WhatsApp Alerts ───────────────────────────────────────────────────────
+  // ─── Telegram Alerts ───────────────────────────────────────────────────────
 
-  const waTestBtn  = container.querySelector('#wa-test-btn');
-  const waStatus   = container.querySelector('#wa-status-msg');
+  const tgTestBtn  = container.querySelector('#tg-test-btn');
+  const tgStatus   = container.querySelector('#tg-status-msg');
 
-  function setWaStatus(msg, isError = false) {
-    waStatus.textContent = msg;
-    waStatus.style.color = isError ? 'var(--color-danger, #ef4444)' : 'var(--color-success, #22c55e)';
+  function setTgStatus(msg, isError = false) {
+    tgStatus.textContent = msg;
+    tgStatus.style.color = isError ? 'var(--color-danger, #ef4444)' : 'var(--color-success, #22c55e)';
   }
 
-  async function refreshWaTestBtn() {
+  async function refreshTgTestBtn() {
     try {
-      const wa = await getWhatsAppConfig();
-      waTestBtn.disabled = !wa.phone || !wa.apiKey;
+      const tg = await getTelegramConfig();
+      tgTestBtn.disabled = !tg.botToken || !tg.chatId;
     } catch {
-      waTestBtn.disabled = true;
+      tgTestBtn.disabled = true;
     }
   }
 
-  refreshWaTestBtn();
-  waTestBtn.addEventListener('click', async () => {
-    waTestBtn.disabled = true;
-    setWaStatus('Sending WhatsApp test alert…');
+  refreshTgTestBtn();
+  tgTestBtn.addEventListener('click', async () => {
+    tgTestBtn.disabled = true;
+    setTgStatus('Sending Telegram test alert…');
     try {
-      await sendWhatsAppTestAlert();
-      setWaStatus('Test alert request sent. Check WhatsApp.');
-      showToast('WhatsApp test alert sent');
+      await sendTelegramTestAlert();
+      setTgStatus('Test alert request sent. Check Telegram.');
+      showToast('Telegram test alert sent');
     } catch (err) {
-      setWaStatus(`Test alert failed: ${err.message}`, true);
-      showToast('WhatsApp test alert failed', 'error');
+      setTgStatus(`Test alert failed: ${err.message}`, true);
+      showToast('Telegram test alert failed', 'error');
     } finally {
-      refreshWaTestBtn();
+      refreshTgTestBtn();
     }
   });
 }
