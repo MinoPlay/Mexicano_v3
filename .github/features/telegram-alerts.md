@@ -1,13 +1,29 @@
 # Telegram Alerts
 
 ## Purpose
-Notify a Telegram group via the Telegram Bot API whenever a doodle entry is saved/deleted,
+Notify a Telegram group via a Telegram bot whenever a doodle entry is saved/deleted,
 when a player confirms tournament attendance, or when a manual test is triggered.
 
+## Architecture — relayed through GitHub Actions
+Many networks (e.g. corporate WiFi) block `api.telegram.org`, so the browser cannot
+send Telegram messages directly. `api.github.com` stays reachable (it is the app's
+data backend). Therefore alerts are **relayed**:
+
+1. Client fires a GitHub `repository_dispatch` event (`event_type: telegram_alert`,
+   `client_payload.text`) on the configured data repo (`Store.getGitHubConfig()` →
+   `owner`/`repo`/`pat`).
+2. A workflow in the data repo (`.github/workflows/telegram-relay.yml`) receives the
+   event and sends the message via the Telegram Bot API from a GitHub runner (not
+   blocked). Bot token + chat id live as repo **secrets**, never in the client.
+
+The client no longer contacts Telegram and no longer reads `config.json`
+`telegram_alerts`. Success on the client only means GitHub accepted the dispatch
+(HTTP 204); actual delivery happens in the workflow.
+
 ## Trigger Points
-- `DoodleEditSession.save()` in `js/pages/doodle.js` — fires only after `await pushDoodleNow(yearMonth)` commits `doodle_changelog_YYYY-MM.json`
-- Tournament confirmation popup in `js/pages/home.js` — fires when a player confirms attendance
-- Alert payload is built from the changelog entries returned by `saveDoodle()` in `js/services/doodle.js`
+- `DoodleEditSession.save()` in `js/pages/doodle.js` — after `pushDoodleNow()` commits, fires `sendDoodleAlert()` per changed player
+- Tournament confirmation popup in `js/pages/home.js` — fires `sendTournamentConfirmationAlert()` when a player confirms
+- Settings "Send Test Alert" button — fires `sendTelegramTestAlert()`
 
 ## Message Format
 ```
@@ -26,42 +42,34 @@ User: {currentUser}
 Time: {ISO timestamp}
 ```
 
-## Telegram Bot API
-- URL: `https://api.telegram.org/bot{bot_token}/sendMessage?chat_id={chat_id}&text={encoded}`
-- Method: GET
-- Bot created via @BotFather; bot must be a member of the target group
+## GitHub repository_dispatch
+- URL: `POST https://api.github.com/repos/{owner}/{repo}/dispatches`
+- Headers: `Authorization: Bearer {pat}`, `Accept: application/vnd.github+json`, `X-GitHub-Api-Version: 2022-11-28`
+- Body: `{ "event_type": "telegram_alert", "client_payload": { "text": "...", "kind": "..." } }`
+- Success: HTTP 204 No Content
+- PAT needs push (Contents write) access to the data repo — the app's existing PAT already has it
+
+## Workflow (data repo)
+- File: `.github/workflows/telegram-relay.yml` in the data repo (`MinoPlay/DataHub_Mexicano`)
+- Trigger: `on: repository_dispatch: types: [telegram_alert]`
+- Sends `github.event.client_payload.text` to `https://api.telegram.org/bot{secret}/sendMessage`
+- Secrets: `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`
 - `chat_id` is the group id (negative, e.g. `-5375683887`; supergroups use `-100...`)
 
-## Config Storage
-- GitHub backend `config.json` (same repo as app data)
-- Path is derived from configured GitHub base path:
-  - If base path is `mexicano_v3/backup-data`, config file is `mexicano_v3/config.json`
-- Values read from:
-  - `telegram_alerts.bot_token`
-  - `telegram_alerts.chat_id`
-
 ## Settings UI
-- Section "Telegram Alerts" in Settings page
-- Visible to all users (not gated by isMino)
-- Reload happens via `getTelegramConfig()` on render
-- Test button with call icon (`📞 Send Test Alert`) sends a manual Telegram test message
-- Shows explicit error when config values are missing or config read fails
-- Alert fires only when both `bot_token` and `chat_id` are present and non-empty
+- Section "Telegram Alerts" in Settings page (visible to all users)
+- Test button always enabled; triggers a relay dispatch
+- Shows explicit error when GitHub is not configured or the dispatch is rejected
 
 ## Behavior
-- Fire-and-forget: failures log to console, never throw
-- Console logs when config load starts/ends, when queueing alerts, and when dispatching requests
-- Logs explicit skip reason when bot_token/chat_id missing
-- Logs explicit skip reason when both `selectedAdded` and `selectedRemoved` are empty
+- Fire-and-forget for doodle/confirmation triggers: they `.catch` and log failures, never block UI
+- Client dispatch rejects with the GitHub API `message` on non-204 responses (surfaced by the test button)
+- Logs explicit skip reason when a doodle change has no added/removed dates
 - Only fires on explicit user saves
-- Trigger happens post-commit: alerts start only after GitHub write of monthly doodle + changelog succeeds
-- Alerts are serialized client-side (single queue) to preserve commit/change order
-- Alerts enforce a minimum send gap (1.1s) to respect Telegram per-chat rate limits
-- Dispatch uses `fetch(..., { mode: 'no-cors' })`, so browser logs request dispatch but cannot confirm delivery response
-- Test alert forces a fresh config fetch before send and reports missing config as UI error
+- Doodle trigger happens post-commit: alerts start only after the GitHub write of the monthly doodle + changelog succeeds
 
 ## File References
-- **Service**: `js/services/telegram.js`
-- **Trigger**: `js/pages/doodle.js` — `DoodleEditSession.save()`; `js/pages/home.js` — confirmation popup
-- **Changelog source**: `js/services/doodle.js` — `saveDoodle()`, `logDoodleChange()`
+- **Service (client)**: `js/services/telegram.js` — `sendDoodleAlert`, `sendTournamentConfirmationAlert`, `sendTelegramTestAlert`, `dispatchTelegramAlert`
+- **Triggers**: `js/pages/doodle.js` — `DoodleEditSession.save()`; `js/pages/home.js` — confirmation popup
 - **Settings UI**: `js/pages/settings.js`
+- **Workflow (data repo)**: `.github/workflows/telegram-relay.yml`

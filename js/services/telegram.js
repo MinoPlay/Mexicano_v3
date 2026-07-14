@@ -1,27 +1,19 @@
 import { Store } from '../store.js';
 
-const EMPTY = Object.freeze({ botToken: '', chatId: '' });
+// Telegram alerts are relayed through GitHub Actions instead of being sent
+// directly from the browser: many networks block api.telegram.org, but
+// api.github.com stays reachable (the same endpoint used for all app data).
+//
+// The client fires a `repository_dispatch` event on the configured data repo;
+// a workflow in that repo (`.github/workflows/telegram-relay.yml`) sends the
+// actual Telegram message from a GitHub runner using repo secrets
+// (TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID).
+
 const GH_API = 'https://api.github.com';
 const GH_ACCEPT = 'application/vnd.github+json';
 const GH_API_VERSION = '2022-11-28';
-const CACHE_MS = 30000;
-const LS_KEY = 'mexicano_tg_config';
-const MIN_SEND_GAP_MS = 1100;
+const DISPATCH_EVENT = 'telegram_alert';
 const LOG_PREFIX = '[telegram]';
-
-let cached = EMPTY;
-let cachedAt = 0;
-let cachedKey = '';
-let configLoadPromise = null;
-let configLoadKey = '';
-let sendQueue = Promise.resolve();
-let lastSentAt = 0;
-let queueDepth = 0;
-let sendSequence = 0;
-
-function sleep(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms));
-}
 
 function log(level, message, details) {
   if (details === undefined) {
@@ -31,182 +23,82 @@ function log(level, message, details) {
   console[level](`${LOG_PREFIX} ${message}`, details);
 }
 
-function decodeBase64Json(content) {
-  const bytes = Uint8Array.from(atob(content.replace(/\n/g, '')), c => c.charCodeAt(0));
-  return JSON.parse(new TextDecoder().decode(bytes));
-}
-
-function getConfigPath(basePath = '') {
-  const normalized = String(basePath).trim().replace(/\\/g, '/').replace(/^\/+|\/+$/g, '');
-  if (!normalized) return 'config.json';
-  const slash = normalized.lastIndexOf('/');
-  return slash === -1 ? 'config.json' : `${normalized.slice(0, slash)}/config.json`;
-}
-
-function getConfigIdentity(gh) {
-  return `${gh?.owner || ''}|${gh?.repo || ''}|${gh?.basePath || ''}|${gh?.pat || ''}`;
-}
-
 function getHeaders(pat) {
   return {
     Authorization: `Bearer ${pat}`,
     Accept: GH_ACCEPT,
     'X-GitHub-Api-Version': GH_API_VERSION,
+    'Content-Type': 'application/json',
   };
 }
 
-export function parseTelegramConfig(cfg) {
-  const tg = cfg?.telegram_alerts || {};
-  return {
-    botToken: typeof tg.bot_token === 'string' ? tg.bot_token.trim() : '',
-    chatId: typeof tg.chat_id === 'string' ? tg.chat_id.trim() : '',
-  };
+export function buildDoodleAlertText(playerName, yearMonth, selectedAdded = [], selectedRemoved = []) {
+  const added = selectedAdded.length ? selectedAdded.join(', ') : 'none';
+  const removed = selectedRemoved.length ? selectedRemoved.join(', ') : 'none';
+  return `🎾 Doodle update — ${playerName} (${yearMonth})\n✅ Added: ${added}\n❌ Removed: ${removed}`;
 }
 
-export function buildTelegramUrl(botToken, chatId, text) {
-  return `https://api.telegram.org/bot${botToken}/sendMessage?chat_id=${chatId}&text=${encodeURIComponent(text)}`;
+export function buildConfirmationText(playerName, tournamentDate) {
+  return `🎾 ${playerName} confirmed attendance for tournament on ${tournamentDate}`;
 }
 
-async function readTelegramConfigFromGitHub(gh) {
-  if (!gh?.owner || !gh?.repo || !gh?.pat) {
-    log('warn', 'GitHub backend not configured; alerts disabled.');
-    return EMPTY;
-  }
-
-  const path = getConfigPath(gh.basePath);
-  const safePath = path.split('/').map(encodeURIComponent).join('/');
-  const owner = encodeURIComponent(gh.owner);
-  const repo = encodeURIComponent(gh.repo);
-  const url = `${GH_API}/repos/${owner}/${repo}/contents/${safePath}`;
-  const res = await fetch(url, { headers: getHeaders(gh.pat) });
-
-  if (res.status === 404) {
-    log('warn', 'config.json not found; alerts disabled.', { path });
-    return EMPTY;
-  }
-  if (!res.ok) throw new Error(`GitHub config read failed (${res.status}): ${path}`);
-
-  const file = await res.json();
-  const cfg = decodeBase64Json(file.content || '');
-  const parsed = parseTelegramConfig(cfg);
-  if (!parsed.botToken || !parsed.chatId) {
-    log('warn', 'telegram_alerts config missing required fields.', {
-      path,
-      hasBotToken: !!parsed.botToken,
-      hasChatId: !!parsed.chatId,
-    });
-  }
-  return parsed;
+export function buildTestAlertText(user, timestamp) {
+  return `📞 Mexicano test alert\nUser: ${user}\nTime: ${timestamp}`;
 }
 
-export async function getTelegramConfig({ force = false } = {}) {
+async function dispatchTelegramAlert(text, meta) {
   const gh = Store.getGitHubConfig();
-  const key = getConfigIdentity(gh);
-  if (!force && key === cachedKey && Date.now() - cachedAt < CACHE_MS) {
-    return cached;
+  if (!gh?.owner || !gh?.repo || !gh?.pat) {
+    log('warn', 'GitHub backend not configured; alert not relayed.', meta);
+    throw new Error('GitHub backend not configured — cannot relay Telegram alert');
   }
 
-  if (!force && key === configLoadKey && configLoadPromise) {
-    return configLoadPromise;
-  }
+  const url = `${GH_API}/repos/${encodeURIComponent(gh.owner)}/${encodeURIComponent(gh.repo)}/dispatches`;
+  const payload = { event_type: DISPATCH_EVENT, client_payload: { text, kind: meta.kind } };
 
-  configLoadKey = key;
-  configLoadPromise = readTelegramConfigFromGitHub(gh)
-    .then(result => {
-      cached = result;
-      cachedAt = Date.now();
-      cachedKey = key;
-      try { localStorage.setItem(LS_KEY, JSON.stringify(result)); } catch { /* ignore */ }
-      return cached;
-    })
-    .catch(err => {
-      log('error', 'Failed to load Telegram config.', err);
-      throw err;
-    })
-    .finally(() => {
-      configLoadPromise = null;
-      configLoadKey = '';
-    });
-
-  const result = await configLoadPromise;
-  cachedAt = Date.now();
-  return result;
-}
-
-async function dispatchAlert(url, meta) {
-  const elapsed = Date.now() - lastSentAt;
-  const waitMs = Math.max(0, MIN_SEND_GAP_MS - elapsed);
-  if (waitMs > 0) await sleep(waitMs);
-  log('info', 'Sending Telegram alert.', { kind: meta.kind, url });
-  await fetch(url, { mode: 'no-cors' });
-  lastSentAt = Date.now();
-}
-
-function queueAlert(url, meta) {
-  const seq = ++sendSequence;
-  queueDepth += 1;
-  const runMeta = { ...meta, seq, queueDepth };
-
-  sendQueue = sendQueue.then(async () => {
-    try {
-      await dispatchAlert(url, runMeta);
-    } catch (err) {
-      log('warn', 'Alert dispatch failed.', { kind: meta.kind, error: err?.message || String(err) });
-    } finally {
-      queueDepth = Math.max(0, queueDepth - 1);
-    }
+  log('info', 'Relaying Telegram alert via GitHub dispatch.', { kind: meta.kind });
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: getHeaders(gh.pat),
+    body: JSON.stringify(payload),
   });
 
-  return sendQueue;
+  // repository_dispatch returns 204 No Content on success.
+  if (res.status !== 204) {
+    let detail = `HTTP ${res.status}`;
+    try {
+      const body = await res.json();
+      if (body?.message) detail = body.message;
+    } catch { /* non-JSON error body */ }
+    throw new Error(`Telegram relay dispatch failed: ${detail}`);
+  }
+  log('info', 'Telegram alert relayed.', { kind: meta.kind });
 }
 
 export async function sendDoodleAlert(playerName, yearMonth, selectedAdded = [], selectedRemoved = []) {
-  const { botToken, chatId } = await getTelegramConfig();
-  const baseMeta = {
+  const meta = {
+    kind: 'doodle',
     playerName,
     yearMonth,
     addedCount: selectedAdded.length,
     removedCount: selectedRemoved.length,
   };
-  if (!botToken || !chatId) {
-    log('warn', 'Skipping alert: missing bot_token/chat_id in config.', baseMeta);
-    return;
-  }
   if (!selectedAdded.length && !selectedRemoved.length) {
-    log('info', 'Skipping alert: no doodle changes detected.', baseMeta);
+    log('info', 'Skipping alert: no doodle changes detected.', meta);
     return;
   }
-
-  const added   = selectedAdded.length   ? selectedAdded.join(', ')   : 'none';
-  const removed = selectedRemoved.length ? selectedRemoved.join(', ') : 'none';
-  const text    = `🎾 Doodle update — ${playerName} (${yearMonth})\n✅ Added: ${added}\n❌ Removed: ${removed}`;
-
-  const url = buildTelegramUrl(botToken, chatId, text);
-  const meta = { ...baseMeta, kind: 'doodle' };
-  return queueAlert(url, meta);
+  const text = buildDoodleAlertText(playerName, yearMonth, selectedAdded, selectedRemoved);
+  return dispatchTelegramAlert(text, meta);
 }
 
 export async function sendTournamentConfirmationAlert(playerName, tournamentDate) {
-  const { botToken, chatId } = await getTelegramConfig();
-  if (!botToken || !chatId) {
-    log('warn', 'Skipping confirmation alert: missing bot_token/chat_id in config.', { playerName, tournamentDate });
-    return;
-  }
-  const text = `🎾 ${playerName} confirmed attendance for tournament on ${tournamentDate}`;
-  const url = buildTelegramUrl(botToken, chatId, text);
-  return queueAlert(url, { kind: 'tournament-confirmation', playerName, tournamentDate });
+  const text = buildConfirmationText(playerName, tournamentDate);
+  return dispatchTelegramAlert(text, { kind: 'tournament-confirmation', playerName, tournamentDate });
 }
 
 export async function sendTelegramTestAlert() {
-  const { botToken, chatId } = await getTelegramConfig({ force: true });
-  if (!botToken || !chatId) {
-    log('warn', 'Skipping test alert: missing bot_token/chat_id in config.');
-    throw new Error('Missing telegram_alerts.bot_token or telegram_alerts.chat_id in config.json');
-  }
-
   const currentUser = Store.getCurrentUser() || 'unknown';
   const timestamp = new Date().toISOString();
-  const text = `📞 Mexicano test alert\nUser: ${currentUser}\nTime: ${timestamp}`;
-  const url = buildTelegramUrl(botToken, chatId, text);
-  return queueAlert(url, { kind: 'test', user: currentUser, timestamp });
+  const text = buildTestAlertText(currentUser, timestamp);
+  return dispatchTelegramAlert(text, { kind: 'test', user: currentUser, timestamp });
 }

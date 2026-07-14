@@ -610,7 +610,8 @@ export function renderHome(container, params) {
         Store.set(confirmKey, true);
         overlay.remove();
         import('../services/telegram.js').then(({ sendTournamentConfirmationAlert }) => {
-          sendTournamentConfirmationAlert(currentUser, activeTournament.tournamentDate);
+          sendTournamentConfirmationAlert(currentUser, activeTournament.tournamentDate)
+            .catch(err => console.warn('[telegram] confirmation alert error:', err));
         }).catch(() => {});
       });
 

@@ -3,7 +3,7 @@ import { getMembers, addMember, removeMember } from '../services/members.js';
 import { showToast } from '../components/toast.js';
 import { testConnection, onSyncStatus, getSyncStatus, pushDoodleNow, addPlayerToPlayersJson } from '../services/github.js';
 import { isInstalled } from '../components/install-prompt.js';
-import { getTelegramConfig, sendTelegramTestAlert } from '../services/telegram.js';
+import { sendTelegramTestAlert } from '../services/telegram.js';
 
 function renderMembersList(listEl) {
   const members = getMembers();
@@ -85,8 +85,9 @@ export function renderSettings(container, params) {
       <div class="settings-section">
         <div class="settings-section-title">Telegram Alerts</div>
         <p class="text-sm text-secondary" style="margin-bottom:var(--space-sm);">
-          Receive a Telegram message via a <a href="https://core.telegram.org/bots#botfather" target="_blank" rel="noopener">Telegram bot</a>
-          whenever doodle availability is updated. Credentials are read from GitHub <code>config.json</code>.
+          Doodle updates and tournament confirmations are relayed to a
+          <a href="https://core.telegram.org/bots#botfather" target="_blank" rel="noopener">Telegram bot</a>
+          through a GitHub Actions workflow, so alerts work even on networks that block Telegram.
         </p>
         <div class="flex gap-sm mt-sm">
           <button id="tg-test-btn" class="btn btn-primary" style="flex:1;">📞 Send Test Alert</button>
@@ -257,22 +258,17 @@ export function renderSettings(container, params) {
   }
 
   async function refreshTgTestBtn() {
-    try {
-      const tg = await getTelegramConfig();
-      tgTestBtn.disabled = !tg.botToken || !tg.chatId;
-    } catch {
-      tgTestBtn.disabled = true;
-    }
+    tgTestBtn.disabled = false;
   }
 
   refreshTgTestBtn();
   tgTestBtn.addEventListener('click', async () => {
     tgTestBtn.disabled = true;
-    setTgStatus('Sending Telegram test alert…');
+    setTgStatus('Requesting Telegram test alert…');
     try {
       await sendTelegramTestAlert();
-      setTgStatus('Test alert request sent. Check Telegram.');
-      showToast('Telegram test alert sent');
+      setTgStatus('Relay triggered. Check Telegram shortly.');
+      showToast('Telegram test alert triggered');
     } catch (err) {
       setTgStatus(`Test alert failed: ${err.message}`, true);
       showToast('Telegram test alert failed', 'error');
