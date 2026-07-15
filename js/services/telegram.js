@@ -1,4 +1,5 @@
 import { Store } from '../store.js';
+import { rankPlayers } from './ranking.js';
 
 // Telegram alerts are relayed through GitHub Actions instead of being sent
 // directly from the browser: many networks block api.telegram.org, but
@@ -44,6 +45,18 @@ export function buildConfirmationText(playerName, tournamentDate) {
 
 export function buildTestAlertText(user, timestamp) {
   return `📞 Mexicano test alert\nUser: ${user}\nTime: ${timestamp}`;
+}
+
+export function buildTournamentCreatedText(date, code, brackets = []) {
+  const codeLine = code ? code : 'none';
+  const lines = brackets.map((b, i) =>
+    `Court ${i + 1}: ${b.team1.join(' & ')} vs ${b.team2.join(' & ')}`);
+  return `🎾 New tournament — ${date}\n🔑 Code: ${codeLine}\nStarting brackets:\n${lines.join('\n')}`;
+}
+
+export function buildTournamentCompletedText(date, rankedPlayers = []) {
+  const lines = rankedPlayers.map(p => `${p.rank}. ${p.name} — ${p.totalPoints} pts`);
+  return `🏆 Tournament complete — ${date}\nFinal ranking:\n${lines.join('\n')}`;
 }
 
 async function dispatchTelegramAlert(text, meta) {
@@ -101,4 +114,20 @@ export async function sendTelegramTestAlert() {
   const timestamp = new Date().toISOString();
   const text = buildTestAlertText(currentUser, timestamp);
   return dispatchTelegramAlert(text, { kind: 'test', user: currentUser, timestamp });
+}
+
+export async function sendTournamentCreatedAlert(tournament) {
+  const round1 = tournament.rounds?.find(r => r.roundNumber === 1);
+  const brackets = (round1?.matches || []).map(m => ({
+    team1: [m.player1.name, m.player2.name],
+    team2: [m.player3.name, m.player4.name],
+  }));
+  const text = buildTournamentCreatedText(tournament.tournamentDate, tournament.accessCode, brackets);
+  return dispatchTelegramAlert(text, { kind: 'tournament-created', date: tournament.tournamentDate });
+}
+
+export async function sendTournamentCompletedAlert(tournament) {
+  const ranked = rankPlayers(tournament.players || []);
+  const text = buildTournamentCompletedText(tournament.tournamentDate, ranked);
+  return dispatchTelegramAlert(text, { kind: 'tournament-completed', date: tournament.tournamentDate });
 }

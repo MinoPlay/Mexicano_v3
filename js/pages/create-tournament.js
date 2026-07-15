@@ -258,6 +258,9 @@ export function renderCreateTournament(container, params = {}) {
       const accessCode = accessCodeInput.value.trim() || null;
       const tournament = createTournament(date, names, accessCode);
       startTournament(tournament);
+      import('../services/telegram.js')
+        .then(({ sendTournamentCreatedAlert }) => sendTournamentCreatedAlert(tournament))
+        .catch(err => console.warn('[telegram] tournament-created alert failed:', err));
       window.location.hash = `#/tournament/${date}`;
     } catch (err) {
       showToast(err.message || 'Failed to create tournament');

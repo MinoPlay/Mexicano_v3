@@ -23,6 +23,8 @@ The client no longer contacts Telegram and no longer reads `config.json`
 ## Trigger Points
 - `DoodleEditSession.save()` in `js/pages/doodle.js` — after `pushDoodleNow()` commits, fires `sendDoodleAlert()` per changed player
 - Tournament confirmation popup in `js/pages/home.js` — fires `sendTournamentConfirmationAlert()` when a player confirms
+- Tournament creation in `js/pages/create-tournament.js` — after `startTournament()`, fires `sendTournamentCreatedAlert()`
+- Tournament completion in `js/pages/tournament.js` — after `completeTournament()`, fires `sendTournamentCompletedAlert()`
 - Settings "Send Test Alert" button — fires `sendTelegramTestAlert()`
 
 ## Message Format
@@ -34,6 +36,21 @@ The client no longer contacts Telegram and no longer reads `config.json`
 Confirmation:
 ```
 🎾 {playerName} confirmed attendance for tournament on {tournamentDate}
+```
+Tournament created:
+```
+🎾 New tournament — {tournamentDate}
+🔑 Code: {accessCode || 'none'}
+Starting brackets:
+Court 1: {p1} & {p2} vs {p3} & {p4}
+Court 2: ...
+```
+Tournament completed:
+```
+🏆 Tournament complete — {tournamentDate}
+Final ranking:
+1. {name} — {totalPoints} pts
+2. ...
 ```
 Test:
 ```
@@ -69,7 +86,7 @@ Time: {ISO timestamp}
 - Doodle trigger happens post-commit: alerts start only after the GitHub write of the monthly doodle + changelog succeeds
 
 ## File References
-- **Service (client)**: `js/services/telegram.js` — `sendDoodleAlert`, `sendTournamentConfirmationAlert`, `sendTelegramTestAlert`, `dispatchTelegramAlert`
-- **Triggers**: `js/pages/doodle.js` — `DoodleEditSession.save()`; `js/pages/home.js` — confirmation popup
+- **Service (client)**: `js/services/telegram.js` — `sendDoodleAlert`, `sendTournamentConfirmationAlert`, `sendTournamentCreatedAlert`, `sendTournamentCompletedAlert`, `sendTelegramTestAlert`, `dispatchTelegramAlert`
+- **Triggers**: `js/pages/doodle.js` — `DoodleEditSession.save()`; `js/pages/home.js` — confirmation popup; `js/pages/create-tournament.js` — creation; `js/pages/tournament.js` — completion
 - **Settings UI**: `js/pages/settings.js`
 - **Workflow (data repo)**: `.github/workflows/telegram-relay.yml`

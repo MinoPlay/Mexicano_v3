@@ -403,6 +403,9 @@ export function renderTournament(container, params) {
             tournament.rounds = tournament.rounds.filter(r => r.matches.length > 0);
           }
           completeTournament(tournament);
+          import('../services/telegram.js')
+            .then(({ sendTournamentCompletedAlert }) => sendTournamentCompletedAlert(tournament))
+            .catch(err => console.warn('[telegram] tournament-completed alert failed:', err));
           showToast('Tournament completed!');
           render();
         } catch (err) {
