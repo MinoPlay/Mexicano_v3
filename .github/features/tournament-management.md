@@ -72,7 +72,7 @@ Match: Team1 = (player1 + player2). Team2 = (player3 + player4).
 - When no access code is set, display is omitted or shows placeholder (e.g., "— no access code —")
 
 ### Access Code Edit (Admin Only)
-- **Who**: Only Mino or Kikke (gated by `Store.isMino()`)
+- **Who**: Only administrators (Mino, Kikke, Jeremy) (gated by `Store.isAdministrator()`)
 - **Where**: Small pen/edit **✎** icon displayed next to the access code label/display (in the header)
 - **Interaction**:
   1. Click pen icon → inline edit or modal appears
@@ -103,9 +103,10 @@ The **Leaderboard** tab on a completed (or in-progress) tournament shows the sam
 
 
 
-`Store.isMino()` gates tournament create/modify/run actions.
+`Store.isAdministrator()` gates tournament create/modify/run actions.
 
-Admins: **Mino**, **Kikke** — both have full tournament management rights.
+Admins: **Mino**, **Kikke**, **Jeremy** — all have full tournament management rights.
+Admin names are loaded from `data/administrators.json` (not hardcoded) at app init via `Store.setAdministrators()`.
 
 ## Access Control Policy
 
@@ -136,18 +137,18 @@ Admins: **Mino**, **Kikke** — both have full tournament management rights.
 
 ### UI Layer Gating (Score & Round Control)
 In `renderMatchesTab()` (`js/pages/tournament.js`):
-- **Line ~325**: "Tap to score" hint rendered only if `Store.isMino() === true`
-- **Lines ~332–344**: Action buttons (Next Round, End Tournament) rendered only if `Store.isMino() === true`
-- **Line ~359**: Click-to-score listener attached only if `Store.isMino() === true`
+- **Line ~325**: "Tap to score" hint rendered only if `Store.isAdministrator() === true`
+- **Lines ~332–344**: Action buttons (Next Round, End Tournament) rendered only if `Store.isAdministrator() === true`
+- **Line ~359**: Click-to-score listener attached only if `Store.isAdministrator() === true`
 
 **Result**: Non-admins see match cards (read-only) but NO score-entry UI, NO action buttons, NO click listeners.
 
 ### Service Layer Guards
-- Service layer (`js/services/tournament.js`): All mutation functions check `Store.isMino()` at entry; throw or return error if non-admin
+- Service layer (`js/services/tournament.js`): All mutation functions check `Store.isAdministrator()` at entry; throw or return error if non-admin
 - Router (`js/router.js`): No access gate; page loads, but mutations fail safely at service layer
 
 ### Implementation Details
-- UI layer (`js/pages/tournament.js`, create-tournament.js): Hide/disable edit controls conditionally on `isMino()`
+- UI layer (`js/pages/tournament.js`, create-tournament.js): Hide/disable edit controls conditionally on `isAdministrator()`
 - Non-admins blocked at TWO layers: UI (components hidden) + service (mutations rejected)
 
 ## Player Slot Shift (Create Phase)
@@ -205,8 +206,8 @@ Tournament (1)
 
 | Gate | File | Lines | Behavior | Issue |
 |---|---|---|---|---|
-| **Home Card** | `js/pages/home.js` | 452-476 | If `isMino`: `<a>` link (clickable). Else: `<div>` w/ `opacity:0.4;cursor:not-allowed;` + 🔒 title="Only admins can access active tournaments" | Non-admin sees grayed-out card, no navigation |
-| **Tournament List** | `js/pages/tournaments.js` | 37-56 | `const locked = !entry.isComplete && !isMino;` Adds `tournament-list-item--locked` class, 🔒 badge, no click handler | Non-admin list items unclickable, locked appearance |
+| **Home Card** | `js/pages/home.js` | 452-476 | If `isAdministrator`: `<a>` link (clickable). Else: `<div>` w/ `opacity:0.4;cursor:not-allowed;` + 🔒 title="Only admins can access active tournaments" | Non-admin sees grayed-out card, no navigation |
+| **Tournament List** | `js/pages/tournaments.js` | 37-56 | `const locked = !entry.isComplete && !isAdministrator;` Adds `tournament-list-item--locked` class, 🔒 badge, no click handler | Non-admin list items unclickable, locked appearance |
 | **Prev/Next Nav** | `js/pages/tournament.js` | 175-177 | `accessible = [...index].filter(e => e.isComplete \|\| isMino)` Filters out active tournaments for non-admins | Non-admin cannot navigate to active tournaments via arrows |
 
 ### Solution
@@ -221,7 +222,7 @@ Remove all three gates. Non-admins **can READ** active tournaments (view is read
    - Expected: Card is clickable `<a href="#/tournament/2026-06-16">` (no disabled state, no 🔒)
 
 2. **Home: Active Tournament Card (Admin)**
-   - Input: Admin (isMino=true), active tournament exists
+   - Input: Admin (isAdministrator=true), active tournament exists
    - Expected: Card remains clickable (regression: same as non-admin now)
 
 3. **Tournament List: Active Tournament Item (Non-Admin)**
@@ -229,7 +230,7 @@ Remove all three gates. Non-admins **can READ** active tournaments (view is read
    - Expected: Item is clickable (no `tournament-list-item--locked` class, no 🔒, click handler fires)
 
 4. **Tournament List: Active Tournament Item (Admin)**
-   - Input: Admin (isMino=true), list contains active tournament
+   - Input: Admin (isAdministrator=true), list contains active tournament
    - Expected: Item is clickable (regression: same behavior)
 
 5. **Tournament List: Completed Tournament (Non-Admin)**
@@ -238,10 +239,10 @@ Remove all three gates. Non-admins **can READ** active tournaments (view is read
 
 6. **Tournament: Prev/Next Navigation (Non-Admin)**
    - Input: Non-admin viewing active tournament, accessible tournaments to navigate to include both completed + active
-   - Expected: `accessible` array includes active tournaments; prev/next buttons navigate across all (not filtered by `isMino`)
+   - Expected: `accessible` array includes active tournaments; prev/next buttons navigate across all (not filtered by `isAdministrator`)
 
 7. **Tournament: Prev/Next Navigation (Admin)**
-   - Input: Admin (isMino=true) viewing tournament
+   - Input: Admin (isAdministrator=true) viewing tournament
    - Expected: `accessible` includes all tournaments (regression: same behavior)
 
 8. **Write Access (All Roles)**
@@ -251,9 +252,9 @@ Remove all three gates. Non-admins **can READ** active tournaments (view is read
 ### Implementation Status: ✅ COMPLETED
 
 **Edits Applied** (TDD: RED → GREEN):
-1. `js/pages/home.js` lines 452-475: Removed `if (isMino)` conditional. Card always renders as clickable `<a href="#/tournament/${date}">` for all users.
-2. `js/pages/tournaments.js` lines 37-56: Removed `const locked = !entry.isComplete && !isMino;` guard. List items clickable for all users (no lock class, no 🔒).
-3. `js/pages/tournament.js` lines 175-177: Removed `.filter(e => e.isComplete || isMino)` gate. Prev/next navigation includes all tournaments for all users.
+1. `js/pages/home.js` lines 452-475: Removed `if (isAdministrator)` conditional. Card always renders as clickable `<a href="#/tournament/${date}">` for all users.
+2. `js/pages/tournaments.js` lines 37-56: Removed `const locked = !entry.isComplete && !isAdministrator;` guard. List items clickable for all users (no lock class, no 🔒).
+3. `js/pages/tournament.js` lines 175-177: Removed `.filter(e => e.isComplete || isAdministrator)` gate. Prev/next navigation includes all tournaments for all users.
 
 **Test Coverage**: `tests/tournament/tournament-view-access.test.js` (5 tests, all GREEN).
 
@@ -270,7 +271,7 @@ Remove all three gates. Non-admins **can READ** active tournaments (view is read
 An **incomplete** tournament can be deleted. A **completed** tournament cannot.
 
 ### Rules
-- **Who**: Admins only (`Store.isMino()`).
+- **Who**: Admins only (`Store.isAdministrator()`).
 - **Guard**: Deletion is rejected if the tournament is completed — either the `tournaments.json` index entry has `isComplete: true`, or the active tournament has `isCompleted: true`. Throws `"Cannot delete a completed tournament"`.
 - **Non-admin**: `deleteTournament()` throws `"Tournament mutations require admin access"`.
 
@@ -285,7 +286,7 @@ An **incomplete** tournament can be deleted. A **completed** tournament cannot.
 
 ### UI
 - **Where**: Tournament detail page (`js/pages/tournament.js`), Matches tab.
-- **Visibility**: "Delete Tournament" button shown only when `Store.isMino()` and `!tournament.isCompleted`.
+- **Visibility**: "Delete Tournament" button shown only when `Store.isAdministrator()` and `!tournament.isCompleted`.
 - **Flow**: Click → confirm dialog → `deleteTournament(date)` → toast → navigate to `#/tournaments`.
 
 ## File References

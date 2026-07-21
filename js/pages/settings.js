@@ -120,24 +120,24 @@ export function renderSettings(container, params) {
 
   // ─── Mino-only section visibility ─────────────────────────────────────────
   // Only Members has no GitHub gate — controlled directly here.
-  // All other Mino-only sections are gated by their own refresh functions
-  // (refreshSummariesSection, etc.) which check isMino().
+  // All other admin-only sections are gated by their own refresh functions
+  // (refreshSummariesSection, etc.) which check isAdministrator().
   const membersSection = container.querySelector('.members-header')?.closest('.settings-section');
   const attendanceSection = container.querySelector('#attendance-section');
 
-  function refreshMinoVisibility() {
-    const isMino = Store.isMino();
-    if (membersSection) membersSection.style.display = isMino ? '' : 'none';
-    if (attendanceSection) attendanceSection.style.display = isMino ? '' : 'none';
+  function refreshAdminVisibility() {
+    const isAdmin = Store.isAdministrator();
+    if (membersSection) membersSection.style.display = isAdmin ? '' : 'none';
+    if (attendanceSection) attendanceSection.style.display = isAdmin ? '' : 'none';
   }
-  refreshMinoVisibility();
+  refreshAdminVisibility();
 
   // Current user select
   const userSelect = container.querySelector('#settings-user-select');
   userSelect.addEventListener('change', () => {
     Store.setCurrentUser(userSelect.value);
     updateAvatar(avatarEl);
-    refreshMinoVisibility();
+    refreshAdminVisibility();
     showToast(userSelect.value ? `Switched to ${userSelect.value}` : 'User cleared');
   });
   membersListEl.addEventListener('click', (e) => {

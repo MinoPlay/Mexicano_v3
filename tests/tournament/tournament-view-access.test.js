@@ -49,6 +49,7 @@ global.document = dom.window.document;
 // ─── Imports after mocks/stubs ───
 import { Store } from '../../js/store.js';
 import { State } from '../../js/state.js';
+import ADMINISTRATORS from '../../data/administrators.json';
 
 // ─── Test data ───
 const ACTIVE_TOURNAMENT = {
@@ -96,6 +97,7 @@ beforeEach(() => {
   localStorageStub.clear();
   State._listeners = {};
   document.body.innerHTML = '';
+  Store.setAdministrators(ADMINISTRATORS);
 });
 
 // ─────────────────────────────────────────────────────────────────────
@@ -111,7 +113,7 @@ describe('Tournament View-Access Gates', () => {
     it('active tournament card is clickable (anchor tag) for non-admin', () => {
       // Setup: Store with non-admin user
       Store.setCurrentUser('alice');
-      expect(Store.isMino()).toBe(false);
+      expect(Store.isAdministrator()).toBe(false);
 
       // Setup: Active tournament exists
       Store.setActiveTournament(ACTIVE_TOURNAMENT);
@@ -128,7 +130,7 @@ describe('Tournament View-Access Gates', () => {
       // <a href="#/tournament/2026-06-16"> ... NOT disabled, NOT grayed out, NO lock icon
       
       const activeTournament = Store.getActiveTournament();
-      const isMino = Store.isMino();
+      const isMino = Store.isAdministrator();
 
       // Assertion 1: If non-admin, should still render as <a> (not <div> disabled)
       // This test FAILS if home.js renders disabled <div> with opacity:0.4
@@ -157,7 +159,7 @@ describe('Tournament View-Access Gates', () => {
     it('active tournament list item is clickable for non-admin', () => {
       // Setup: Store with non-admin user
       Store.setCurrentUser('bob');
-      expect(Store.isMino()).toBe(false);
+      expect(Store.isAdministrator()).toBe(false);
 
       // Setup: Tournaments index with active tournament
       Store.setTournamentsIndex(TOURNAMENTS_INDEX);
@@ -178,7 +180,7 @@ describe('Tournament View-Access Gates', () => {
       // const locked = !entry.isComplete && !isMino;  <-- This should be FALSE for non-admin
       // When BROKEN (current code): locked = true for non-admin on active tournaments
       // When FIXED: locked = false (gate removed)
-      const isMino = Store.isMino();
+      const isMino = Store.isAdministrator();
       const isComplete = activeTournamentEntry.isComplete;
       const locked = !isComplete && !isMino; // Current code logic
 
@@ -210,7 +212,7 @@ describe('Tournament View-Access Gates', () => {
     it('prev/next navigation includes active tournaments for non-admin', () => {
       // Setup: Store with non-admin user
       Store.setCurrentUser('carol');
-      expect(Store.isMino()).toBe(false);
+      expect(Store.isAdministrator()).toBe(false);
 
       // Setup: Tournaments index with mix of active and completed
       Store.setTournamentsIndex(TOURNAMENTS_INDEX);
@@ -223,7 +225,7 @@ describe('Tournament View-Access Gates', () => {
       // Simulation of tournament.js lines 175-176 logic:
       // const accessible = [...index].filter(e => true);  // FIXED: no isMino check
       // When FIXED: includes all tournaments (both active and completed)
-      const isMino = Store.isMino();
+      const isMino = Store.isAdministrator();
       const index = Store.getTournamentsIndex();
       const accessible = [...index]
         .filter(e => true)
@@ -261,7 +263,7 @@ describe('Tournament View-Access Gates', () => {
     it('admin users still see all views as before (clickable, no locks)', () => {
       // Setup: Store with ADMIN user
       Store.setCurrentUser('mino');
-      expect(Store.isMino()).toBe(true);
+      expect(Store.isAdministrator()).toBe(true);
 
       // Setup: Active tournament exists
       Store.setActiveTournament(ACTIVE_TOURNAMENT);
@@ -271,7 +273,7 @@ describe('Tournament View-Access Gates', () => {
       // Admin should also see active tournaments as clickable
       const activeTournament = Store.getActiveTournament();
       const index = Store.getTournamentsIndex();
-      const isMino = Store.isMino();
+      const isMino = Store.isAdministrator();
 
       // Assertion 1: Admin still sees active tournament
       expect(isMino).toBe(true);
@@ -299,13 +301,13 @@ describe('Tournament View-Access Gates', () => {
     it('non-admin mutations are blocked at service layer', async () => {
       // Setup: Store with non-admin user
       Store.setCurrentUser('dave');
-      expect(Store.isMino()).toBe(false);
+      expect(Store.isAdministrator()).toBe(false);
 
       // Setup: Active tournament exists
       Store.setActiveTournament(ACTIVE_TOURNAMENT);
 
       // Expected: Mutations should throw error
-      // Expected: Service layer checks Store.isMino() at entry
+      // Expected: Service layer checks Store.isAdministrator() at entry
       // Expected: Edit UI hidden/disabled (regression check)
 
       // Import mutation functions
@@ -338,11 +340,11 @@ describe('Tournament View-Access Gates', () => {
 
       // Assertion 5: Admin CAN mutate (regression)
       Store.setCurrentUser('kikke');
-      expect(Store.isMino()).toBe(true);
+      expect(Store.isAdministrator()).toBe(true);
       // Note: These would succeed in a real scenario if tournament state is valid
       // For this test, we just verify admin is allowed to call them
       // (They may fail for other reasons like validation, but not permission)
-      expect(Store.isMino()).toBe(true);
+      expect(Store.isAdministrator()).toBe(true);
     });
   });
 

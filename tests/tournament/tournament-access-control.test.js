@@ -49,6 +49,7 @@ import {
 } from '../../js/services/tournament.js';
 import { Store } from '../../js/store.js';
 import { State } from '../../js/state.js';
+import ADMINISTRATORS from '../../data/administrators.json';
 
 // ─── Test data ───
 const DATE = '2025-06-01';
@@ -75,6 +76,7 @@ function makeCompletedAllRoundsTournament() {
 beforeEach(() => {
   localStorageStub.clear();
   State._listeners = {};
+  Store.setAdministrators(ADMINISTRATORS);
 });
 
 // ─── Tests ───
@@ -92,7 +94,7 @@ describe('Tournament Access Control', () => {
 
       // Mock user is non-admin
       Store.setCurrentUser('alice');
-      expect(Store.isMino()).toBe(false);
+      expect(Store.isAdministrator()).toBe(false);
 
       // Get accessible list
       const accessible = Store.getTournamentsIndex();
@@ -114,7 +116,7 @@ describe('Tournament Access Control', () => {
       
       // Mock user is non-admin
       Store.setCurrentUser('alice');
-      expect(Store.isMino()).toBe(false);
+      expect(Store.isAdministrator()).toBe(false);
 
       // Attempt to set score should throw or fail
       // Current behavior: succeeds (no guard). Test expects: throws error
@@ -130,7 +132,7 @@ describe('Tournament Access Control', () => {
       
       // Mock user IS admin
       Store.setCurrentUser('mino');
-      expect(Store.isMino()).toBe(true);
+      expect(Store.isAdministrator()).toBe(true);
 
       // Attempt to set score should succeed
       // This should not throw
@@ -147,7 +149,7 @@ describe('Tournament Access Control', () => {
       
       // Mock user is non-admin
       Store.setCurrentUser('alice');
-      expect(Store.isMino()).toBe(false);
+      expect(Store.isAdministrator()).toBe(false);
 
       // Attempt to start next round should throw or fail
       // Current behavior: succeeds (no guard). Test expects: throws error
@@ -162,7 +164,7 @@ describe('Tournament Access Control', () => {
       
       // Mock user IS admin
       Store.setCurrentUser('kikke');
-      expect(Store.isMino()).toBe(true);
+      expect(Store.isAdministrator()).toBe(true);
 
       // Attempt to start next round should succeed
       expect(() => {
@@ -178,7 +180,7 @@ describe('Tournament Access Control', () => {
       
       // Mock user is non-admin
       Store.setCurrentUser('alice');
-      expect(Store.isMino()).toBe(false);
+      expect(Store.isAdministrator()).toBe(false);
 
       // Attempt to complete tournament should throw or fail
       // Current behavior: succeeds (no guard). Test expects: throws error
@@ -193,7 +195,7 @@ describe('Tournament Access Control', () => {
       
       // Mock user IS admin
       Store.setCurrentUser('mino');
-      expect(Store.isMino()).toBe(true);
+      expect(Store.isAdministrator()).toBe(true);
 
       // Attempt to complete tournament should succeed
       expect(() => {
@@ -210,7 +212,7 @@ describe('Tournament Access Control', () => {
       
       // Mock user is non-admin
       Store.setCurrentUser('alice');
-      expect(Store.isMino()).toBe(false);
+      expect(Store.isAdministrator()).toBe(false);
 
       // Attempt to update access code should throw or fail
       // Current behavior: succeeds (no guard). Test expects: throws error
@@ -226,7 +228,7 @@ describe('Tournament Access Control', () => {
       
       // Mock user IS admin
       Store.setCurrentUser('mino');
-      expect(Store.isMino()).toBe(true);
+      expect(Store.isAdministrator()).toBe(true);
 
       // Attempt to update access code should succeed
       expect(() => {

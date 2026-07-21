@@ -39,7 +39,7 @@ Show round-by-round results during active tournaments. Each entry captures match
 - "🗑 Clear" button in header removes all entries from localStorage
 
 ## Access Control
-- Logs tab (nav + writes) only active when `Store.isMino()` returns `true`
+- Logs tab (nav + writes) only active when `Store.isAdministrator()` returns `true`
 - Non-admin users: tab hidden, no entries written
 
 ```js

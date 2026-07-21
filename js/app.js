@@ -19,6 +19,14 @@ import { renderDoodle } from './pages/doodle.js';
 import { renderSettings } from './pages/settings.js';
 import { renderLogs } from './pages/git-logs.js';
 
+// ─── Load administrator names from static JSON ───
+async function loadAdministrators() {
+  try {
+    const list = await fetch('data/administrators.json').then(r => r.ok ? r.json() : []);
+    if (Array.isArray(list)) Store.setAdministrators(list);
+  } catch { /* fall back to empty admin list */ }
+}
+
 // ─── Dev secrets: auto-inject GitHub config on localhost ───
 async function loadDevSecrets() {
   const isDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
@@ -70,6 +78,7 @@ async function init() {
   // One-time migration: remove stale Azure connection string from localStorage
   localStorage.removeItem('mexicano_azure_conn_str');
 
+  await loadAdministrators();
   await loadDevSecrets();
 
   await showOnboardingDialog();

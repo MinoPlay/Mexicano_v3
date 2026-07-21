@@ -14,6 +14,9 @@ import { Cache } from './cache.js';
 
 const PREFIX = 'mexicano_';
 
+// Administrator names, loaded from data/administrators.json at app init.
+let administrators = [];
+
 export const Store = {
   get(key) {
     try {
@@ -128,9 +131,17 @@ export const Store = {
     this.set('current_user', name);
   },
 
-  isMino() {
+  setAdministrators(list) {
+    administrators = (list || []).map(name => String(name).toLowerCase());
+  },
+
+  getAdministrators() {
+    return administrators;
+  },
+
+  isAdministrator() {
     const user = this.getCurrentUser().toLowerCase();
-    return user === 'mino' || user === 'kikke';
+    return administrators.includes(user);
   },
 
   // ─── GitHub Backend config ───

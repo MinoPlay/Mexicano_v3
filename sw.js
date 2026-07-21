@@ -1,8 +1,9 @@
-const CACHE_NAME = 'mexicano-v20260721090106';
+const CACHE_NAME = 'mexicano-v20260721091745';
 const ASSETS = [
   './',
   './index.html',
   './manifest.json',
+  './data/administrators.json',
   './css/variables.css',
   './css/base.css',
   './css/components.css',

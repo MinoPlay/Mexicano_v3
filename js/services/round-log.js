@@ -4,7 +4,7 @@ const LOG_KEY = 'mexicano_round_log';
 const MAX_ENTRIES = 200;
 
 export function logRoundResult(tournament, roundNumber) {
-  if (!Store.isMino()) return;
+  if (!Store.isAdministrator()) return;
 
   const round = tournament.rounds.find(r => r.roundNumber === roundNumber);
   if (!round) return;

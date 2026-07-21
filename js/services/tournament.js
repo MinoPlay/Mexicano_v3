@@ -165,7 +165,7 @@ export function startTournament(tournament) {
 }
 
 export function setMatchScore(tournament, roundNumber, matchId, team1Score, team2Score) {
-  if (Store.getCurrentUser() && !Store.isMino()) throw new Error("Tournament mutations require admin access");
+  if (Store.getCurrentUser() && !Store.isAdministrator()) throw new Error("Tournament mutations require admin access");
   if (team1Score + team2Score !== 25) {
     throw new Error('Scores must sum to 25');
   }
@@ -250,7 +250,7 @@ export function recalculateAllPlayerStats(tournament) {
 }
 
 export function startNextRound(tournament) {
-  if (Store.getCurrentUser() && !Store.isMino()) throw new Error("Tournament mutations require admin access");
+  if (Store.getCurrentUser() && !Store.isAdministrator()) throw new Error("Tournament mutations require admin access");
   const currentRound = tournament.rounds.find(r => r.roundNumber === tournament.currentRoundNumber);
   if (!currentRound) throw new Error('No current round found');
   if (!isRoundComplete(currentRound)) throw new Error('Current round is not complete');
@@ -285,7 +285,7 @@ export function startNextRound(tournament) {
 }
 
 export function completeTournament(tournament) {
-  if (Store.getCurrentUser() && !Store.isMino()) throw new Error("Tournament mutations require admin access");
+  if (Store.getCurrentUser() && !Store.isAdministrator()) throw new Error("Tournament mutations require admin access");
   // Idempotent guard: if already completed, just retry the push
   if (tournament.isCompleted && tournament.completedAt) {
     retryCompletedTournamentPush();
@@ -663,7 +663,7 @@ export function saveTournamentState(tournament) {
 }
 
 export async function deleteTournament(date) {
-  if (Store.getCurrentUser() && !Store.isMino()) throw new Error("Tournament mutations require admin access");
+  if (Store.getCurrentUser() && !Store.isAdministrator()) throw new Error("Tournament mutations require admin access");
 
   const index = Store.getTournamentsIndex();
   const entry = index.find(e => e.date === date);
@@ -698,7 +698,7 @@ export async function deleteTournament(date) {
 }
 
 export function updateAccessCode(date, code) {
-  if (Store.getCurrentUser() && !Store.isMino()) throw new Error("Tournament mutations require admin access");
+  if (Store.getCurrentUser() && !Store.isAdministrator()) throw new Error("Tournament mutations require admin access");
   const tournament = Store.getActiveTournament();
   if (!tournament || tournament.tournamentDate !== date) {
     throw new Error('No active tournament for date: ' + date);

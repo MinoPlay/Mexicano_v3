@@ -61,6 +61,7 @@ vi.stubGlobal('localStorage', localStorageStub);
 import { renderTournament } from '../../js/pages/tournament.js';
 import { Store } from '../../js/store.js';
 import { State } from '../../js/state.js';
+import ADMINISTRATORS from '../../data/administrators.json';
 
 // ─── Test data ───
 // Tournament with incomplete match (shows "Tap to score", action buttons)
@@ -98,6 +99,7 @@ const MOCK_TOURNAMENT_INCOMPLETE = {
 beforeEach(() => {
   localStorageStub.clear();
   State._listeners = {};
+  Store.setAdministrators(ADMINISTRATORS);
 });
 
 // ─── Tests ───
@@ -108,7 +110,7 @@ describe('Admin-Only Tournament Controls', () => {
     it('Admin sees "Tap to score" text for incomplete match', () => {
       // Setup: mock as admin
       Store.setCurrentUser('mino');
-      expect(Store.isMino()).toBe(true);
+      expect(Store.isAdministrator()).toBe(true);
 
       // Setup: create container and render tournament
       const container = document.createElement('div');
@@ -129,7 +131,7 @@ describe('Admin-Only Tournament Controls', () => {
     it('Admin sees end-tournament-btn button', () => {
       // Setup: mock as admin
       Store.setCurrentUser('kikke');
-      expect(Store.isMino()).toBe(true);
+      expect(Store.isAdministrator()).toBe(true);
 
       // Setup: create container and render tournament
       const container = document.createElement('div');
@@ -149,7 +151,7 @@ describe('Admin-Only Tournament Controls', () => {
     it('Non-admin sees "Tap to score" when rendered with incomplete tournament (CURRENTLY FAILS - shows bug)', () => {
       // Setup: mock as non-admin
       Store.setCurrentUser('alice');
-      expect(Store.isMino()).toBe(false);
+      expect(Store.isAdministrator()).toBe(false);
 
       // Setup: create container and render tournament
       const container = document.createElement('div');
@@ -172,7 +174,7 @@ describe('Admin-Only Tournament Controls', () => {
     it('Non-admin should NOT see end-tournament-btn in rendered HTML', () => {
       // Setup: mock as non-admin
       Store.setCurrentUser('bob');
-      expect(Store.isMino()).toBe(false);
+      expect(Store.isAdministrator()).toBe(false);
 
       // Setup: create container and render tournament
       const container = document.createElement('div');

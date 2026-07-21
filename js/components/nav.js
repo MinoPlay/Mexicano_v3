@@ -16,7 +16,7 @@ export function renderNav() {
   nav.setAttribute('aria-label', 'Main navigation');
 
   const visibleItems = NAV_ITEMS.filter(item =>
-    item.path !== '/logs' || Store.isMino()
+    item.path !== '/logs' || Store.isAdministrator()
   );
 
   nav.innerHTML = visibleItems.map(item => `

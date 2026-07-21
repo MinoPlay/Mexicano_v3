@@ -171,7 +171,7 @@ export function renderTournament(container, params) {
     const isLatestRound = roundIdx === totalRounds - 1;
 
     // Tournament prev/next navigation
-    const isMino = Store.isMino();
+    const isAdmin = Store.isAdministrator();
     const index = Store.getTournamentsIndex();
     const accessible = [...index]
       .sort((a, b) => b.date.localeCompare(a.date));
@@ -197,7 +197,7 @@ export function renderTournament(container, params) {
         <button class="tab ${currentTab === 'leaderboard' ? 'active' : ''}" data-tab="leaderboard">Leaderboard</button>
         <div style="display:flex;align-items:center;gap:var(--space-xs);margin-left:auto" id="access-code-area">
           ${tournament.accessCode ? `<span class="text-sm text-secondary"><strong>Access Code: ${tournament.accessCode}</strong></span>` : ''}
-          ${isMino ? `<button class="btn btn-ghost btn-xs" id="edit-access-code" title="Edit access code">✎</button>` : ''}
+          ${isAdmin ? `<button class="btn btn-ghost btn-xs" id="edit-access-code" title="Edit access code">✎</button>` : ''}
         </div>
       </div>
 
@@ -323,14 +323,14 @@ export function renderTournament(container, params) {
               </div>`
             : tournament.isCompleted
               ? ''
-              : Store.isMino() ? `<div class="text-center text-sm text-secondary mt-sm">Tap to score</div>` : ''
+              : Store.isAdministrator() ? `<div class="text-center text-sm text-secondary mt-sm">Tap to score</div>` : ''
           }
         </div>
       `;
     });
 
     // Action buttons (admin only)
-    if (Store.isMino() && isLatestRound && !tournament.isCompleted) {
+    if (Store.isAdministrator() && isLatestRound && !tournament.isCompleted) {
       const allScored = tournament.rounds.every(r => isRoundComplete(r));
 
       html += '<div class="mt-lg flex flex-col gap-sm">';
@@ -343,7 +343,7 @@ export function renderTournament(container, params) {
       }
       html += `<button class="btn btn-ghost btn-block" id="delete-tournament-btn" style="color:var(--color-danger)">Delete Tournament</button>`;
       html += '</div>';
-    } else if (Store.isMino() && !tournament.isCompleted) {
+    } else if (Store.isAdministrator() && !tournament.isCompleted) {
       // Not the latest round view but still an incomplete tournament — allow delete
       html += '<div class="mt-lg flex flex-col gap-sm">';
       html += `<button class="btn btn-ghost btn-block" id="delete-tournament-btn" style="color:var(--color-danger)">Delete Tournament</button>`;
@@ -363,7 +363,7 @@ export function renderTournament(container, params) {
     });
 
     // Event: click match to score (disabled for completed tournaments or non-admin)
-    if (Store.isMino() && !tournament.isCompleted) {
+    if (Store.isAdministrator() && !tournament.isCompleted) {
       content.querySelectorAll('.match-card').forEach(card => {
         card.addEventListener('click', () => {
           const matchIdx = parseInt(card.dataset.matchIdx, 10);
