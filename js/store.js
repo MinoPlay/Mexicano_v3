@@ -17,6 +17,14 @@ const PREFIX = 'mexicano_';
 // Administrator names, loaded from data/administrators.json at app init.
 let administrators = [];
 
+// Notify UI (e.g. bottom nav) that current user or admin list changed,
+// so admin-gated items can re-render. Guarded for non-browser (test) envs.
+function notifyUserChanged() {
+  try {
+    window.dispatchEvent(new Event('mexicano:user-changed'));
+  } catch { /* no window (SSR/test) */ }
+}
+
 export const Store = {
   get(key) {
     try {
@@ -129,10 +137,12 @@ export const Store = {
 
   setCurrentUser(name) {
     this.set('current_user', name);
+    notifyUserChanged();
   },
 
   setAdministrators(list) {
     administrators = (list || []).map(name => String(name).toLowerCase());
+    notifyUserChanged();
   },
 
   getAdministrators() {

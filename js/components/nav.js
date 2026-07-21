@@ -15,16 +15,20 @@ export function renderNav() {
   nav.className = 'bottom-nav';
   nav.setAttribute('aria-label', 'Main navigation');
 
-  const visibleItems = NAV_ITEMS.filter(item =>
-    item.path !== '/logs' || Store.isAdministrator()
-  );
+  function renderItems() {
+    const visibleItems = NAV_ITEMS.filter(item =>
+      item.path !== '/logs' || Store.isAdministrator()
+    );
 
-  nav.innerHTML = visibleItems.map(item => `
-    <a href="#${item.path}" class="nav-item" data-path="${item.path}" aria-label="${item.label}">
-      <span class="nav-item-icon">${item.icon}</span>
-      <span>${item.label}</span>
-    </a>
-  `).join('');
+    nav.innerHTML = visibleItems.map(item => `
+      <a href="#${item.path}" class="nav-item" data-path="${item.path}" aria-label="${item.label}">
+        <span class="nav-item-icon">${item.icon}</span>
+        <span>${item.label}</span>
+      </a>
+    `).join('');
+
+    updateActive();
+  }
 
   // Update active state
   function updateActive() {
@@ -41,6 +45,9 @@ export function renderNav() {
 
   updateActive();
   window.addEventListener('hashchange', updateActive);
+
+  renderItems();
+  window.addEventListener('mexicano:user-changed', renderItems);
 
   return nav;
 }
