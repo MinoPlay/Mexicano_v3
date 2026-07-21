@@ -1,7 +1,7 @@
 import { Store } from '../store.js';
 import { State } from '../state.js';
 import { calculateAllEloRankings, getEloSnapshots, getEloForDate } from '../services/elo.js';
-import { getLatestCompleteTournamentDate, getActiveTournament } from '../services/tournament.js';
+import { getLatestCompleteTournamentDate, getActiveTournament, confirmAttendance } from '../services/tournament.js';
 import { getMembers } from '../services/members.js';
 import { calculatePlayerStatistics } from '../services/statistics.js';
 
@@ -608,6 +608,7 @@ export function renderHome(container, params) {
       btn.style.cssText = 'width:100%;font-size:var(--font-size-md);';
       btn.addEventListener('click', () => {
         Store.set(confirmKey, true);
+        confirmAttendance(currentUser);
         overlay.remove();
         import('../services/telegram.js').then(({ sendTournamentConfirmationAlert }) => {
           sendTournamentConfirmationAlert(currentUser, activeTournament.tournamentDate)

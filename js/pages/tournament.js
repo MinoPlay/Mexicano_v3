@@ -10,7 +10,8 @@ import {
   isTournamentEditable,
   recalculateAllPlayerStats,
   updateAccessCode,
-  deleteTournament
+  deleteTournament,
+  confirmAttendance
 } from '../services/tournament.js';
 import { rankPlayers } from '../services/ranking.js';
 import { State } from '../state.js';
@@ -274,7 +275,26 @@ export function renderTournament(container, params) {
     const roundComplete = round && isRoundComplete(round);
     const isPastRound = !isLatestRound;
 
+    const confirmedNames = new Set(
+      (tournament.players || [])
+        .filter(p => p.confirmed)
+        .map(p => String(p.name || '').toLowerCase())
+    );
+    const nameWithCheck = (name) =>
+      `${esc(name)}${confirmedNames.has(String(name || '').toLowerCase())
+        ? ' <span class="confirm-check" title="Confirmed attendance" style="color:var(--color-success)">✅</span>'
+        : ''}`;
+
     let html = '';
+
+    // Confirm-attendance button (any player, self-confirm) — active tournament only
+    const currentUser = Store.getCurrentUser();
+    const userIsPlayer = !!currentUser && (tournament.players || [])
+      .some(p => String(p.name || '').toLowerCase() === currentUser.toLowerCase());
+    const userConfirmed = !!currentUser && confirmedNames.has(currentUser.toLowerCase());
+    if (!tournament.isCompleted && userIsPlayer && !userConfirmed) {
+      html += `<button class="btn btn-success btn-block mb-md" id="confirm-attendance-btn">✅ Confirm attendance</button>`;
+    }
 
     // Round navigation
     if (totalRounds > 1) {
@@ -306,13 +326,13 @@ export function renderTournament(container, params) {
           <div class="match-court">Court ${idx + 1}</div>
           <div class="match-teams">
             <div class="match-team">
-              <span class="match-team-name">${esc(team1Name1)}</span>
-              <span class="match-team-name">${esc(team1Name2)}</span>
+              <span class="match-team-name">${nameWithCheck(team1Name1)}</span>
+              <span class="match-team-name">${nameWithCheck(team1Name2)}</span>
             </div>
             <span class="match-vs">vs</span>
             <div class="match-team" style="text-align:right">
-              <span class="match-team-name">${esc(team2Name1)}</span>
-              <span class="match-team-name">${esc(team2Name2)}</span>
+              <span class="match-team-name">${nameWithCheck(team2Name1)}</span>
+              <span class="match-team-name">${nameWithCheck(team2Name2)}</span>
             </div>
           </div>
           ${completed
@@ -360,6 +380,22 @@ export function renderTournament(container, params) {
     content.querySelector('#next-round')?.addEventListener('click', () => {
       viewingRound = roundIdx + 1;
       render();
+    });
+
+    // Event: confirm attendance (self-confirm, any player)
+    content.querySelector('#confirm-attendance-btn')?.addEventListener('click', () => {
+      const user = Store.getCurrentUser();
+      const changed = confirmAttendance(user);
+      if (changed) {
+        Store.set(`confirmed_tournament_${tournament.tournamentDate}`, true);
+        import('../services/telegram.js').then(({ sendTournamentConfirmationAlert }) => {
+          sendTournamentConfirmationAlert(user, tournament.tournamentDate)
+            .catch(err => console.warn('[telegram] confirmation alert error:', err));
+        }).catch(() => {});
+        showToast('Attendance confirmed!');
+        tournament = getActiveTournament() || tournament;
+        render();
+      }
     });
 
     // Event: click match to score (disabled for completed tournaments or non-admin)
@@ -476,7 +512,7 @@ export function renderTournament(container, params) {
 
       html += `<tr>
         <td class="rank-cell ${rankClass}">${rank}</td>
-        <td class="name-cell">${esc(p.name)}</td>
+        <td class="name-cell">${esc(p.name)}${p.confirmed ? ' <span class="confirm-check" title="Confirmed attendance" style="color:var(--color-success)">✅</span>' : ''}</td>
         <td class="num-cell">${p.totalPoints || 0}</td>
         <td class="num-cell">${p.wins || 0}</td>
         <td class="num-cell">${p.losses || 0}</td>

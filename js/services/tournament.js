@@ -523,6 +523,43 @@ export function getActiveTournament() {
   return Store.getActiveTournament();
 }
 
+/**
+ * Pure helper: mark a player as having confirmed attendance.
+ * Case-insensitive name match. Mutates the passed tournament in place.
+ * Returns { tournament, changed }. `changed` is false when the name is not a
+ * player or was already confirmed.
+ */
+export function markPlayerConfirmed(tournament, name) {
+  if (!tournament || !Array.isArray(tournament.players) || !name) {
+    return { tournament, changed: false };
+  }
+  const target = String(name).trim().toLowerCase();
+  const player = tournament.players.find(
+    p => String(p.name || '').trim().toLowerCase() === target
+  );
+  if (!player || player.confirmed) {
+    return { tournament, changed: false };
+  }
+  player.confirmed = true;
+  return { tournament, changed: true };
+}
+
+/**
+ * Confirm attendance for `playerName` on the active tournament.
+ * Self-confirmation is allowed for EVERYONE (not admin-gated). Persists via
+ * saveTournamentState (which marks the day file dirty for GitHub push).
+ * Returns true when a change was made, false otherwise (no active tournament,
+ * name not a player, or already confirmed).
+ */
+export function confirmAttendance(playerName) {
+  const tournament = Store.getActiveTournament();
+  if (!tournament || tournament.isCompleted) return false;
+  const { changed } = markPlayerConfirmed(tournament, playerName);
+  if (!changed) return false;
+  saveTournamentState(tournament);
+  return true;
+}
+
 export function loadTournamentByDate(date) {
   const allMatches = Store.getMatches();
   const dateMatches = allMatches
