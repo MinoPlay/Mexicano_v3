@@ -1,4 +1,4 @@
-const CACHE_NAME = 'mexicano-v20260715213544';
+const CACHE_NAME = 'mexicano-v20260721090106';
 const ASSETS = [
   './',
   './index.html',
@@ -25,6 +25,7 @@ const ASSETS = [
   './js/components/leaderboard.js',
   './js/components/chart.js',
   './js/components/install-prompt.js',
+  './js/components/manual-attendance-dialog.js',
   './js/pages/home.js',
   './js/pages/tournaments.js',
   './js/pages/tournament.js',

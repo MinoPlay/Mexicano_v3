@@ -4,6 +4,7 @@ import { showToast } from '../components/toast.js';
 import { testConnection, onSyncStatus, getSyncStatus, pushDoodleNow, addPlayerToPlayersJson } from '../services/github.js';
 import { isInstalled } from '../components/install-prompt.js';
 import { sendTelegramTestAlert } from '../services/telegram.js';
+import { showManualAttendanceDialog } from '../components/manual-attendance-dialog.js';
 
 function renderMembersList(listEl) {
   const members = getMembers();
@@ -81,6 +82,17 @@ export function renderSettings(container, params) {
         <div id="github-status-msg" class="text-sm mt-sm" style="min-height:1.25rem;"></div>
       </div>
 
+      <!-- Manual Attendance -->
+      <div class="settings-section" id="attendance-section">
+        <div class="settings-section-title">Attendance</div>
+        <p class="text-sm text-secondary" style="margin-bottom:var(--space-sm);">
+          Record attendance for a day without a tournament. Only affects Stats → Attendance and the Doodle Player Overview.
+        </p>
+        <div class="flex gap-sm mt-sm">
+          <button id="attendance-add-btn" class="btn btn-primary" style="flex:1;">➕ Add Attendance</button>
+        </div>
+      </div>
+
       <!-- Telegram Alerts -->
       <div class="settings-section">
         <div class="settings-section-title">Telegram Alerts</div>
@@ -111,10 +123,12 @@ export function renderSettings(container, params) {
   // All other Mino-only sections are gated by their own refresh functions
   // (refreshSummariesSection, etc.) which check isMino().
   const membersSection = container.querySelector('.members-header')?.closest('.settings-section');
+  const attendanceSection = container.querySelector('#attendance-section');
 
   function refreshMinoVisibility() {
     const isMino = Store.isMino();
     if (membersSection) membersSection.style.display = isMino ? '' : 'none';
+    if (attendanceSection) attendanceSection.style.display = isMino ? '' : 'none';
   }
   refreshMinoVisibility();
 
@@ -181,6 +195,11 @@ export function renderSettings(container, params) {
       updated.map(m => `<option value="${m}" ${m === current ? 'selected' : ''}>${m}</option>`).join('');
     updateAvatar(avatarEl);
   }
+
+  // Add attendance dialog
+  container.querySelector('#attendance-add-btn').addEventListener('click', () => {
+    showManualAttendanceDialog();
+  });
 
   // ─── GitHub Backend ───────────────────────────────────────────────────────
 

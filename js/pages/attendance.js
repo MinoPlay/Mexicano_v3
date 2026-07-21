@@ -217,7 +217,9 @@ export function renderAttendance(container, params = {}) {
   // Header
   const header = document.createElement('div');
   header.className = 'page-header';
-  header.innerHTML = '<h1>Attendance</h1>';
+  header.innerHTML = `
+    <h1>Attendance</h1>
+  `;
   container.appendChild(header);
 
   const content = document.createElement('div');

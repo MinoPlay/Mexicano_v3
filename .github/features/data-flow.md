@@ -111,6 +111,7 @@ Writes happen via tournament lifecycle (see section below).
 |-----------|-----------------|------|
 | READ | `players.json` | Via `pullCoreData` on load |
 | READ | `tournaments.json` | Via `pullCoreData` on load |
+| READ | `data/attendance_manual.json` | Manual (no-tournament) attendance; via `pullCoreData` (step 2b) |
 | READ | `YYYY/YYYY-MM/players_overview.json` | Current + prev month via `pullCoreData`; specific month lazy-fetched when user selects it |
 | READ | `YYYY/YYYY-MM/YYYY-MM-DD.json` | Lazy-loaded when user selects a date with no cached matches |
 
@@ -148,6 +149,7 @@ No writes.
 | WRITE | `players.json` + `players_meta.json` | "Generate players.json" button → `generatePlayersJson()` |
 | WRITE | `elo_history/elo_history_<playerId>.json` | "Generate per-player ELO history" button → `generateEloHistory()` |
 | WRITE | `YYYY/YYYY-MM/players_overview.json` | "Generate monthly overview" button → `generateMonthlyOverviews()` |
+| WRITE | `data/attendance_manual.json` | Manual attendance page → `Store.setManualAttendance()` → auto-push (SYNCED_DATA_KEYS) |
 | WRITE | `players_summaries/summary_<slug>.json` | "Generate / Update Summary" button → `generateOrUpdatePlayerSummary()` |
 
 ---
@@ -440,6 +442,7 @@ Writes happen via tournament lifecycle (see section below).
 |-----------|-----------------|------|
 | READ | `players.json` | Via `pullCoreData` on load |
 | READ | `tournaments.json` | Via `pullCoreData` on load |
+| READ | `data/attendance_manual.json` | Manual (no-tournament) attendance; via `pullCoreData` (step 2b) |
 | READ | `YYYY/YYYY-MM/players_overview.json` | Current + prev month via `pullCoreData`; specific month lazy-fetched when user selects it |
 | READ | `YYYY/YYYY-MM/YYYY-MM-DD.json` | Lazy-loaded when user selects a date with no cached matches |
 
@@ -477,6 +480,7 @@ No writes.
 | WRITE | `players.json` + `players_meta.json` | "Generate players.json" button → `generatePlayersJson()` |
 | WRITE | `elo_history/elo_history_<playerId>.json` | "Generate per-player ELO history" button → `generateEloHistory()` |
 | WRITE | `YYYY/YYYY-MM/players_overview.json` | "Generate monthly overview" button → `generateMonthlyOverviews()` |
+| WRITE | `data/attendance_manual.json` | Manual attendance page → `Store.setManualAttendance()` → auto-push (SYNCED_DATA_KEYS) |
 | WRITE | `players_summaries/summary_<slug>.json` | "Generate / Update Summary" button → `generateOrUpdatePlayerSummary()` |
 
 ---

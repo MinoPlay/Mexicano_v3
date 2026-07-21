@@ -143,7 +143,7 @@ export function keyToPath(key) {
   }
 
   // Active tournament is now embedded in the date file — not synced separately.
-  const SYNCED_DATA_KEYS = [];
+  const SYNCED_DATA_KEYS = ['attendance_manual'];
   if (SYNCED_DATA_KEYS.includes(key)) {
     return `${prefix}data/${key}.json`;
   }
@@ -865,6 +865,15 @@ export async function pullAll(onProgress) {
     // ── 2. tournaments.json → tournament dates ──────────────────────────────
     await fetchTournamentsIndex({ create: true });
     onProgress?.('tournaments.json', 0, 0);
+
+    // ── 2b. Manual (no-tournament) attendance entries ───────────────────────
+    try {
+      const manualPath = base ? `${base}/data/attendance_manual.json` : 'data/attendance_manual.json';
+      const manualResult = await readFile(manualPath);
+      if (manualResult?.content && Array.isArray(manualResult.content)) {
+        localStorage.setItem('mexicano_attendance_manual', JSON.stringify(manualResult.content));
+      }
+    } catch { /* file may not exist yet */ }
 
     // ── 3. Read monthly overview + doodle files (derived from index dates) ──
     const allDates = Cache.get('tournament_dates') || [];

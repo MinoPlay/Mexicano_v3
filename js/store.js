@@ -92,6 +92,18 @@ export const Store = {
     this.set(`doodle_${yearMonth}`, entries);
   },
 
+  // ─── Manual (no-tournament) attendance entries ───
+  // Single global synced file: data/attendance_manual.json
+  // Shape: [{ date: 'YYYY-MM-DD', players: ['Name', ...], note: '' }]
+
+  getManualAttendance() {
+    return this.get('attendance_manual') || [];
+  },
+
+  setManualAttendance(entries) {
+    this.set('attendance_manual', entries);
+  },
+
   getDoodleChangelog(yearMonth) {
     return this.get(`doodle_changelog_${yearMonth}`) || [];
   },

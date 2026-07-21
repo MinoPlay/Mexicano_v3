@@ -1,4 +1,5 @@
 import { getDoodle, saveDoodle, deleteDoodle, getChangelog, getAllDatesInMonth } from '../services/doodle.js';
+import { buildMonthParticipation } from '../services/attendance.js';
 import { Store } from '../store.js';
 import { State } from '../state.js';
 import { showToast } from '../components/toast.js';
@@ -570,26 +571,22 @@ export function renderDoodle(container, params = {}) {
       if (p.name) matchPadelIdMap[p.name] = p.matchPadelId ?? null;
     }
 
-    // Derive per-player play count from match data
+    // Derive per-player play count from match data + manual attendance
     const allMatches = Store.getMatches();
-    const datePlayerMap = {};
-    for (const m of allMatches) {
-      if (!m.date || !m.date.startsWith(ym)) continue;
-      if (!datePlayerMap[m.date]) datePlayerMap[m.date] = new Set();
-      [m.team1Player1Name, m.team1Player2Name, m.team2Player1Name, m.team2Player2Name]
-        .filter(Boolean)
-        .forEach(n => datePlayerMap[m.date].add(n));
-    }
-    const tournamentDates = Object.keys(datePlayerMap).sort();
+    const { datePlayerMap, tournamentDates } = buildMonthParticipation(
+      allMatches, Store.getManualAttendance(), ym
+    );
 
-    // Build player list from monthly overview; fall back to match participants
+    // Build player list from monthly overview + any manual/match participants
+    const participantSet = new Set();
+    tournamentDates.forEach(d => datePlayerMap[d].forEach(n => participantSet.add(n)));
     let players;
     if (monthlyOverview && monthlyOverview.length > 0) {
-      players = monthlyOverview.map(p => p.name).sort((a, b) => a.localeCompare(b));
+      const merged = new Set(monthlyOverview.map(p => p.name));
+      participantSet.forEach(n => merged.add(n));
+      players = [...merged].sort((a, b) => a.localeCompare(b));
     } else {
-      const fromMatches = new Set();
-      tournamentDates.forEach(d => datePlayerMap[d].forEach(n => fromMatches.add(n)));
-      players = [...fromMatches].sort((a, b) => a.localeCompare(b));
+      players = [...participantSet].sort((a, b) => a.localeCompare(b));
     }
 
     if (!players.length || !tournamentDates.length) {

@@ -230,8 +230,9 @@ export function getMonthsForAttendanceFilter(filter, today) {
   return months;
 }
 
-export function computeAttendance(monthlyRawByMonth, filter, today) {
+export function computeAttendance(monthlyRawByMonth, filter, today, manualEntries = []) {
   const months = getMonthsForAttendanceFilter(filter, today);
+  const monthSet = new Set(months);
 
   let cutoffStr = null;
   if (filter !== 'latest') {
@@ -255,6 +256,17 @@ export function computeAttendance(monthlyRawByMonth, filter, today) {
         c++;
       }
       if (c > 0) counts[p.Name] = (counts[p.Name] || 0) + c;
+    }
+  }
+
+  // Merge manual (no-tournament) attendance entries within the filter window
+  for (const entry of manualEntries || []) {
+    if (!entry || typeof entry.date !== 'string' || !Array.isArray(entry.players)) continue;
+    if (!monthSet.has(entry.date.slice(0, 7))) continue;
+    if (cutoffStr && entry.date < cutoffStr) continue;
+    for (const name of entry.players) {
+      if (!name) continue;
+      counts[name] = (counts[name] || 0) + 1;
     }
   }
 

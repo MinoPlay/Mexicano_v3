@@ -1032,7 +1032,7 @@ function renderAttendanceSection(content) {
       }
       if (Array.isArray(arr)) raw[ym] = arr;
     }
-    lastResult = computeAttendance(raw, attFilter, today);
+    lastResult = computeAttendance(raw, attFilter, today, Store.getManualAttendance());
     renderChart(lastResult);
     renderTableRows(lastResult);
   }
