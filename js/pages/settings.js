@@ -34,6 +34,11 @@ export function renderSettings(container, params) {
     </header>
     <div class="page-content">
 
+      <!-- App Version -->
+      <div class="settings-section" style="display:flex;justify-content:flex-end;padding:var(--space-sm) 0;">
+        <button id="app-refresh-btn" class="btn btn-secondary btn-sm" title="Refresh to latest version">${getVersionLabel()}</button>
+      </div>
+
       <!-- Current User -->
       <div class="settings-section">
         <div class="settings-section-title">Current User</div>
@@ -107,16 +112,6 @@ export function renderSettings(container, params) {
           <button id="tg-test-tournament-btn" class="btn btn-secondary" style="flex:1;">🎾 Test Tournament Group</button>
         </div>
         <div id="tg-status-msg" class="text-sm mt-sm" style="min-height:1.25rem;"></div>
-      </div>
-      <!-- App Version -->
-      <div class="settings-section">
-        <div class="settings-section-title">App Version</div>
-        <p class="text-sm text-secondary" style="margin-bottom:var(--space-sm);">
-          Current cached version: <strong id="app-version">${getVersionLabel()}</strong>
-        </p>
-        <div class="flex gap-sm mt-sm">
-          <button id="app-refresh-btn" class="btn btn-primary" style="flex:1;">🔄 Refresh to latest</button>
-        </div>
       </div>
 
 
