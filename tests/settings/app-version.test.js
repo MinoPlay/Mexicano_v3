@@ -65,8 +65,8 @@ beforeEach(() => {
 
 describe('Settings — App Version', () => {
   it('exposes integer version and label from js/version.js', () => {
-    expect(APP_VERSION).toBe(3);
-    expect(getVersionLabel()).toBe('mexicano-v3');
+    expect(APP_VERSION).toBe(4);
+    expect(getVersionLabel()).toBe('mexicano-v4');
   });
 
   it('renders the version label as the refresh button #app-refresh-btn', () => {
@@ -75,7 +75,7 @@ describe('Settings — App Version', () => {
 
     const btn = container.querySelector('#app-refresh-btn');
     expect(btn).not.toBeNull();
-    expect(btn.textContent).toContain('mexicano-v3');
+    expect(btn.textContent).toContain('mexicano-v4');
   });
 });
 

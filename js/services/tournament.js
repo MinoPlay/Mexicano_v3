@@ -146,12 +146,15 @@ export function startTournament(tournament) {
 
   // Single explicit push after everything is written — cancel any debounce timers
   // from the Store.set calls above so they don't fire separately.
-  import('./github.js').then(({ cancelPendingSync, flushPush, updateTournamentIndexEntry, markMatchDateDirty }) => {
+  import('./github.js').then(async ({ cancelPendingSync, flushPush, updateTournamentIndexEntry, markMatchDateDirty }) => {
     markMatchDateDirty(tournament.tournamentDate); // ensure dirty before flush
     cancelPendingSync();
-    flushPush();
-    // Add new tournament to the index immediately
-    updateTournamentIndexEntry({
+    // Serialize the two commits: push the day file FIRST, then update the index.
+    // Running both concurrently causes GitHub 409 fast-forward conflicts on the
+    // same branch — the day file loses the race and is never created.
+    await flushPush();
+    // Add new tournament to the index after the day file is committed.
+    await updateTournamentIndexEntry({
       date: tournament.tournamentDate,
       playerCount: tournament.players.length,
       roundCount: 0,
@@ -433,21 +436,21 @@ export function completeTournament(tournament) {
   }).catch(() => {});
 
   // Immediately sync completed tournament to GitHub
-  import('./github.js').then(({ flushPush, markMatchDateDirty, updateTournamentIndexEntry }) => {
+  import('./github.js').then(async ({ flushPush, markMatchDateDirty, updateTournamentIndexEntry }) => {
     markMatchDateDirty(tournament.tournamentDate);
 
-    Promise.resolve(flushPush())
-      .then(() => {
-        // Push succeeded — safe to clear local tournament data
-        Store.clearActiveTournament();
-        localStorage.removeItem('mexicano_completion_marker');
-      })
-      .catch(e => {
-        console.warn('[tournament] post-complete push failed:', e);
-        // Push failed — local data preserved. Will retry on reconnect.
-      });
-
-    updateTournamentIndexEntry(indexEntry).catch(() => {});
+    try {
+      // Serialize commits: day file first, then index — concurrent writes to the
+      // same branch cause GitHub 409 fast-forward conflicts.
+      await flushPush();
+      await updateTournamentIndexEntry(indexEntry).catch(() => {});
+      // Push succeeded — safe to clear local tournament data
+      Store.clearActiveTournament();
+      localStorage.removeItem('mexicano_completion_marker');
+    } catch (e) {
+      console.warn('[tournament] post-complete push failed:', e);
+      // Push failed — local data preserved. Will retry on reconnect.
+    }
   }).catch(() => {});
 
   return tournament;
@@ -495,7 +498,8 @@ export function retryCompletedTournamentPush() {
     };
 
     Promise.resolve(flushPush())
-      .then(() => {
+      .then(async () => {
+        await updateTournamentIndexEntry(indexEntry).catch(() => {});
         Store.clearActiveTournament();
         localStorage.removeItem('mexicano_completion_marker');
         console.log('[tournament] retry push succeeded, local data cleared');
@@ -503,8 +507,6 @@ export function retryCompletedTournamentPush() {
       .catch(e => {
         console.warn('[tournament] retry push failed, will try again on next reconnect:', e);
       });
-
-    updateTournamentIndexEntry(indexEntry).catch(() => {});
   }).catch(() => {});
 }
 

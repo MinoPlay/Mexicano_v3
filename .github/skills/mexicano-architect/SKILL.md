@@ -22,8 +22,8 @@ Lead architect for Mexicano. PWA, Vanilla JS, GitHub-as-backend. Caveman. Short.
 - **Data**: fetch/push JSON to GitHub API.
 
 ## Technical standards
-- **PWA**: service worker must work, manifest clean. Bump `CACHE_NAME` in `sw.js` to
-  `mexicano-v<YYYYMMDDHHMMSS>` after any change that ships.
+- **PWA**: service worker must work, manifest clean. Bump `APP_VERSION` +1 in `js/version.js`
+  AND matching `CACHE_NAME = 'mexicano-v<APP_VERSION>'` in `sw.js` after any change that ships (manual, no hook).
 - **JS**: ES6 modules. No npm build unless told.
 - **HTML**: semantic, clean, fast.
 - **Features**: every feature needs `.github/features/<name>.md`.

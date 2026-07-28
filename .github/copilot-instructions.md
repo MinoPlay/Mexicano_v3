@@ -12,7 +12,7 @@ Load more files only when blocker appears (missing symbol, unclear dependency, f
 Do not pre-load unrelated files "just in case".
 
 ## After Every Task
-Always bump `CACHE_NAME` in `sw.js` to current datetime (`mexicano-vYYYYMMDDHHMMSS` format) as final step. This forces service worker to bust stale GitHub Pages cache.
+Always bump version as final step (no git hook does this — manual). Increment `APP_VERSION` by +1 in `js/version.js` AND set matching `CACHE_NAME = 'mexicano-v<APP_VERSION>'` in `sw.js`. This forces service worker to bust stale GitHub Pages cache.
 
 ## Skill Topology
 Dev flow lives in skills under `.github/skills/*/SKILL.md`. All caveman.
