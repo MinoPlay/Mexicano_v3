@@ -1,7 +1,7 @@
 /**
  * Settings — App Version section + Refresh button.
  * Settings page must render:
- *   - #app-version showing the version label "mexicano-v2"
+ *   - #app-version showing the version label "mexicano-v3"
  *   - #app-refresh-btn button to pull the latest version
  */
 import { vi, describe, it, expect, beforeEach } from 'vitest';
@@ -65,8 +65,8 @@ beforeEach(() => {
 
 describe('Settings — App Version', () => {
   it('exposes integer version and label from js/version.js', () => {
-    expect(APP_VERSION).toBe(2);
-    expect(getVersionLabel()).toBe('mexicano-v2');
+    expect(APP_VERSION).toBe(3);
+    expect(getVersionLabel()).toBe('mexicano-v3');
   });
 
   it('renders the version label as the refresh button #app-refresh-btn', () => {
@@ -75,7 +75,8 @@ describe('Settings — App Version', () => {
 
     const btn = container.querySelector('#app-refresh-btn');
     expect(btn).not.toBeNull();
-    expect(btn.textContent).toContain('mexicano-v2');
+    expect(btn.textContent).toContain('mexicano-v3');
   });
 });
+
 

@@ -29,15 +29,11 @@ export function renderSettings(container, params) {
   const currentUser = Store.getCurrentUser();
 
   container.innerHTML = `
-    <header class="page-header">
+    <header class="page-header" style="display:flex;align-items:center;justify-content:space-between;gap:var(--space-sm);">
       <h1>Settings</h1>
+      <button id="app-refresh-btn" class="btn btn-primary btn-sm" title="Refresh to latest version">${getVersionLabel()}</button>
     </header>
     <div class="page-content">
-
-      <!-- App Version -->
-      <div class="settings-section" style="display:flex;justify-content:flex-end;padding:var(--space-sm) 0;">
-        <button id="app-refresh-btn" class="btn btn-secondary btn-sm" title="Refresh to latest version">${getVersionLabel()}</button>
-      </div>
 
       <!-- Current User -->
       <div class="settings-section">
