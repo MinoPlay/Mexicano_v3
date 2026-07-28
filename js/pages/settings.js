@@ -5,6 +5,7 @@ import { testConnection, onSyncStatus, getSyncStatus, pushDoodleNow, addPlayerTo
 import { isInstalled } from '../components/install-prompt.js';
 import { sendTelegramTestAlert, sendTournamentTestAlert } from '../services/telegram.js';
 import { showManualAttendanceDialog } from '../components/manual-attendance-dialog.js';
+import { getVersionLabel, refreshApp } from '../version.js';
 
 function renderMembersList(listEl) {
   const members = getMembers();
@@ -106,6 +107,16 @@ export function renderSettings(container, params) {
           <button id="tg-test-tournament-btn" class="btn btn-secondary" style="flex:1;">🎾 Test Tournament Group</button>
         </div>
         <div id="tg-status-msg" class="text-sm mt-sm" style="min-height:1.25rem;"></div>
+      </div>
+      <!-- App Version -->
+      <div class="settings-section">
+        <div class="settings-section-title">App Version</div>
+        <p class="text-sm text-secondary" style="margin-bottom:var(--space-sm);">
+          Current cached version: <strong id="app-version">${getVersionLabel()}</strong>
+        </p>
+        <div class="flex gap-sm mt-sm">
+          <button id="app-refresh-btn" class="btn btn-primary" style="flex:1;">🔄 Refresh to latest</button>
+        </div>
       </div>
 
 
@@ -265,6 +276,16 @@ export function renderSettings(container, params) {
     setGhStatusMsg('Configuration cleared.');
     updateSyncIcon('idle');
     showToast('GitHub config cleared');
+  });
+
+  // ─── App Version ───────────────────────────────────────────────────────────
+
+  container.querySelector('#app-refresh-btn').addEventListener('click', async (e) => {
+    const btn = e.currentTarget;
+    btn.disabled = true;
+    btn.textContent = 'Refreshing…';
+    showToast('Refreshing to latest version…');
+    await refreshApp();
   });
 
   // ─── Telegram Alerts ───────────────────────────────────────────────────────
