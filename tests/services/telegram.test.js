@@ -26,14 +26,15 @@ describe('buildConfirmationText', () => {
 });
 
 describe('buildTournamentCreatedText', () => {
-  it('lists date, code and starting brackets', () => {
+  it('puts code at top, blank line, courts spaced apart', () => {
     const brackets = [
       { team1: ['Alice', 'Bob'], team2: ['Carol', 'Dave'] },
       { team1: ['Eve', 'Frank'], team2: ['Grace', 'Heidi'] },
     ];
     expect(buildTournamentCreatedText('2026-07-15', 'PADEL', brackets)).toBe(
-      '🎾 New tournament — 2026-07-15\n🔑 Code: PADEL\nStarting brackets:\n' +
-      'Court 1: Alice & Bob vs Carol & Dave\n' +
+      '🔑 Code: PADEL\n\n' +
+      '🎾 New tournament — 2026-07-15\n\n' +
+      'Court 1: Alice & Bob vs Carol & Dave\n\n' +
       'Court 2: Eve & Frank vs Grace & Heidi'
     );
   });
@@ -41,7 +42,8 @@ describe('buildTournamentCreatedText', () => {
   it('uses "none" when no access code', () => {
     const brackets = [{ team1: ['Alice', 'Bob'], team2: ['Carol', 'Dave'] }];
     expect(buildTournamentCreatedText('2026-07-15', null, brackets)).toBe(
-      '🎾 New tournament — 2026-07-15\n🔑 Code: none\nStarting brackets:\n' +
+      '🔑 Code: none\n\n' +
+      '🎾 New tournament — 2026-07-15\n\n' +
       'Court 1: Alice & Bob vs Carol & Dave'
     );
   });

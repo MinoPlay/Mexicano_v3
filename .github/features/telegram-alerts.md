@@ -39,12 +39,15 @@ Confirmation:
 ```
 Tournament created:
 ```
-🎾 New tournament — {tournamentDate}
 🔑 Code: {accessCode || 'none'}
-Starting brackets:
+
+🎾 New tournament — {tournamentDate}
+
 Court 1: {p1} & {p2} vs {p3} & {p4}
+
 Court 2: ...
 ```
+Code sits on top, blank line, then each court match-up separated by a blank line for readability.
 Tournament completed:
 ```
 🏆 Tournament complete — {tournamentDate}
@@ -59,10 +62,20 @@ User: {currentUser}
 Time: {ISO timestamp}
 ```
 
+## Telegram Groups (two chats)
+- **Default group** (`TELEGRAM_CHAT_ID`): doodle updates, attendance confirmations, test alerts.
+- **Tournament group** `NotOfficialOfficialPadelClub` (id `-5458909914`, `TELEGRAM_CHAT_ID_TOURNAMENTS`): tournament **created** + **completed** alerts only.
+- Routing: the client sends `client_payload.target` (a *name*, e.g. `'tournaments'`) — never a raw chat id. Both chat ids are **hardcoded/secret in the data-repo workflow**, which maps the target name to a chat id. When `target` is absent, the workflow uses the default group.
+- **Data-repo workflow change required** (`.github/workflows/telegram-relay.yml` in `MinoPlay/DataHub_Mexicano`): map the target to the right chat id, e.g.
+  ```yaml
+  chat_id: ${{ github.event.client_payload.target == 'tournaments' && vars.TELEGRAM_CHAT_ID_TOURNAMENTS || secrets.TELEGRAM_CHAT_ID }}
+  ```
+  (or a `case`/`if` step). Store `-5458909914` as a repo variable/secret there.
+
 ## GitHub repository_dispatch
 - URL: `POST https://api.github.com/repos/{owner}/{repo}/dispatches`
 - Headers: `Authorization: Bearer {pat}`, `Accept: application/vnd.github+json`, `X-GitHub-Api-Version: 2022-11-28`
-- Body: `{ "event_type": "telegram_alert", "client_payload": { "text": "...", "kind": "..." } }`
+- Body: `{ "event_type": "telegram_alert", "client_payload": { "text": "...", "kind": "...", "target": "<optional group name>" } }`
 - Success: HTTP 204 No Content
 - PAT needs push (Contents write) access to the data repo — the app's existing PAT already has it
 

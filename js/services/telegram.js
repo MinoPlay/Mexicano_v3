@@ -16,6 +16,12 @@ const GH_API_VERSION = '2022-11-28';
 const DISPATCH_EVENT = 'telegram_alert';
 const LOG_PREFIX = '[telegram]';
 
+// Second Telegram group ("NotOfficialOfficialPadelClub") used only for
+// tournament created/completed alerts. The client only sends a target *name*;
+// both chat ids are hardcoded in the data-repo workflow, which maps the name
+// to a chat id. Absent target => default group.
+const TARGET_TOURNAMENTS = 'tournaments';
+
 function log(level, message, details) {
   if (details === undefined) {
     console[level](`${LOG_PREFIX} ${message}`);
@@ -49,9 +55,9 @@ export function buildTestAlertText(user, timestamp) {
 
 export function buildTournamentCreatedText(date, code, brackets = []) {
   const codeLine = code ? code : 'none';
-  const lines = brackets.map((b, i) =>
+  const courts = brackets.map((b, i) =>
     `Court ${i + 1}: ${b.team1.join(' & ')} vs ${b.team2.join(' & ')}`);
-  return `🎾 New tournament — ${date}\n🔑 Code: ${codeLine}\nStarting brackets:\n${lines.join('\n')}`;
+  return `🔑 Code: ${codeLine}\n\n🎾 New tournament — ${date}\n\n${courts.join('\n\n')}`;
 }
 
 export function buildTournamentCompletedText(date, rankedPlayers = []) {
@@ -59,7 +65,7 @@ export function buildTournamentCompletedText(date, rankedPlayers = []) {
   return `🏆 Tournament complete — ${date}\nFinal ranking:\n${lines.join('\n')}`;
 }
 
-async function dispatchTelegramAlert(text, meta) {
+async function dispatchTelegramAlert(text, meta, target) {
   const gh = Store.getGitHubConfig();
   if (!gh?.owner || !gh?.repo || !gh?.pat) {
     log('warn', 'GitHub backend not configured; alert not relayed.', meta);
@@ -67,7 +73,9 @@ async function dispatchTelegramAlert(text, meta) {
   }
 
   const url = `${GH_API}/repos/${encodeURIComponent(gh.owner)}/${encodeURIComponent(gh.repo)}/dispatches`;
-  const payload = { event_type: DISPATCH_EVENT, client_payload: { text, kind: meta.kind } };
+  const client_payload = { text, kind: meta.kind };
+  if (target) client_payload.target = target;
+  const payload = { event_type: DISPATCH_EVENT, client_payload };
 
   log('info', 'Relaying Telegram alert via GitHub dispatch.', { kind: meta.kind });
   const res = await fetch(url, {
@@ -123,11 +131,11 @@ export async function sendTournamentCreatedAlert(tournament) {
     team2: [m.player3.name, m.player4.name],
   }));
   const text = buildTournamentCreatedText(tournament.tournamentDate, tournament.accessCode, brackets);
-  return dispatchTelegramAlert(text, { kind: 'tournament-created', date: tournament.tournamentDate });
+  return dispatchTelegramAlert(text, { kind: 'tournament-created', date: tournament.tournamentDate }, TARGET_TOURNAMENTS);
 }
 
 export async function sendTournamentCompletedAlert(tournament) {
   const ranked = rankPlayers(tournament.players || []);
   const text = buildTournamentCompletedText(tournament.tournamentDate, ranked);
-  return dispatchTelegramAlert(text, { kind: 'tournament-completed', date: tournament.tournamentDate });
+  return dispatchTelegramAlert(text, { kind: 'tournament-completed', date: tournament.tournamentDate }, TARGET_TOURNAMENTS);
 }

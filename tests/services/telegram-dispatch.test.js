@@ -11,6 +11,8 @@ import {
   sendTelegramTestAlert,
   sendDoodleAlert,
   sendTournamentConfirmationAlert,
+  sendTournamentCreatedAlert,
+  sendTournamentCompletedAlert,
 } from '../../js/services/telegram.js';
 
 beforeEach(() => {
@@ -72,5 +74,42 @@ describe('telegram relay via GitHub repository_dispatch', () => {
 
     const body = JSON.parse(fetchMock.mock.calls[0][1].body);
     expect(body.client_payload.text).toBe('🎾 Alice confirmed attendance for tournament on 2024-06-22');
+  });
+
+  it('routes tournament created alerts to the tournament group chat', async () => {
+    const fetchMock = vi.fn(async () => ({ status: 204, json: async () => ({}) }));
+    global.fetch = fetchMock;
+
+    await sendTournamentCreatedAlert({
+      tournamentDate: '2026-07-15',
+      accessCode: 'PADEL',
+      rounds: [{ roundNumber: 1, matches: [
+        { player1: { name: 'Alice' }, player2: { name: 'Bob' }, player3: { name: 'Carol' }, player4: { name: 'Dave' } },
+      ] }],
+    });
+
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(body.client_payload.target).toBe('tournaments');
+    expect(body.client_payload.text).toContain('🔑 Code: PADEL');
+  });
+
+  it('routes tournament completed alerts to the tournament group chat', async () => {
+    const fetchMock = vi.fn(async () => ({ status: 204, json: async () => ({}) }));
+    global.fetch = fetchMock;
+
+    await sendTournamentCompletedAlert({ tournamentDate: '2026-07-15', players: [] });
+
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(body.client_payload.target).toBe('tournaments');
+  });
+
+  it('does not set target for doodle alerts (uses default group)', async () => {
+    const fetchMock = vi.fn(async () => ({ status: 204, json: async () => ({}) }));
+    global.fetch = fetchMock;
+
+    await sendDoodleAlert('Alice', '2026-07', ['2026-07-01'], []);
+
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(body.client_payload.target).toBeUndefined();
   });
 });
