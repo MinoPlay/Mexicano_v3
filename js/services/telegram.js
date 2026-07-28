@@ -124,6 +124,18 @@ export async function sendTelegramTestAlert() {
   return dispatchTelegramAlert(text, { kind: 'test', user: currentUser, timestamp });
 }
 
+export async function sendTournamentTestAlert() {
+  const currentUser = Store.getCurrentUser() || 'unknown';
+  const timestamp = new Date().toISOString();
+  const text = `🧪 Tournament group test — ${currentUser}\n${timestamp}\n\n` +
+    'This is a test of the tournament created/completed channel.';
+  return dispatchTelegramAlert(
+    text,
+    { kind: 'tournament-test', user: currentUser, timestamp },
+    TARGET_TOURNAMENTS,
+  );
+}
+
 export async function sendTournamentCreatedAlert(tournament) {
   const round1 = tournament.rounds?.find(r => r.roundNumber === 1);
   const brackets = (round1?.matches || []).map(m => ({

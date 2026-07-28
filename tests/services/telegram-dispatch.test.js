@@ -9,6 +9,7 @@ vi.mock('../../js/store.js', () => ({
 
 import {
   sendTelegramTestAlert,
+  sendTournamentTestAlert,
   sendDoodleAlert,
   sendTournamentConfirmationAlert,
   sendTournamentCreatedAlert,
@@ -111,5 +112,17 @@ describe('telegram relay via GitHub repository_dispatch', () => {
 
     const body = JSON.parse(fetchMock.mock.calls[0][1].body);
     expect(body.client_payload.target).toBeUndefined();
+  });
+
+  it('routes the tournament test alert to the tournament group chat', async () => {
+    const fetchMock = vi.fn(async () => ({ status: 204, json: async () => ({}) }));
+    global.fetch = fetchMock;
+
+    await sendTournamentTestAlert();
+
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(body.client_payload.target).toBe('tournaments');
+    expect(body.client_payload.kind).toBe('tournament-test');
+    expect(body.client_payload.text).toContain('test');
   });
 });

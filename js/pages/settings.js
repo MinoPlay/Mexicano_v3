@@ -3,7 +3,7 @@ import { getMembers, addMember, removeMember } from '../services/members.js';
 import { showToast } from '../components/toast.js';
 import { testConnection, onSyncStatus, getSyncStatus, pushDoodleNow, addPlayerToPlayersJson } from '../services/github.js';
 import { isInstalled } from '../components/install-prompt.js';
-import { sendTelegramTestAlert } from '../services/telegram.js';
+import { sendTelegramTestAlert, sendTournamentTestAlert } from '../services/telegram.js';
 import { showManualAttendanceDialog } from '../components/manual-attendance-dialog.js';
 
 function renderMembersList(listEl) {
@@ -103,6 +103,7 @@ export function renderSettings(container, params) {
         </p>
         <div class="flex gap-sm mt-sm">
           <button id="tg-test-btn" class="btn btn-primary" style="flex:1;">📞 Send Test Alert</button>
+          <button id="tg-test-tournament-btn" class="btn btn-secondary" style="flex:1;">🎾 Test Tournament Group</button>
         </div>
         <div id="tg-status-msg" class="text-sm mt-sm" style="min-height:1.25rem;"></div>
       </div>
@@ -269,6 +270,7 @@ export function renderSettings(container, params) {
   // ─── Telegram Alerts ───────────────────────────────────────────────────────
 
   const tgTestBtn  = container.querySelector('#tg-test-btn');
+  const tgTestTournamentBtn = container.querySelector('#tg-test-tournament-btn');
   const tgStatus   = container.querySelector('#tg-status-msg');
 
   function setTgStatus(msg, isError = false) {
@@ -293,6 +295,21 @@ export function renderSettings(container, params) {
       showToast('Telegram test alert failed', 'error');
     } finally {
       refreshTgTestBtn();
+    }
+  });
+
+  tgTestTournamentBtn.addEventListener('click', async () => {
+    tgTestTournamentBtn.disabled = true;
+    setTgStatus('Requesting tournament group test alert…');
+    try {
+      await sendTournamentTestAlert();
+      setTgStatus('Relay triggered. Check the tournament group shortly.');
+      showToast('Tournament group test alert triggered');
+    } catch (err) {
+      setTgStatus(`Tournament test alert failed: ${err.message}`, true);
+      showToast('Tournament group test alert failed', 'error');
+    } finally {
+      tgTestTournamentBtn.disabled = false;
     }
   });
 }

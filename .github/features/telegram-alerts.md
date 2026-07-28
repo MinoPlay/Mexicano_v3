@@ -25,7 +25,8 @@ The client no longer contacts Telegram and no longer reads `config.json`
 - Tournament confirmation popup in `js/pages/home.js` — fires `sendTournamentConfirmationAlert()` when a player confirms
 - Tournament creation in `js/pages/create-tournament.js` — after `startTournament()`, fires `sendTournamentCreatedAlert()`
 - Tournament completion in `js/pages/tournament.js` — after `completeTournament()`, fires `sendTournamentCompletedAlert()`
-- Settings "Send Test Alert" button — fires `sendTelegramTestAlert()`
+- Settings "Send Test Alert" button — fires `sendTelegramTestAlert()` (default group)
+- Settings "Test Tournament Group" button — fires `sendTournamentTestAlert()` (tournament group, `target: 'tournaments'`)
 
 ## Message Format
 ```
@@ -99,7 +100,7 @@ Time: {ISO timestamp}
 - Doodle trigger happens post-commit: alerts start only after the GitHub write of the monthly doodle + changelog succeeds
 
 ## File References
-- **Service (client)**: `js/services/telegram.js` — `sendDoodleAlert`, `sendTournamentConfirmationAlert`, `sendTournamentCreatedAlert`, `sendTournamentCompletedAlert`, `sendTelegramTestAlert`, `dispatchTelegramAlert`
+- **Service (client)**: `js/services/telegram.js` — `sendDoodleAlert`, `sendTournamentConfirmationAlert`, `sendTournamentCreatedAlert`, `sendTournamentCompletedAlert`, `sendTelegramTestAlert`, `sendTournamentTestAlert`, `dispatchTelegramAlert`
 - **Triggers**: `js/pages/doodle.js` — `DoodleEditSession.save()`; `js/pages/home.js` — confirmation popup; `js/pages/create-tournament.js` — creation; `js/pages/tournament.js` — completion
 - **Settings UI**: `js/pages/settings.js`
 - **Workflow (data repo)**: `.github/workflows/telegram-relay.yml`
