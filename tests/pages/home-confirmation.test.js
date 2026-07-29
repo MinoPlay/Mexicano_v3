@@ -42,6 +42,22 @@ describe('shouldShowConfirmationPopup', () => {
     const completed = { ...tournament, isCompleted: true };
     expect(shouldShowConfirmationPopup(completed, 'Alice', false)).toBe(false);
   });
+
+  it('returns false when player already confirmed on backend (no local flag)', () => {
+    const backendConfirmed = {
+      ...tournament,
+      players: [{ id: 1, name: 'Alice', confirmed: true }, { id: 2, name: 'Bob' }],
+    };
+    expect(shouldShowConfirmationPopup(backendConfirmed, 'Alice', false)).toBe(false);
+  });
+
+  it('returns true when a different player confirmed on backend', () => {
+    const backendConfirmed = {
+      ...tournament,
+      players: [{ id: 1, name: 'Alice' }, { id: 2, name: 'Bob', confirmed: true }],
+    };
+    expect(shouldShowConfirmationPopup(backendConfirmed, 'Alice', false)).toBe(true);
+  });
 });
 
 // ─── buildConfirmationAlertMessage ───

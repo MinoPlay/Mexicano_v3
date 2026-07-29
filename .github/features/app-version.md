@@ -3,10 +3,12 @@
 ## Behaviour
 App carry simple integer version. No more guid/datetime cache name.
 
-- Version = single integer digit (current `4`), bump by +1 each release.
+- Version = single integer digit (current `5`), bump by +1 each release.
 - Single source of truth: `js/version.js` -> `APP_VERSION` (Number).
-- Cache name label = `mexicano-v<APP_VERSION>` (e.g. `mexicano-v4`).
-- `sw.js` `CACHE_NAME` = `mexicano-v<APP_VERSION>`, set manually to match `js/version.js` (no git hook).
+- Cache name label = `mexicano-v<APP_VERSION>` (e.g. `mexicano-v5`).
+- `sw.js` is a **module service worker** (`register('./sw.js', { type: 'module' })`) that
+  `import { APP_VERSION } from './js/version.js'` and derives
+  `CACHE_NAME = ` + "`mexicano-v${APP_VERSION}`" + `. No manual duplicate to keep in sync.
 
 ## Settings Tab
 Version button lives in the Settings page header row: title `Settings` anchored left,
@@ -17,9 +19,10 @@ button `#app-refresh-btn` anchored right, styled blue (`btn btn-primary`), label
   - `location.reload()` to pull latest files from network.
 
 ## API — `js/version.js`
-- `APP_VERSION` — Number (current: `4`).
+- `APP_VERSION` — Number (current: `5`).
 - `getVersionLabel()` — returns `mexicano-v<APP_VERSION>`.
 - `refreshApp()` — async; clears caches, updates SW, reloads. Guards missing `caches`/`serviceWorker`.
 
 ## Bump rule
-Release = increment `APP_VERSION` in `js/version.js` AND set matching `CACHE_NAME = 'mexicano-v<APP_VERSION>'` in `sw.js`. Both manual — no git hook.
+Release = increment `APP_VERSION` in `js/version.js`. That's the only edit —
+`sw.js` imports `APP_VERSION` and derives `CACHE_NAME` automatically.

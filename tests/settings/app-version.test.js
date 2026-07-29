@@ -65,8 +65,9 @@ beforeEach(() => {
 
 describe('Settings — App Version', () => {
   it('exposes integer version and label from js/version.js', () => {
-    expect(APP_VERSION).toBe(4);
-    expect(getVersionLabel()).toBe('mexicano-v4');
+    expect(Number.isInteger(APP_VERSION)).toBe(true);
+    expect(APP_VERSION).toBeGreaterThan(0);
+    expect(getVersionLabel()).toBe(`mexicano-v${APP_VERSION}`);
   });
 
   it('renders the version label as the refresh button #app-refresh-btn', () => {
@@ -75,7 +76,16 @@ describe('Settings — App Version', () => {
 
     const btn = container.querySelector('#app-refresh-btn');
     expect(btn).not.toBeNull();
-    expect(btn.textContent).toContain('mexicano-v4');
+    expect(btn.textContent).toContain(getVersionLabel());
+  });
+
+  it('sw.js CACHE_NAME derives from APP_VERSION (single source of truth)', async () => {
+    const fs = await import('node:fs');
+    const path = await import('node:path');
+    const swPath = path.resolve(process.cwd(), 'sw.js');
+    const sw = fs.readFileSync(swPath, 'utf8');
+    expect(sw).toMatch(/import\s*\{\s*APP_VERSION\s*\}\s*from\s*['"]\.\/js\/version\.js['"]/);
+    expect(sw).toMatch(/CACHE_NAME\s*=\s*[`'"]mexicano-v\$\{APP_VERSION\}/);
   });
 });
 

@@ -1,4 +1,6 @@
-const CACHE_NAME = 'mexicano-v4';
+import { APP_VERSION } from './js/version.js';
+
+const CACHE_NAME = `mexicano-v${APP_VERSION}`;
 const ASSETS = [
   './',
   './index.html',

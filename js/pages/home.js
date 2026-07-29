@@ -10,7 +10,10 @@ export function shouldShowConfirmationPopup(activeTournament, currentUser, alrea
   if (!currentUser) return false;
   if (alreadyConfirmed) return false;
   const players = activeTournament.players || [];
-  return players.some(p => p.name.toLowerCase() === currentUser.toLowerCase());
+  const me = players.find(p => p.name.toLowerCase() === currentUser.toLowerCase());
+  if (!me) return false;
+  if (me.confirmed) return false;
+  return true;
 }
 
 export function buildConfirmationAlertMessage(playerName, tournamentDate) {
