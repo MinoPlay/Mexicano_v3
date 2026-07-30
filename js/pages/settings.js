@@ -31,21 +31,16 @@ export function renderSettings(container, params) {
   container.innerHTML = `
     <header class="page-header" style="display:flex;align-items:center;justify-content:space-between;gap:var(--space-sm);">
       <h1>Settings</h1>
+      <div class="user-selector" style="justify-content:center;">
+        <div class="user-avatar" id="settings-avatar">${currentUser ? currentUser.charAt(0).toUpperCase() : '?'}</div>
+        <select id="settings-user-select">
+          <option value="">Select user…</option>
+          ${members.map(m => `<option value="${m}" ${m === currentUser ? 'selected' : ''}>${m}</option>`).join('')}
+        </select>
+      </div>
       <button id="app-refresh-btn" class="btn btn-primary btn-sm" title="Refresh to latest version">${getVersionLabel()}</button>
     </header>
     <div class="page-content">
-
-      <!-- Current User -->
-      <div class="settings-section">
-        <div class="settings-section-title">Current User</div>
-        <div class="user-selector">
-          <div class="user-avatar" id="settings-avatar">${currentUser ? currentUser.charAt(0).toUpperCase() : '?'}</div>
-          <select id="settings-user-select">
-            <option value="">Select user…</option>
-            ${members.map(m => `<option value="${m}" ${m === currentUser ? 'selected' : ''}>${m}</option>`).join('')}
-          </select>
-        </div>
-      </div>
 
       <!-- Members -->
       <div class="settings-section">
