@@ -32,9 +32,15 @@ Show round-by-round results during active tournaments. Each entry captures match
 - When `startNextRound()` fires (logs the just-completed round)
 - When `completeTournament()` fires (logs the final round)
 
-## UI
-- No dedicated page. The Logs bottom-nav tab was removed.
-- Round results are still written to `localStorage` (see below) for potential future use.
+## UI — `/logs` page
+- Bottom nav tab: 📝 Logs
+- Shows entries newest-first
+- Each entry: one header line (`2026-05-19 Round 1`) + one line per match (`Player1 & Player2 13 – 12 Player3 & Player4`)
+- "🗑 Clear" button in header removes all entries from localStorage
+
+## Access Control
+- Logs tab (nav + writes) only active when `Store.isAdministrator()` returns `true`
+- Non-admin users: tab hidden, no entries written
 
 ```js
 import { getRoundLog, clearRoundLog } from './services/round-log.js';
