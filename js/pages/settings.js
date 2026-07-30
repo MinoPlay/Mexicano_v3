@@ -58,10 +58,11 @@ export function renderSettings(container, params) {
 
       <!-- GitHub Backend -->
       <div class="settings-section">
-        <div class="settings-section-title">
+        <details class="members-collapsible">
+        <summary class="settings-section-title members-summary">
           GitHub Backend
           <span id="github-sync-icon" class="github-sync-icon" title="Sync status">⬜</span>
-        </div>
+        </summary>
         <p class="text-sm text-secondary" style="margin-bottom:var(--space-sm);">
           Store app data in a GitHub repository. A Personal Access Token (PAT) with <strong>repo</strong> scope is required.
         </p>
@@ -77,6 +78,7 @@ export function renderSettings(container, params) {
           <button id="github-clear-btn" class="btn btn-ghost"      style="flex:1;">Clear</button>
         </div>
         <div id="github-status-msg" class="text-sm mt-sm" style="min-height:1.25rem;"></div>
+        </details>
       </div>
 
       <!-- Manual Attendance -->
