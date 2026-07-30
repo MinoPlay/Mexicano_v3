@@ -168,12 +168,19 @@ function seedLocalActive() {
 // ─── Reset between tests ──────────────────────────────────────────────────────
 
 beforeEach(() => {
+  // Pin the clock: the pull logic uses a 3-day recency window against Date.now()
+  // when resolving an active tournament from the most-recent index entry. STALE_DATE
+  // is fixed, so without a fixed clock these tests rot as real time drifts past the
+  // window. Freeze "now" one day after STALE_DATE to keep it inside the window.
+  vi.useFakeTimers({ toFake: ['Date'] });
+  vi.setSystemTime(new Date(`${STALE_DATE}T12:00:00Z`));
   ls.clear();
   _cacheData = {};
   ls.setItem('mexicano_github_config', JSON.stringify(GH_CONFIG));
 });
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.unstubAllGlobals();
   vi.stubGlobal('localStorage', ls);
 });
