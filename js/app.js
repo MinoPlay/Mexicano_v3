@@ -17,7 +17,6 @@ import { renderEloCharts } from './pages/elo-charts.js';
 import { renderAttendance } from './pages/attendance.js';
 import { renderDoodle } from './pages/doodle.js';
 import { renderSettings } from './pages/settings.js';
-import { renderLogs } from './pages/git-logs.js';
 
 // ─── Load administrator names from static JSON ───
 async function loadAdministrators() {
@@ -129,7 +128,6 @@ const routes = {
   '/elo-charts': renderEloCharts,
   '/attendance': renderAttendance,
   '/doodle': renderDoodle,
-  '/logs': renderLogs,
   '/settings': renderSettings
 };
 

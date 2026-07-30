@@ -1,12 +1,9 @@
-import { Store } from '../store.js';
-
 const NAV_ITEMS = [
   { path: '/', icon: '🏠', label: 'Home' },
   { path: '/tournaments', icon: '📋', label: 'Tournaments' },
   { path: '/statistics', icon: '📊', label: 'Stats' },
   { path: '/elo-charts', icon: '📈', label: 'ELO' },
   { path: '/doodle', icon: '🗓️', label: 'Doodle' },
-  { path: '/logs', icon: '📝', label: 'Logs' },
   { path: '/settings', icon: '⚙️', label: 'Settings' }
 ];
 
@@ -16,11 +13,7 @@ export function renderNav() {
   nav.setAttribute('aria-label', 'Main navigation');
 
   function renderItems() {
-    const visibleItems = NAV_ITEMS.filter(item =>
-      item.path !== '/logs' || Store.isAdministrator()
-    );
-
-    nav.innerHTML = visibleItems.map(item => `
+    nav.innerHTML = NAV_ITEMS.map(item => `
       <a href="#${item.path}" class="nav-item" data-path="${item.path}" aria-label="${item.label}">
         <span class="nav-item-icon">${item.icon}</span>
         <span>${item.label}</span>
