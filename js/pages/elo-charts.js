@@ -342,6 +342,14 @@ function formatDateShort(dateStr) {
 
 // ─── Member Picker ───
 
+export function filterMemberSuggestions(allMembers, selectedMembers, query) {
+  const q = (query || '').trim().toLowerCase();
+  return allMembers
+    .filter(m => !selectedMembers.has(m))
+    .filter(m => q === '' || m.toLowerCase().includes(q))
+    .sort((a, b) => a.localeCompare(b));
+}
+
 function renderMemberPicker(container, { allMembers, selectedMembers, colorMap, onChange }) {
   container.innerHTML = '';
 
@@ -377,37 +385,98 @@ function renderMemberPicker(container, { allMembers, selectedMembers, colorMap, 
     addBtn.textContent = '+ Add';
     wrapper.appendChild(addBtn);
 
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'elo-add-member-input';
+    input.placeholder = 'Type name…';
+    input.style.display = 'none';
+    wrapper.appendChild(input);
+
     let dropdown = null;
+    let activeIdx = -1;
 
     function closeDropdown() {
       if (dropdown) { dropdown.remove(); dropdown = null; }
+      activeIdx = -1;
+    }
+
+    function closeInput() {
+      closeDropdown();
+      input.value = '';
+      input.style.display = 'none';
+      addBtn.style.display = '';
+    }
+
+    function pick(name) {
+      selectedMembers.add(name);
+      onChange();
+    }
+
+    function renderSuggestions() {
+      closeDropdown();
+      const matches = filterMemberSuggestions(allMembers, selectedMembers, input.value);
+      dropdown = document.createElement('div');
+      dropdown.className = 'elo-add-member-dropdown';
+
+      if (matches.length === 0) {
+        const empty = document.createElement('div');
+        empty.className = 'elo-add-member-dropdown-empty';
+        empty.textContent = input.value.trim() ? 'No match' : 'All members shown';
+        dropdown.appendChild(empty);
+      } else {
+        matches.forEach((name, i) => {
+          const item = document.createElement('div');
+          item.className = 'elo-add-member-dropdown-item';
+          item.textContent = name;
+          item.addEventListener('mousedown', (ev) => { ev.preventDefault(); pick(name); });
+          item.addEventListener('mouseenter', () => setActive(i));
+          dropdown.appendChild(item);
+        });
+      }
+      wrapper.appendChild(dropdown);
+      activeIdx = -1;
+    }
+
+    function setActive(idx) {
+      if (!dropdown) return;
+      const items = [...dropdown.querySelectorAll('.elo-add-member-dropdown-item')];
+      activeIdx = idx;
+      items.forEach((el, i) => el.classList.toggle('active', i === activeIdx));
     }
 
     addBtn.addEventListener('click', (e) => {
       e.stopPropagation();
-      if (dropdown) { closeDropdown(); return; }
+      addBtn.style.display = 'none';
+      input.style.display = '';
+      input.focus();
+      renderSuggestions();
+    });
 
-      dropdown = document.createElement('div');
-      dropdown.className = 'elo-add-member-dropdown';
+    input.addEventListener('input', renderSuggestions);
 
-      const cur = allMembers.filter(m => !selectedMembers.has(m));
-      if (cur.length === 0) {
-        const empty = document.createElement('div');
-        empty.className = 'elo-add-member-dropdown-empty';
-        empty.textContent = 'All members shown';
-        dropdown.appendChild(empty);
-      } else {
-        cur.sort((a, b) => a.localeCompare(b)).forEach(name => {
-          const item = document.createElement('div');
-          item.className = 'elo-add-member-dropdown-item';
-          item.textContent = name;
-          item.addEventListener('click', () => { selectedMembers.add(name); closeDropdown(); onChange(); });
-          dropdown.appendChild(item);
-        });
+    input.addEventListener('keydown', (e) => {
+      const items = dropdown ? [...dropdown.querySelectorAll('.elo-add-member-dropdown-item')] : [];
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        if (items.length) setActive((activeIdx + 1) % items.length);
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        if (items.length) setActive((activeIdx - 1 + items.length) % items.length);
+      } else if (e.key === 'Enter') {
+        e.preventDefault();
+        const matches = filterMemberSuggestions(allMembers, selectedMembers, input.value);
+        const chosen = activeIdx >= 0 ? matches[activeIdx] : matches[0];
+        if (chosen) pick(chosen);
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        closeInput();
       }
+    });
 
-      wrapper.appendChild(dropdown);
-      setTimeout(() => document.addEventListener('click', () => closeDropdown(), { once: true }), 0);
+    input.addEventListener('click', (e) => e.stopPropagation());
+
+    input.addEventListener('blur', () => {
+      setTimeout(() => { if (document.activeElement !== input) closeInput(); }, 120);
     });
 
     container.appendChild(wrapper);
