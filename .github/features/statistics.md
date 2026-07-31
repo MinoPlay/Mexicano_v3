@@ -72,9 +72,18 @@ Restored on page load. Falls back to `'latest'` if not set.
 ## Sub-Feature: Attendance Bar Chart + Table
 
 ### Overview
-A new section appended inside `content` div (after `tableContainer`) in `renderStatistics()`.
-Two collapsible elements: a **bar chart** (canvas) and a **table** (Name / Attendance columns).
-Both share one filter row (separate from the existing stats filter bar).
+The Statistics page is organized into two top-level **tabs** (reusing the `.tabs`/`.tab` component;
+`margin-bottom` separates the tab bar from the stats filter chips below):
+1. **Statistics** — the stats filter bar + player table.
+2. **Attendance** — the attendance filter row (Latest/30/60/90/120) plus two collapsible
+   sections: **Attendance** bar chart (expanded by default) and **Attendance Table**
+   (collapsed by default).
+
+The attendance filter row drives both the chart and the table. The chart is redrawn when the
+Attendance tab becomes active and the chart section is expanded (canvas has no size while
+`display:none`). Both share one filter row (separate from the existing stats filter bar).
+
+Active tab persisted at `localStorage` key `stats_active_tab` (falls back to `Statistics`).
 
 ### Filters
 | Filter label | Semantic |
@@ -127,26 +136,46 @@ Months enumerated by decrementing from current month until cutoff month is reach
 
 `monthlyRawByMonth` shape: `{ [yearMonth: string]: Array<{Name:string, ELO:Array<{Date:string,ELO:number}>|number, ...}> }`
 
+### Tabs — localStorage Key
+- **Key**: `stats_active_tab`
+- **Value**: one of `Statistics` | `Attendance`; falls back to `Statistics`.
+
 ### Collapsible Sections — localStorage Keys
 Stored in a single prefs blob (same pattern as `elo-charts-prefs`):
 - **Key**: `stats-attendance-prefs`
-- **Fields**: `{ 'chart-collapsed': boolean, 'table-collapsed': boolean }`
+- **Fields**: `{ 'attendance-chart-collapsed': boolean, 'attendance-table-collapsed': boolean }`
+- Defaults (no stored value): chart **expanded**, table **collapsed**.
 - Collapse toggled via chevron (▼/▶), written on each toggle.
 
 ### DOM Structure (inside `content`)
 ```
 content
-  filterBar           ← existing
-  tableContainer      ← existing
-  attendanceSection   ← NEW
-    attendanceFilterBar  (chip buttons: Latest / 30 / 60 / 90 / 120)
-    chartWrap (collapsible, storageKey 'attendance-chart')
+  tabsEl (.tabs)        ← Statistics | Attendance (margin-bottom below tabs)
+  statsPanel            ← tab 1
+    filterBar             (existing stats filters)
+    tableContainer        (existing stats table)
+  attendancePanel       ← tab 2
+    attendanceFilterBar   (chip buttons: Latest / 30 / 60 / 90 / 120)
+    chartWrap (collapsible 'attendance-chart', expanded by default)
       header + chevron "Attendance"
-      canvas.chart-canvas  (bar chart, vanilla Canvas, height ~240px)
-    tableWrap (collapsible, storageKey 'attendance-table')
+      canvas.chart-canvas   (bar chart, vanilla Canvas, height ~240px)
+    tableWrap (collapsible 'attendance-table', collapsed by default)
       header + chevron "Attendance Table"
-      data-table > table (thead: Name | Attendance; tbody rows)
+      data-table > table    (thead: Name | Attendance; tbody rows)
 ```
+Only the active tab's panel is shown (`display`); the other is `display:none`.
+
+#### Attendance Table — Row Click → Dates Dialog
+Clicking a row in the **Attendance Table** opens a dialog listing the exact dates that player
+attended within the currently selected filter window (Latest/30/60/90/120). Dates come from
+`getPlayerAttendanceDates(monthlyRawByMonth, name, filter, today, manualEntries)` (pure,
+`js/services/statistics.js`):
+- Collects unique `ELO[].Date` strings for the player across the filter's months, applying the
+  same day cutoff as `computeAttendance` (excludes dates before `today − N days`).
+- Merges manual (no-tournament) attendance entries where the player is listed.
+- Dedupes and sorts **descending** (newest first).
+- Returns `[]` when the player has no attendance in the window.
+Dialog shows the count ("N days attended") and the dates as a **4-column grid**; each cell shows the year (`yyyy`) on the first line and `mm-dd` on the second.
 
 ### Charting
 No external library. Build a vanilla Canvas bar chart following the same Canvas patterns as `drawLineChart` in `js/components/chart.js`:

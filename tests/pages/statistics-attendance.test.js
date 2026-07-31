@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { computeAttendance, getMonthsForAttendanceFilter } from '../../js/services/statistics.js';
+import { computeAttendance, getMonthsForAttendanceFilter, getPlayerAttendanceDates } from '../../js/services/statistics.js';
 
 const TODAY = new Date('2026-06-15');
 
@@ -125,5 +125,71 @@ describe('computeAttendance', () => {
     expect(computeAttendance(raw, 'latest', TODAY)).toEqual([
       { name: 'Jeremy', attendance: 1 },
     ]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// getPlayerAttendanceDates
+// ---------------------------------------------------------------------------
+describe('getPlayerAttendanceDates', () => {
+  it('A latest: dates for player in current month, newest first', () => {
+    const raw = {
+      '2026-06': [
+        { Name: 'Jeremy', ELO: [{ Date: '2026-06-02', ELO: 1251.53 }, { Date: '2026-06-04', ELO: 1258.17 }, { Date: '2026-06-11', ELO: 1270.8 }] },
+      ],
+    };
+    expect(getPlayerAttendanceDates(raw, 'Jeremy', 'latest', TODAY)).toEqual([
+      '2026-06-11', '2026-06-04', '2026-06-02',
+    ]);
+  });
+
+  it('B 30 days: excludes dates before cutoff, combines months', () => {
+    const raw = {
+      '2026-05': [
+        { Name: 'Jeremy', ELO: [{ Date: '2026-05-10', ELO: 1240 }, { Date: '2026-05-20', ELO: 1245 }] },
+      ],
+      '2026-06': [
+        { Name: 'Jeremy', ELO: [{ Date: '2026-06-02', ELO: 1251.53 }, { Date: '2026-06-04', ELO: 1258.17 }, { Date: '2026-06-11', ELO: 1270.8 }] },
+      ],
+    };
+    expect(getPlayerAttendanceDates(raw, 'Jeremy', '30', TODAY)).toEqual([
+      '2026-06-11', '2026-06-04', '2026-06-02', '2026-05-20',
+    ]);
+  });
+
+  it('C merges manual attendance entries', () => {
+    const raw = {
+      '2026-06': [
+        { Name: 'Ana', ELO: [{ Date: '2026-06-02', ELO: 1100 }] },
+      ],
+    };
+    const manual = [
+      { date: '2026-06-20', players: ['Ana'] },
+      { date: '2026-06-20', players: ['Bob'] },
+    ];
+    expect(getPlayerAttendanceDates(raw, 'Ana', 'latest', TODAY, manual)).toEqual([
+      '2026-06-20', '2026-06-02',
+    ]);
+  });
+
+  it('D dedupes a date present in both ELO and manual', () => {
+    const raw = {
+      '2026-06': [
+        { Name: 'Ana', ELO: [{ Date: '2026-06-02', ELO: 1100 }] },
+      ],
+    };
+    const manual = [{ date: '2026-06-02', players: ['Ana'] }];
+    expect(getPlayerAttendanceDates(raw, 'Ana', 'latest', TODAY, manual)).toEqual([
+      '2026-06-02',
+    ]);
+  });
+
+  it('E returns [] for player with no attendance', () => {
+    const raw = {
+      '2026-06': [
+        { Name: 'Jeremy', ELO: [{ Date: '2026-06-02', ELO: 1251.53 }] },
+      ],
+    };
+    expect(getPlayerAttendanceDates(raw, 'Ghost', 'latest', TODAY)).toEqual([]);
   });
 });

@@ -275,8 +275,42 @@ export function computeAttendance(monthlyRawByMonth, filter, today, manualEntrie
     .sort((a, b) => b.attendance - a.attendance || a.name.localeCompare(b.name));
 }
 
-export function generatePlayerSummary(playerName, allMatches) {
-  const validMatches = allMatches.filter(m =>
+export function getPlayerAttendanceDates(monthlyRawByMonth, name, filter, today, manualEntries = []) {
+  const months = getMonthsForAttendanceFilter(filter, today);
+  const monthSet = new Set(months);
+
+  let cutoffStr = null;
+  if (filter !== 'latest') {
+    const days = parseInt(filter, 10);
+    const cutoff = new Date(today.getTime() - days * 86400000);
+    cutoffStr = `${cutoff.getUTCFullYear()}-${String(cutoff.getUTCMonth() + 1).padStart(2, '0')}-${String(cutoff.getUTCDate()).padStart(2, '0')}`;
+  }
+
+  const dates = new Set();
+  for (const month of months) {
+    const players = monthlyRawByMonth[month];
+    if (!Array.isArray(players)) continue;
+    for (const p of players) {
+      if (p.Name !== name || !Array.isArray(p.ELO)) continue;
+      for (const e of p.ELO) {
+        if (!e || typeof e.Date !== 'string') continue;
+        if (cutoffStr && e.Date < cutoffStr) continue;
+        dates.add(e.Date);
+      }
+    }
+  }
+
+  for (const entry of manualEntries || []) {
+    if (!entry || typeof entry.date !== 'string' || !Array.isArray(entry.players)) continue;
+    if (!monthSet.has(entry.date.slice(0, 7))) continue;
+    if (cutoffStr && entry.date < cutoffStr) continue;
+    if (entry.players.includes(name)) dates.add(entry.date);
+  }
+
+  return [...dates].sort((a, b) => b.localeCompare(a));
+}
+
+export function generatePlayerSummary(playerName, allMatches) {  const validMatches = allMatches.filter(m =>
     !(m.scoreTeam1 === 0 && m.scoreTeam2 === 0) && involvesPlayer(m, playerName)
   );
 

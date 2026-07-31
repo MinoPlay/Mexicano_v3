@@ -1,4 +1,4 @@
-import { calculatePlayerStatistics, getMonthsForAttendanceFilter, computeAttendance, formatRecentResults } from '../services/statistics.js';
+import { calculatePlayerStatistics, getMonthsForAttendanceFilter, computeAttendance, getPlayerAttendanceDates, formatRecentResults } from '../services/statistics.js';
 import { calculateAllEloRankings, getEloSnapshots, getEloForDate, getEloForMonth, getEloFromEmbeddedMatches } from '../services/elo.js';
 import { Store } from '../store.js';
 import { getLatestCompleteTournamentDate } from '../services/tournament.js';
@@ -676,17 +676,60 @@ export function renderStatistics(container, params = {}) {
   const savedFilter = localStorage.getItem(LS_KEY);
   let activeFilter = savedFilter || 'latest';
 
+  // ─── Tabs ───
+  const tabsEl = document.createElement('div');
+  tabsEl.className = 'tabs';
+  tabsEl.style.padding = '0 var(--space-md)';
+  tabsEl.style.marginBottom = 'var(--space-md)';
+  content.appendChild(tabsEl);
+
+  const statsPanel = document.createElement('div');
+  const attendancePanel = document.createElement('div');
+  attendancePanel.style.padding = '0 var(--space-md)';
+  content.appendChild(statsPanel);
+  content.appendChild(attendancePanel);
+
   // Filter bar
   const filterBar = document.createElement('div');
   filterBar.className = 'stats-filter-bar';
   filterBar.style.padding = '0 var(--space-md) var(--space-xs)';
-  content.appendChild(filterBar);
+  statsPanel.appendChild(filterBar);
 
   // Table container
   const tableContainer = document.createElement('div');
   tableContainer.className = 'mt-md';
   tableContainer.style.padding = '0 2px';
-  content.appendChild(tableContainer);
+  statsPanel.appendChild(tableContainer);
+
+  const attendanceCtl = renderAttendanceSection(attendancePanel);
+
+  const TABS = [
+    { label: 'Statistics', panel: statsPanel },
+    { label: 'Attendance', panel: attendancePanel },
+  ];
+  const TAB_LS = 'stats_active_tab';
+  let activeStatsTab = localStorage.getItem(TAB_LS) || 'Statistics';
+  if (!TABS.some(t => t.label === activeStatsTab)) activeStatsTab = 'Statistics';
+
+  function renderStatsTabs() {
+    tabsEl.innerHTML = '';
+    TABS.forEach(({ label, panel }) => {
+      const t = document.createElement('button');
+      t.className = 'tab' + (activeStatsTab === label ? ' active' : '');
+      t.style.flex = '1';
+      t.style.justifyContent = 'center';
+      t.textContent = label;
+      t.addEventListener('click', () => {
+        activeStatsTab = label;
+        localStorage.setItem(TAB_LS, label);
+        renderStatsTabs();
+      });
+      tabsEl.appendChild(t);
+      panel.style.display = activeStatsTab === label ? '' : 'none';
+    });
+    if (activeStatsTab === 'Attendance') attendanceCtl.redrawChart();
+  }
+  renderStatsTabs();
 
   function renderFilterBar() {
     filterBar.innerHTML = '';
@@ -876,15 +919,16 @@ export function renderStatistics(container, params = {}) {
 
   renderFilterBar();
   renderTable();
-  renderAttendanceSection(content);
 }
 
 // ─── Attendance Bar Chart + Table ───
-function renderAttendanceSection(content) {
+function renderAttendanceSection(panel) {
   const ATT_LS = 'stats_attendance_filter';
   const PREFS_LS = 'stats-attendance-prefs';
   let attFilter = localStorage.getItem(ATT_LS) || '30';
   let lastResult = [];
+  let lastRaw = {};
+  let lastToday = new Date();
 
   function loadAttPrefs() {
     try { return JSON.parse(localStorage.getItem(PREFS_LS) || '{}'); } catch { return {}; }
@@ -893,15 +937,10 @@ function renderAttendanceSection(content) {
     try { localStorage.setItem(PREFS_LS, JSON.stringify(p)); } catch { /* ignore */ }
   }
 
-  const section = document.createElement('div');
-  section.className = 'attendance-section mt-lg';
-  section.style.padding = '0 var(--space-md)';
-  content.appendChild(section);
-
   const attFilterBar = document.createElement('div');
   attFilterBar.className = 'stats-filter-bar';
   attFilterBar.style.cssText = 'display:flex;gap:6px;flex-wrap:wrap;padding:var(--space-sm) 0;justify-content:center;';
-  section.appendChild(attFilterBar);
+  panel.appendChild(attFilterBar);
 
   const FILTERS = [
     { id: 'latest', label: 'Current' },
@@ -911,7 +950,8 @@ function renderAttendanceSection(content) {
     { id: '120', label: '120' },
   ];
 
-  function buildCollapsible(title, storageKey, onToggle) {
+  // Chart expanded by default, table collapsed by default.
+  function buildCollapsible(title, storageKey, defaultCollapsed, onToggle) {
     const wrap = document.createElement('div');
     wrap.style.cssText = 'margin-bottom:var(--space-lg);';
 
@@ -934,7 +974,8 @@ function renderAttendanceSection(content) {
     body.className = 'elo-section-body';
     wrap.appendChild(body);
 
-    let collapsed = loadAttPrefs()[storageKey + '-collapsed'] === true;
+    const stored = loadAttPrefs()[storageKey + '-collapsed'];
+    let collapsed = typeof stored === 'boolean' ? stored : defaultCollapsed;
     function apply() {
       chevron.textContent = collapsed ? '▶' : '▼';
       chevron.style.color = collapsed ? 'var(--color-primary)' : '';
@@ -949,13 +990,13 @@ function renderAttendanceSection(content) {
       saveAttPrefs(p);
       if (onToggle) onToggle(collapsed);
     });
-    return { wrap, body };
+    return { wrap, body, isCollapsed: () => collapsed };
   }
 
-  const chartC = buildCollapsible('Attendance', 'attendance-chart', collapsed => {
+  const chartC = buildCollapsible('Attendance', 'attendance-chart', false, collapsed => {
     if (!collapsed) renderChart(lastResult);
   });
-  const tableC = buildCollapsible('Attendance Table', 'attendance-table');
+  const tableC = buildCollapsible('Attendance Table', 'attendance-table', true);
 
   const chartBox = document.createElement('div');
   chartBox.className = 'chart-container-bleed';
@@ -970,8 +1011,8 @@ function renderAttendanceSection(content) {
   tableBox.className = 'data-table';
   tableC.body.appendChild(tableBox);
 
-  section.appendChild(chartC.wrap);
-  section.appendChild(tableC.wrap);
+  panel.appendChild(chartC.wrap);
+  panel.appendChild(tableC.wrap);
 
   function renderChips() {
     attFilterBar.innerHTML = '';
@@ -1005,16 +1046,54 @@ function renderAttendanceSection(content) {
     const tbody = document.createElement('tbody');
     for (const r of result) {
       const tr = document.createElement('tr');
+      tr.style.cursor = 'pointer';
       const tdName = document.createElement('td');
       tdName.textContent = r.name;
       const tdAtt = document.createElement('td');
       tdAtt.textContent = String(r.attendance);
       tr.appendChild(tdName);
       tr.appendChild(tdAtt);
+      tr.addEventListener('click', () => showAttendanceDates(r.name));
       tbody.appendChild(tr);
     }
     table.appendChild(tbody);
     tableBox.appendChild(table);
+  }
+
+  function showAttendanceDates(name) {
+    const dates = getPlayerAttendanceDates(lastRaw, name, attFilter, lastToday, Store.getManualAttendance());
+
+    const overlay = document.createElement('div');
+    overlay.className = 'dialog-overlay active';
+    const dialog = document.createElement('div');
+    dialog.className = 'dialog';
+    dialog.style.maxHeight = '60dvh';
+
+    const rows = dates.map(d => {
+      const [yyyy, mm, dd] = d.split('-');
+      return `<div class="leaderboard-item" style="flex-direction:column;align-items:center;text-align:center;gap:2px;padding:var(--space-xs)">
+        <span class="text-secondary text-xs">${yyyy}</span>
+        <span class="leaderboard-name">${mm}-${dd}</span>
+      </div>`;
+    }).join('');
+
+    dialog.innerHTML = `
+      <div class="dialog-header">
+        <h2 style="font-size:var(--font-size-lg);font-weight:var(--font-weight-semibold)">${name}</h2>
+        <button class="btn btn-ghost btn-sm dialog-close">✕</button>
+      </div>
+      <div class="dialog-body">
+        <p class="text-secondary text-sm mb-md">${dates.length} ${dates.length === 1 ? 'day' : 'days'} attended</p>
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:var(--space-xs)">
+          ${rows || '<p class="text-secondary text-center">No dates</p>'}
+        </div>
+      </div>
+    `;
+
+    dialog.querySelector('.dialog-close').addEventListener('click', () => overlay.remove());
+    overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+    overlay.appendChild(dialog);
+    document.body.appendChild(overlay);
   }
 
   async function loadAndRender() {
@@ -1032,6 +1111,8 @@ function renderAttendanceSection(content) {
       }
       if (Array.isArray(arr)) raw[ym] = arr;
     }
+    lastRaw = raw;
+    lastToday = today;
     lastResult = computeAttendance(raw, attFilter, today, Store.getManualAttendance());
     renderChart(lastResult);
     renderTableRows(lastResult);
@@ -1039,4 +1120,6 @@ function renderAttendanceSection(content) {
 
   renderChips();
   loadAndRender();
+
+  return { redrawChart: () => { if (!chartC.isCollapsed()) renderChart(lastResult); } };
 }
