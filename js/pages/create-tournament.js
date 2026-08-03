@@ -1,4 +1,4 @@
-import { createTournament, startTournament, getActiveTournament, loadTournamentByDate } from '../services/tournament.js';
+import { createTournament, startTournament, syncNewTournament, getActiveTournament, loadTournamentByDate } from '../services/tournament.js';
 import { getRecentMembers } from '../services/members.js';
 import { showToast } from '../components/toast.js';
 
@@ -258,9 +258,26 @@ export function renderCreateTournament(container, params = {}) {
       const accessCode = accessCodeInput.value.trim() || null;
       const tournament = createTournament(date, names, accessCode);
       startTournament(tournament);
-      import('../services/telegram.js')
-        .then(({ sendTournamentCreatedAlert }) => sendTournamentCreatedAlert(tournament))
-        .catch(err => console.warn('[telegram] tournament-created alert failed:', err));
+
+      // Run side effects in strict order, each awaited so the next only starts
+      // after the previous finishes: day file -> tournaments.json -> telegram.
+      console.log('[create-tournament] triggered create pipeline for', date);
+      try {
+        await syncNewTournament(tournament);
+        console.log('[create-tournament] github sync complete for', date);
+      } catch (syncErr) {
+        console.warn('[create-tournament] github sync failed for', date, syncErr);
+      }
+
+      try {
+        console.log('[create-tournament] sending telegram alert for', date);
+        const { sendTournamentCreatedAlert } = await import('../services/telegram.js');
+        await sendTournamentCreatedAlert(tournament);
+        console.log('[create-tournament] telegram alert sent for', date);
+      } catch (tgErr) {
+        console.warn('[telegram] tournament-created alert failed:', tgErr);
+      }
+
       window.location.hash = `#/tournament/${date}`;
     } catch (err) {
       showToast(err.message || 'Failed to create tournament');

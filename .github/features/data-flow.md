@@ -175,12 +175,21 @@ createTournament(date, names)
 
 startTournament(tournament)
   → saveTournamentState(tournament)           [see step 2]
+
+syncNewTournament(tournament)                 [awaited by create-tournament page, strict order]
   → markMatchDateDirty(date)
   → cancelPendingSync()
-  → flushPush()                               → GitHub WRITE: YYYY/YYYY-MM/YYYY-MM-DD.json
+  → await flushPush()                         → GitHub WRITE: YYYY/YYYY-MM/YYYY-MM-DD.json
                                                               (with { tournament: {...} } field)
-  → updateTournamentIndexEntry(...)           → GitHub READ+WRITE: tournaments.json
+  → await updateTournamentIndexEntry(...)     → GitHub READ+WRITE: tournaments.json
+
+sendTournamentCreatedAlert(tournament)        [awaited AFTER syncNewTournament resolves]
+  → Telegram relay dispatch
 ```
+
+> Ordering is strict and awaited: **day file → tournaments.json → telegram**. Each step
+> logs when it is triggered and its result. Running the two commits concurrently causes
+> GitHub 409 fast-forward conflicts and the day file can be lost.
 
 ### 2. Score a Match (`setMatchScore`)
 
@@ -506,10 +515,16 @@ createTournament(date, names)
 
 startTournament(tournament)
   → saveTournamentState(tournament)           [see step 2]
+
+syncNewTournament(tournament)                 [awaited by create-tournament page, strict order]
+  → markMatchDateDirty(date)
   → cancelPendingSync()
-  → flushPush()                               → GitHub WRITE: data/active_tournament.json
+  → await flushPush()                         → GitHub WRITE: data/active_tournament.json
                                               → GitHub WRITE: YYYY/YYYY-MM/YYYY-MM-DD.json (dirty date)
-  → updateTournamentIndexEntry(...)           → GitHub READ+WRITE: tournaments.json
+  → await updateTournamentIndexEntry(...)     → GitHub READ+WRITE: tournaments.json
+
+sendTournamentCreatedAlert(tournament)        [awaited AFTER syncNewTournament resolves]
+  → Telegram relay dispatch
 ```
 
 ### 2. Score a Match (`setMatchScore`)

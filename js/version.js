@@ -1,6 +1,6 @@
 // Single source of truth for the app version / cache name.
 // Bump APP_VERSION by +1 each release AND set matching CACHE_NAME in sw.js.
-export const APP_VERSION = 14;
+export const APP_VERSION = 15;
 
 export function getVersionLabel() {
   return `mexicano-v${APP_VERSION}`;

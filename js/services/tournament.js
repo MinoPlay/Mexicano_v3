@@ -144,27 +144,42 @@ export function startTournament(tournament) {
 
   saveTournamentState(tournament);
 
-  // Single explicit push after everything is written — cancel any debounce timers
-  // from the Store.set calls above so they don't fire separately.
-  import('./github.js').then(async ({ cancelPendingSync, flushPush, updateTournamentIndexEntry, markMatchDateDirty }) => {
-    markMatchDateDirty(tournament.tournamentDate); // ensure dirty before flush
-    cancelPendingSync();
-    // Serialize the two commits: push the day file FIRST, then update the index.
-    // Running both concurrently causes GitHub 409 fast-forward conflicts on the
-    // same branch — the day file loses the race and is never created.
-    await flushPush();
-    // Add new tournament to the index after the day file is committed.
-    await updateTournamentIndexEntry({
-      date: tournament.tournamentDate,
-      playerCount: tournament.players.length,
-      roundCount: 0,
-      matchCount: 0,
-      completedCount: 0,
-      isComplete: false,
-    }).catch(() => {});
-  }).catch(() => {});
-
   return tournament;
+}
+
+/**
+ * Sync a newly started tournament to GitHub in a strict, awaited order:
+ *   1. Create the day file (`YYYY/YYYY-MM/YYYY-MM-DD.json`) via flushPush.
+ *   2. Update the tournaments.json index entry.
+ * Each step is awaited so the next one only runs after the previous commit
+ * lands — running them concurrently causes GitHub 409 fast-forward conflicts
+ * on the same branch, and the day file loses the race and is never created.
+ * Returns a promise that resolves once both commits have completed.
+ */
+export async function syncNewTournament(tournament) {
+  const date = tournament.tournamentDate;
+  const { cancelPendingSync, flushPush, updateTournamentIndexEntry, markMatchDateDirty } =
+    await import('./github.js');
+
+  markMatchDateDirty(date); // ensure dirty before flush
+  cancelPendingSync();
+
+  // Step 1 — create the day file.
+  console.log('[tournament] sync step 1/2: creating day file', date);
+  await flushPush();
+  console.log('[tournament] sync step 1/2: day file created', date);
+
+  // Step 2 — update the tournaments.json index (only after the day file exists).
+  console.log('[tournament] sync step 2/2: updating tournaments.json', date);
+  await updateTournamentIndexEntry({
+    date,
+    playerCount: tournament.players.length,
+    roundCount: 0,
+    matchCount: 0,
+    completedCount: 0,
+    isComplete: false,
+  });
+  console.log('[tournament] sync step 2/2: tournaments.json updated', date);
 }
 
 export function setMatchScore(tournament, roundNumber, matchId, team1Score, team2Score) {
