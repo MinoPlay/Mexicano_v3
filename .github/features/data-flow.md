@@ -183,12 +183,14 @@ startTournament(tournament)
   → triggerTournamentIndexEntry(tournament)   → GitHub READ+WRITE: tournaments.json
   → sleep 1s
   → sendTournamentCreatedAlert(tournament)    → Telegram relay dispatch
+  → sleep 1s
+  → refreshApp()                              → clear caches + reload page
 ```
 
 > Triggers are fired independently (not awaited) but staggered by 1s each so the
-> commits land in order: **day file → tournaments.json → telegram**. Each trigger
-> logs when fired and its result. The 1s spacing avoids GitHub 409 fast-forward
-> conflicts on the same branch that previously dropped the day file.
+> commits land in order: **day file → tournaments.json → telegram → refresh**. Each
+> trigger logs when fired and its result. The 1s spacing avoids GitHub 409
+> fast-forward conflicts on the same branch that previously dropped the day file.
 
 ### 2. Score a Match (`setMatchScore`)
 

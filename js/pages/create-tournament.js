@@ -28,6 +28,13 @@ export function renderCreateTournament(container, params = {}) {
       </div>
 
       <div class="form-group">
+        <label class="form-label" style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+          <input type="checkbox" id="disable-telegram" style="width:auto;">
+          Disable Telegram alert
+        </label>
+      </div>
+
+      <div class="form-group">
         <label class="form-label">Number of Players</label>
         <div class="player-count-selector" id="count-selector">
           ${PLAYER_COUNTS.map(n => `
@@ -53,6 +60,7 @@ export function renderCreateTournament(container, params = {}) {
 
   const dateInput = container.querySelector('#tournament-date');
   const accessCodeInput = container.querySelector('#tournament-access-code');
+  const disableTelegramInput = container.querySelector('#disable-telegram');
   const countSelector = container.querySelector('#count-selector');
   const slotsContainer = container.querySelector('#player-slots');
   const countError = container.querySelector('#count-error');
@@ -256,6 +264,7 @@ export function renderCreateTournament(container, params = {}) {
 
     try {
       const accessCode = accessCodeInput.value.trim() || null;
+      const telegramDisabled = disableTelegramInput.checked;
       const tournament = createTournament(date, names, accessCode);
       startTournament(tournament);
 
@@ -280,13 +289,24 @@ export function renderCreateTournament(container, params = {}) {
 
         await sleep(1000);
 
+        if (telegramDisabled) {
+          console.log('[create-tournament] telegram alert disabled by user for', date);
+        } else {
+          try {
+            console.log('[create-tournament] trigger: telegram alert', date);
+            const { sendTournamentCreatedAlert } = await import('../services/telegram.js');
+            await sendTournamentCreatedAlert(tournament);
+            console.log('[create-tournament] telegram alert sent for', date);
+          } catch (e) { console.warn('[telegram] tournament-created alert failed:', e); }
+        }
+
+        await sleep(1000);
+
         try {
-          console.log('[create-tournament] trigger: telegram alert', date);
-          import('../services/telegram.js')
-            .then(({ sendTournamentCreatedAlert }) => sendTournamentCreatedAlert(tournament))
-            .then(() => console.log('[create-tournament] telegram alert sent for', date))
-            .catch(err => console.warn('[telegram] tournament-created alert failed:', err));
-        } catch (e) { console.warn('[create-tournament] telegram trigger failed', date, e); }
+          console.log('[create-tournament] trigger: refresh page', date);
+          const { refreshApp } = await import('../version.js');
+          await refreshApp();
+        } catch (e) { console.warn('[create-tournament] refresh failed', date, e); }
       })();
 
       window.location.hash = `#/tournament/${date}`;

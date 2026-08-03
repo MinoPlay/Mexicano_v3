@@ -23,7 +23,7 @@ The client no longer contacts Telegram and no longer reads `config.json`
 ## Trigger Points
 - `DoodleEditSession.save()` in `js/pages/doodle.js` — after `pushDoodleNow()` commits, fires `sendDoodleAlert()` per changed player
 - Tournament confirmation popup in `js/pages/home.js` — fires `sendTournamentConfirmationAlert()` when a player confirms
-- Tournament creation in `js/pages/create-tournament.js` — after `startTournament()`, fires `sendTournamentCreatedAlert()`
+- Tournament creation in `js/pages/create-tournament.js` — after `startTournament()`, staggered fire-and-forget chain fires `sendTournamentCreatedAlert()`. Skipped when the "Disable Telegram alert" checkbox is checked.
 - Tournament completion in `js/pages/tournament.js` — after `completeTournament()`, fires `sendTournamentCompletedAlert()`
 - Settings "Send Test Alert" button — fires `sendTelegramTestAlert()` (default group)
 - Settings "Test Tournament Group" button — fires `sendTournamentTestAlert()` (tournament group, `target: 'tournaments'`)
