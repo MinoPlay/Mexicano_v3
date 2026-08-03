@@ -268,17 +268,16 @@ export function renderCreateTournament(container, params = {}) {
       const tournament = createTournament(date, names, accessCode);
       startTournament(tournament);
 
-      // Fire-and-forget each side effect, but stagger the triggers so they land
-      // in order: day file -> (1s) -> tournaments.json -> (1s) -> telegram.
-      // Each is triggered independently and not awaited; sleeps space the commits
-      // out to avoid GitHub 409 fast-forward conflicts on the same branch.
+      // Day file is the critical step. Write + verify it on GitHub FIRST, using
+      // the in-memory tournament object (immune to any concurrent pull that may
+      // clear the active tournament). Only AFTER it is confirmed do we navigate
+      // to the tournament page — otherwise the page's background refresh sees a
+      // 404 for the not-yet-created file and calls clearActiveTournament(),
+      // which used to wipe the tournament before its file was ever written.
       const sleep = ms => new Promise(r => setTimeout(r, ms));
       (async () => {
         console.log('[create-tournament] triggered create pipeline for', date);
 
-        // Day file is the critical step: await + verify it BEFORE anything else.
-        // If it cannot be confirmed on GitHub, stop the pipeline (no index entry,
-        // no telegram alert) and tell the user so it is never silently missing.
         try {
           console.log('[create-tournament] trigger: create day file', date);
           await triggerNewTournamentDayFile(tournament);
@@ -287,6 +286,9 @@ export function renderCreateTournament(container, params = {}) {
           showToast('Tournament saved locally but day file did NOT sync to GitHub — retry from Settings.');
           return;
         }
+
+        // Day file confirmed on GitHub — safe to navigate now.
+        window.location.hash = `#/tournament/${date}`;
 
         await sleep(1000);
 
@@ -316,8 +318,6 @@ export function renderCreateTournament(container, params = {}) {
           await refreshApp();
         } catch (e) { console.warn('[create-tournament] refresh failed', date, e); }
       })();
-
-      window.location.hash = `#/tournament/${date}`;
     } catch (err) {
       showToast(err.message || 'Failed to create tournament');
     }
