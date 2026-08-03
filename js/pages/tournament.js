@@ -323,7 +323,7 @@ export function renderTournament(container, params) {
 
       html += `
         <div class="match-card ${completed ? 'completed' : ''}" data-match-idx="${idx}">
-          <div class="match-court">Court ${idx + 1}</div>
+          <div class="match-court">Court ${tournament.courts?.[idx] ?? idx + 1}</div>
           <div class="match-teams">
             <div class="match-team">
               <span class="match-team-name">${nameWithCheck(team1Name1)}</span>

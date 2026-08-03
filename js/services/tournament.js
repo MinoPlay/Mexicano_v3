@@ -79,7 +79,7 @@ export function createMexicanoMatches(rankedPlayers) {
 
 // ─── Tournament lifecycle ───
 
-export function createTournament(date, playerNames, accessCode = null) {
+export function createTournament(date, playerNames, accessCode = null, courts = null) {
   if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
     throw new Error('Invalid date format, expected yyyy-MM-dd');
   }
@@ -119,7 +119,8 @@ export function createTournament(date, playerNames, accessCode = null) {
     isCompleted: false,
     startedAt: null,
     completedAt: null,
-    accessCode
+    accessCode,
+    courts: Array.isArray(courts) ? courts : null
   };
 
   Store.setActiveTournament(tournament);

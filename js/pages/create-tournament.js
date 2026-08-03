@@ -22,9 +22,15 @@ export function renderCreateTournament(container, params = {}) {
         <input type="date" id="tournament-date" value="${todayStr()}">
       </div>
 
-      <div class="form-group">
-        <label class="form-label" for="tournament-access-code">Access Code</label>
-        <input type="text" id="tournament-access-code" placeholder="Optional access code" maxlength="50">
+      <div class="info-box-row">
+        <div class="info-box">
+          <div class="info-box-label">Courts</div>
+          <input type="text" id="tournament-courts" class="info-box-input" placeholder="e.g. 1, 4, 6" maxlength="50">
+        </div>
+        <div class="info-box">
+          <div class="info-box-label">Code</div>
+          <input type="text" id="tournament-access-code" class="info-box-input" placeholder="Access code" maxlength="50">
+        </div>
       </div>
 
       <div class="form-group">
@@ -67,6 +73,7 @@ export function renderCreateTournament(container, params = {}) {
   const slotsError = container.querySelector('#slots-error');
   const startBtn = container.querySelector('#start-btn');
   const datalist = container.querySelector('#member-suggestions');
+  const courtsInput = container.querySelector('#tournament-courts');
 
   // Populate member suggestions, filtering out already-selected names
   const members = getRecentMembers();
@@ -262,10 +269,27 @@ export function renderCreateTournament(container, params = {}) {
       return;
     }
 
+    // Parse court numbers (optional). Must be one per match (players / 4).
+    const expectedCourts = selectedCount / 4;
+    let courts = null;
+    const courtsRaw = courtsInput.value.trim();
+    if (courtsRaw) {
+      courts = courtsRaw.split(',').map(c => c.trim()).filter(Boolean);
+      if (courts.some(c => !/^\d+$/.test(c))) {
+        showToast('Courts must be numbers, e.g. 1, 4, 6');
+        return;
+      }
+      courts = courts.map(Number);
+      if (courts.length !== expectedCourts) {
+        showToast(`Enter ${expectedCourts} court number(s) for ${selectedCount} players`);
+        return;
+      }
+    }
+
     try {
       const accessCode = accessCodeInput.value.trim() || null;
       const telegramDisabled = disableTelegramInput.checked;
-      const tournament = createTournament(date, names, accessCode);
+      const tournament = createTournament(date, names, accessCode, courts);
       startTournament(tournament);
 
       // Day file is the critical step. Write + verify it on GitHub FIRST, using
