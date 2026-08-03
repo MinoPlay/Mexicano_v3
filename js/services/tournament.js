@@ -149,19 +149,19 @@ export function startTournament(tournament) {
 
 /**
  * Trigger #1: create the tournament day file (YYYY/YYYY-MM/YYYY-MM-DD.json).
- * Fire-and-forget — marks the date dirty, cancels any pending debounce, and
- * kicks off an immediate flushPush. Logged on trigger and on result.
+ * Writes the day file directly and verifies it (with retries) so it cannot be
+ * lost in a burst of other commits. Returns a promise that resolves once the
+ * file is verified on GitHub. Logged on trigger and on result.
  */
 export function triggerNewTournamentDayFile(tournament) {
   const date = tournament.tournamentDate;
   console.log('[tournament] trigger day file:', date);
-  import('./github.js').then(({ cancelPendingSync, flushPush, markMatchDateDirty }) => {
-    markMatchDateDirty(date);
+  return import('./github.js').then(({ cancelPendingSync, pushTournamentDayFile }) => {
     cancelPendingSync();
-    return flushPush();
+    return pushTournamentDayFile(tournament);
   })
     .then(() => console.log('[tournament] day file created:', date))
-    .catch(e => console.warn('[tournament] day file failed:', date, e));
+    .catch(e => { console.warn('[tournament] day file failed:', date, e); throw e; });
 }
 
 /**

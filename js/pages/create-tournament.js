@@ -275,10 +275,18 @@ export function renderCreateTournament(container, params = {}) {
       const sleep = ms => new Promise(r => setTimeout(r, ms));
       (async () => {
         console.log('[create-tournament] triggered create pipeline for', date);
+
+        // Day file is the critical step: await + verify it BEFORE anything else.
+        // If it cannot be confirmed on GitHub, stop the pipeline (no index entry,
+        // no telegram alert) and tell the user so it is never silently missing.
         try {
           console.log('[create-tournament] trigger: create day file', date);
-          triggerNewTournamentDayFile(tournament);
-        } catch (e) { console.warn('[create-tournament] day file trigger failed', date, e); }
+          await triggerNewTournamentDayFile(tournament);
+        } catch (e) {
+          console.warn('[create-tournament] day file trigger failed', date, e);
+          showToast('Tournament saved locally but day file did NOT sync to GitHub — retry from Settings.');
+          return;
+        }
 
         await sleep(1000);
 

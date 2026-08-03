@@ -320,8 +320,11 @@ export async function pushAll(onProgress, { allMatchDates = false } = {}) {
 
   // 2. Push matches as per-date files (only dirty dates unless allMatchDates).
   // Snapshot dirty dates now so marks added during push are not lost.
+  // Snapshot dirty dates but DO NOT clear yet. Each date is only removed from
+  // _dirtyMatchDates after its file write succeeds (see loop below). If a write
+  // throws, the unwritten dates stay dirty so the next push retries them instead
+  // of silently losing the day file.
   const dirtyDatesSnapshot = new Set(_dirtyMatchDates);
-  _dirtyMatchDates.clear();
 
   // Active (in-progress) tournament: embed the full tournament object in its date file.
   const activeTournament = Store.getActiveTournament();
@@ -366,9 +369,64 @@ export async function pushAll(onProgress, { allMatchDates = false } = {}) {
     let sha;
     try { const existing = await readFile(path); sha = existing?.sha; } catch { sha = undefined; }
     await writeFile(path, backupData, sha);
+    _dirtyMatchDates.delete(date); // written successfully — safe to drop
     onProgress?.(date, dateEntries.length, ++i);
   }
 
+  // All writes succeeded — drop any snapshot dates that had no file to write
+  // (e.g. a dirty date with no matches and not the active tournament).
+  for (const d of dirtyDatesSnapshot) _dirtyMatchDates.delete(d);
+}
+
+/**
+ * Write ONE tournament day file (YYYY/YYYY-MM/YYYY-MM-DD.json) directly and
+ * verify it by reading it back. Decoupled from the debounced multi-file pushAll
+ * so a brand-new tournament's day file cannot be lost in a burst of other
+ * commits. Retries a few times on failure/verification miss.
+ *
+ * For an in-progress tournament the file embeds the tournament object (same
+ * shape pushAll writes) so any device can restore state. Returns true on a
+ * verified write, throws after exhausting retries.
+ *
+ * @param {object} tournament - active tournament object (must have tournamentDate)
+ * @param {number} [attempts=3]
+ */
+export async function pushTournamentDayFile(tournament, attempts = 3) {
+  const cfg = getConfig();
+  if (!cfg?.owner || !cfg?.repo || !cfg?.pat) return false;
+  const date = tournament?.tournamentDate;
+  if (!date) throw new Error('pushTournamentDayFile: missing tournamentDate');
+
+  const path = datePath(date);
+  const backupData = {
+    backup_timestamp: new Date().toISOString(),
+    match_date: date,
+    tournament,
+  };
+
+  let lastErr;
+  for (let n = 0; n < attempts; n++) {
+    try {
+      let sha;
+      try { const existing = await readFile(path); sha = existing?.sha; } catch { sha = undefined; }
+      await writeFile(path, backupData, sha);
+      // Verify the file now exists remotely.
+      const check = await readFile(path);
+      if (check && check.content && check.content.match_date === date) {
+        _dirtyMatchDates.delete(date);
+        console.log('[github] tournament day file verified:', path);
+        return true;
+      }
+      lastErr = new Error('day file verification failed after write');
+    } catch (e) {
+      lastErr = e;
+    }
+    // Back off before retry to let concurrent commits settle.
+    await new Promise(r => setTimeout(r, 500 * (n + 1)));
+  }
+  // Keep the date dirty so a later push still retries it.
+  markMatchDateDirty(date);
+  throw lastErr || new Error('pushTournamentDayFile failed');
 }
 
 // ─── tournaments.json index ───────────────────────────────────────────────────
