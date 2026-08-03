@@ -1,4 +1,4 @@
-import { createTournament, startTournament, syncNewTournament, getActiveTournament, loadTournamentByDate } from '../services/tournament.js';
+import { createTournament, startTournament, triggerNewTournamentDayFile, triggerTournamentIndexEntry, getActiveTournament, loadTournamentByDate } from '../services/tournament.js';
 import { getRecentMembers } from '../services/members.js';
 import { showToast } from '../components/toast.js';
 
@@ -259,24 +259,35 @@ export function renderCreateTournament(container, params = {}) {
       const tournament = createTournament(date, names, accessCode);
       startTournament(tournament);
 
-      // Run side effects in strict order, each awaited so the next only starts
-      // after the previous finishes: day file -> tournaments.json -> telegram.
-      console.log('[create-tournament] triggered create pipeline for', date);
-      try {
-        await syncNewTournament(tournament);
-        console.log('[create-tournament] github sync complete for', date);
-      } catch (syncErr) {
-        console.warn('[create-tournament] github sync failed for', date, syncErr);
-      }
+      // Fire-and-forget each side effect, but stagger the triggers so they land
+      // in order: day file -> (1s) -> tournaments.json -> (1s) -> telegram.
+      // Each is triggered independently and not awaited; sleeps space the commits
+      // out to avoid GitHub 409 fast-forward conflicts on the same branch.
+      const sleep = ms => new Promise(r => setTimeout(r, ms));
+      (async () => {
+        console.log('[create-tournament] triggered create pipeline for', date);
+        try {
+          console.log('[create-tournament] trigger: create day file', date);
+          triggerNewTournamentDayFile(tournament);
+        } catch (e) { console.warn('[create-tournament] day file trigger failed', date, e); }
 
-      try {
-        console.log('[create-tournament] sending telegram alert for', date);
-        const { sendTournamentCreatedAlert } = await import('../services/telegram.js');
-        await sendTournamentCreatedAlert(tournament);
-        console.log('[create-tournament] telegram alert sent for', date);
-      } catch (tgErr) {
-        console.warn('[telegram] tournament-created alert failed:', tgErr);
-      }
+        await sleep(1000);
+
+        try {
+          console.log('[create-tournament] trigger: update tournaments.json', date);
+          triggerTournamentIndexEntry(tournament);
+        } catch (e) { console.warn('[create-tournament] index trigger failed', date, e); }
+
+        await sleep(1000);
+
+        try {
+          console.log('[create-tournament] trigger: telegram alert', date);
+          import('../services/telegram.js')
+            .then(({ sendTournamentCreatedAlert }) => sendTournamentCreatedAlert(tournament))
+            .then(() => console.log('[create-tournament] telegram alert sent for', date))
+            .catch(err => console.warn('[telegram] tournament-created alert failed:', err));
+        } catch (e) { console.warn('[create-tournament] telegram trigger failed', date, e); }
+      })();
 
       window.location.hash = `#/tournament/${date}`;
     } catch (err) {

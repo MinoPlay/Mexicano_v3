@@ -176,20 +176,19 @@ createTournament(date, names)
 startTournament(tournament)
   → saveTournamentState(tournament)           [see step 2]
 
-syncNewTournament(tournament)                 [awaited by create-tournament page, strict order]
-  → markMatchDateDirty(date)
-  → cancelPendingSync()
-  → await flushPush()                         → GitHub WRITE: YYYY/YYYY-MM/YYYY-MM-DD.json
+[create-tournament page — fire-and-forget, staggered triggers]
+  → triggerNewTournamentDayFile(tournament)   → GitHub WRITE: YYYY/YYYY-MM/YYYY-MM-DD.json
                                                               (with { tournament: {...} } field)
-  → await updateTournamentIndexEntry(...)     → GitHub READ+WRITE: tournaments.json
-
-sendTournamentCreatedAlert(tournament)        [awaited AFTER syncNewTournament resolves]
-  → Telegram relay dispatch
+  → sleep 1s
+  → triggerTournamentIndexEntry(tournament)   → GitHub READ+WRITE: tournaments.json
+  → sleep 1s
+  → sendTournamentCreatedAlert(tournament)    → Telegram relay dispatch
 ```
 
-> Ordering is strict and awaited: **day file → tournaments.json → telegram**. Each step
-> logs when it is triggered and its result. Running the two commits concurrently causes
-> GitHub 409 fast-forward conflicts and the day file can be lost.
+> Triggers are fired independently (not awaited) but staggered by 1s each so the
+> commits land in order: **day file → tournaments.json → telegram**. Each trigger
+> logs when fired and its result. The 1s spacing avoids GitHub 409 fast-forward
+> conflicts on the same branch that previously dropped the day file.
 
 ### 2. Score a Match (`setMatchScore`)
 
@@ -516,15 +515,13 @@ createTournament(date, names)
 startTournament(tournament)
   → saveTournamentState(tournament)           [see step 2]
 
-syncNewTournament(tournament)                 [awaited by create-tournament page, strict order]
-  → markMatchDateDirty(date)
-  → cancelPendingSync()
-  → await flushPush()                         → GitHub WRITE: data/active_tournament.json
+[create-tournament page — fire-and-forget, staggered triggers]
+  → triggerNewTournamentDayFile(tournament)   → GitHub WRITE: data/active_tournament.json
                                               → GitHub WRITE: YYYY/YYYY-MM/YYYY-MM-DD.json (dirty date)
-  → await updateTournamentIndexEntry(...)     → GitHub READ+WRITE: tournaments.json
-
-sendTournamentCreatedAlert(tournament)        [awaited AFTER syncNewTournament resolves]
-  → Telegram relay dispatch
+  → sleep 1s
+  → triggerTournamentIndexEntry(tournament)   → GitHub READ+WRITE: tournaments.json
+  → sleep 1s
+  → sendTournamentCreatedAlert(tournament)    → Telegram relay dispatch
 ```
 
 ### 2. Score a Match (`setMatchScore`)
