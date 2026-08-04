@@ -116,10 +116,15 @@ describe('getEloHistoryForLatestTournament with seedElos', () => {
 
   it('without seeds: replays from 1000, uses all matches', () => {
     const result = getEloHistoryForLatestTournament(allMatches, null, null);
-    // All rounds present
-    expect(result.rounds).toEqual([1, 2]);
+    // Round 0 (pre-tournament) prepended before actual rounds
+    expect(result.rounds).toEqual([0, 1, 2]);
+    // Round 0 = ELO before latest tournament (A won t1, so > 1000)
+    expect(result.players['A'][0].round).toBe(0);
+    expect(result.players['A'][0].elo).toBeGreaterThan(1000);
+    expect(result.players['A'][0].delta).toBe(0);
     // A started tournament 2 above 1000 (won t1), so round 1 ELO should be > 1016
-    expect(result.players['A'][0].elo).toBeGreaterThan(1016);
+    expect(result.players['A'][1].round).toBe(1);
+    expect(result.players['A'][1].elo).toBeGreaterThan(1016);
   });
 
   it('with seeds: only processes latest tournament, produces same round values as full replay', () => {
@@ -130,23 +135,42 @@ describe('getEloHistoryForLatestTournament with seedElos', () => {
     const seeded = getEloHistoryForLatestTournament([t2Match1, t2Match2], null, seedElos);
     const full = getEloHistoryForLatestTournament(allMatches, null, null);
 
-    expect(seeded.rounds).toEqual([1, 2]);
+    expect(seeded.rounds).toEqual([0, 1, 2]);
 
-    // Both methods should produce identical per-round ELO values
+    // Round 0 seed equals the pre-tournament replay value
     for (const name of ['A', 'B', 'C', 'D']) {
-      for (let i = 0; i < 2; i++) {
+      expect(seeded.players[name][0].round).toBe(0);
+      expect(seeded.players[name][0].elo).toBeCloseTo(seedElos[name], 5);
+      expect(seeded.players[name][0].elo).toBeCloseTo(full.players[name][0].elo, 5);
+    }
+
+    // Both methods should produce identical per-round ELO values (round 0 + rounds 1,2)
+    for (const name of ['A', 'B', 'C', 'D']) {
+      for (let i = 0; i < 3; i++) {
         expect(seeded.players[name][i].elo).toBeCloseTo(full.players[name][i].elo, 5);
       }
     }
   });
 
-  it('with seeds: new player (no prior history) starts at 1000', () => {
+  it('with seeds: new player (no prior history) starts round 0 at 1000', () => {
     const newMatch = makeMatch('2024-02-01', 1, 'A', 'B', 'NEW', 'D', 10, 5);
     const seedElos = { A: 1020, B: 1020, D: 990 }; // NEW not in seeds
 
     const result = getEloHistoryForLatestTournament([newMatch], null, seedElos);
     // NEW should have been created at 1000 by processMatchElo
     expect(result.players['NEW']).toBeDefined();
-    expect(result.players['NEW'][0].elo).toBeLessThan(1000); // lost
+    // Round 0 = pre-tournament ELO, defaults to 1000 for unseeded new player
+    expect(result.players['NEW'][0].round).toBe(0);
+    expect(result.players['NEW'][0].elo).toBe(1000);
+    expect(result.players['NEW'][1].elo).toBeLessThan(1000); // round 1, lost
+  });
+
+  it('with seeds: round 0 ELO equals the provided seed (ELO before tournament)', () => {
+    const seedElos = { A: 1020, B: 1020, C: 980, D: 980 };
+    const result = getEloHistoryForLatestTournament([t2Match1, t2Match2], null, seedElos);
+
+    expect(result.rounds).toEqual([0, 1, 2]);
+    expect(result.players['A'][0]).toEqual({ round: 0, elo: 1020, delta: 0 });
+    expect(result.players['C'][0]).toEqual({ round: 0, elo: 980, delta: 0 });
   });
 });

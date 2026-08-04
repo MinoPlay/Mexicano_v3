@@ -56,4 +56,5 @@ Replace single large `elo_history.json` with one history file per player.
 - If selected player file is missing, UI shows: `No ELO history file for: <name>`.
 - If chart has no points for selection, UI shows settings hint to generate history.
 - Latest Tournament section shows tournament date label next to title.
+- Latest Tournament chart starts at **Round 0** = each player's ELO before this tournament (pre-tournament seed / `PreviousELO`). Actual tournament rounds (1..N) follow.
 - Legacy `elo_history.json` is not read or written.

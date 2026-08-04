@@ -196,11 +196,14 @@ export function getEloHistoryForLatestTournament(allMatches, playerNames = null,
 
   const players = {};
   const latestRounds = new Set();
+  // Pre-tournament ELO per player (= round 0 on the chart)
+  const preElos = {};
 
   if (seedElos) {
     // Pre-seed players from provided ELOs, then process only the latest tournament's matches
     for (const [name, elo] of Object.entries(seedElos)) {
       players[name] = { name, elo, history: [] };
+      preElos[name] = elo;
     }
     for (const match of sorted.filter(m => m.date === latestDate)) {
       processMatchElo(match, players);
@@ -208,7 +211,13 @@ export function getEloHistoryForLatestTournament(allMatches, playerNames = null,
     }
   } else {
     // Fallback: replay all matches from scratch (requires full match history in allMatches)
+    let snapped = false;
     for (const match of sorted) {
+      if (!snapped && match.date === latestDate) {
+        // Snapshot ELOs right before the latest tournament starts
+        for (const [name, p] of Object.entries(players)) preElos[name] = p.elo;
+        snapped = true;
+      }
       processMatchElo(match, players);
       if (match.date === latestDate) {
         latestRounds.add(match.roundNumber);
@@ -224,6 +233,9 @@ export function getEloHistoryForLatestTournament(allMatches, playerNames = null,
     if (latestEntries.length === 0) continue;
 
     historyMap[name] = [];
+    // Round 0 = player's ELO before this tournament
+    const preElo = preElos[name] !== undefined ? preElos[name] : INITIAL_ELO;
+    historyMap[name].push({ round: 0, elo: preElo });
     for (const rn of roundNumbers) {
       const entry = latestEntries.filter(h => h.roundNumber === rn);
       if (entry.length > 0) {
@@ -238,7 +250,7 @@ export function getEloHistoryForLatestTournament(allMatches, playerNames = null,
     }
   }
 
-  return { players: historyMap, rounds: roundNumbers };
+  return { players: historyMap, rounds: [0, ...roundNumbers] };
 }
 
 /**
