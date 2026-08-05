@@ -885,6 +885,39 @@
   color: var(--color-danger, #ef4444);
 }
 
+/* ELO Cache chips (rolling recent players, quick-toggle, inline with + Add) */
+.elo-cache-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 9px 4px 7px;
+  background: var(--bg-input);
+  border: 1px dashed var(--border);
+  border-radius: 999px;
+  font-size: var(--font-size-xs);
+  color: var(--text-tertiary);
+  cursor: pointer;
+  opacity: 0.55;
+  transition: all var(--transition-fast);
+  min-height: 26px;
+  white-space: nowrap;
+}
+
+.elo-cache-chip:hover {
+  opacity: 0.85;
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+.elo-cache-chip.active {
+  opacity: 1;
+  background: var(--color-primary-light);
+  border-style: solid;
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+  font-weight: var(--font-weight-semibold);
+}
+
 .elo-add-member-wrapper {
   position: relative;
 }
@@ -950,6 +983,143 @@
   padding: var(--space-xs) var(--space-sm);
   font-size: var(--font-size-xs);
   color: var(--text-tertiary);
+}
+
+/* Header + Add control (anchored right in the ELO Charts page header) */
+.elo-header-controls {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  margin-left: auto;
+}
+
+.elo-header-smooth-slot {
+  display: flex;
+  align-items: center;
+}
+
+.elo-header-smooth-btn {
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-input);
+  border: 1px dashed var(--border);
+  border-radius: 999px;
+  font-size: var(--font-size-xl);
+  line-height: 1;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: border-color var(--transition-fast), color var(--transition-fast);
+}
+
+.elo-header-smooth-btn:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+.elo-header-smooth-btn.active {
+  border-style: solid;
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+  background: var(--color-primary-light);
+  font-weight: var(--font-weight-semibold);
+}
+
+.elo-header-add-slot {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+}
+
+.elo-header-add-wrapper {
+  position: relative;
+}
+
+.elo-header-add-btn {
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  justify-content: center;
+  gap: 0;
+  font-size: var(--font-size-xl);
+  line-height: 1;
+  border-style: solid;
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+  font-weight: var(--font-weight-semibold);
+}
+
+.elo-header-add-wrapper .elo-add-member-dropdown {
+  left: auto;
+  right: 0;
+}
+
+/* Cache chips row wraps onto multiple rows so long names never push controls
+   outside the viewport. */
+.elo-cache-picker {
+  flex-wrap: wrap;
+  margin-bottom: 0;
+}
+
+.elo-cache-picker .elo-cache-chip {
+  flex-shrink: 0;
+}
+
+/* Remove-mode: chip carries a "−" indicator; danger-tinted while removable */
+.elo-cache-chip.removable {
+  border-style: solid;
+  border-color: var(--color-danger, #ef4444);
+  color: var(--color-danger, #ef4444);
+  opacity: 1;
+}
+
+.elo-cache-chip-remove {
+  font-size: 14px;
+  line-height: 1;
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-danger, #ef4444);
+  padding-left: 2px;
+}
+
+/* Remove toggle control (sits next to + Add) */
+.elo-remove-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 10px;
+  background: var(--bg-input);
+  border: 1px dashed var(--border);
+  border-radius: 999px;
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: border-color var(--transition-fast), color var(--transition-fast);
+}
+
+.elo-remove-toggle-btn:hover {
+  border-color: var(--color-danger, #ef4444);
+  color: var(--color-danger, #ef4444);
+}
+
+.elo-header-remove-btn {
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  font-size: var(--font-size-xl);
+  line-height: 1;
+  border-style: solid;
+  border-color: var(--color-danger, #ef4444);
+  color: var(--color-danger, #ef4444);
+  font-weight: var(--font-weight-semibold);
+}
+
+.elo-remove-toggle-btn.active {
+  border-style: solid;
+  border-color: var(--color-success, #22c55e);
+  color: var(--color-success, #22c55e);
 }
 
 /* ─── Settings ─── */

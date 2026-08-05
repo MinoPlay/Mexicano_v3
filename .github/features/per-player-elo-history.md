@@ -49,7 +49,12 @@ Replace single large `elo_history.json` with one history file per player.
 
 ## ELO Tab Read Flow
 
-- ELO tab keeps multi-select.
+- ELO tab keeps multi-select in a **single combined block** of rolling cache chips. The chip block **wraps onto multiple rows** so long names never push controls outside the viewport. The `+ Add` and `−`/remove controls are **not** in this block.
+- `+ Add` and the remove-toggle control both live in the page header, right-anchored next to the "ELO Charts" title. `+ Add` is a bigger `+` icon button; clicking it opens the typeahead there.
+- Cache chips render greyed-out when deselected and highlighted when selected; clicking a chip toggles that player in/out of the chart (selection always keeps ≥1 player). Chip stays in the block regardless of select state.
+- Rolling cache updater: `updateEloCache(cache, name)` — dedupes; appends `name` at the end; **unlimited size, no eviction**; ignores empty/null; never mutates input. Cache persists in localStorage prefs under `elo-cache`.
+- Remove control: a `−` button next to `+ Add`. Clicking `−` enters **remove mode** — every cache chip shows a `−` indicator (danger-tinted) and clicking a chip removes it from the cache (and deselects it, re-selecting the first remaining cached player if selection would empty). The `−` button becomes a `✓` (save) button; clicking `✓` persists the trimmed cache and exits remove mode. Pure remover: `removeFromEloCache(cache, name)` — filters out `name`; never mutates input.
+- `+ Add` types a name not yet in the cache; picking it appends it to the cache and selects it. Typeahead suggestions exclude names already in the cache.
 - Member picker `+ Add` is a typeahead: click reveals text input; typing filters available (unselected) players case-insensitively by substring, sorted A→Z. ArrowUp/Down navigate, Enter picks active (or first) match, Escape/blur closes. Pure filter: `filterMemberSuggestions(allMembers, selectedMembers, query)`.
 - For selected players, app loads matching `elo_history_{playerId}.json` files.
 - App merges selected files into chart datasets.

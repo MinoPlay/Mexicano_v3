@@ -38,7 +38,7 @@ function drawLineChart(canvas, datasets, options = {}) {
   const W = rect.width;
   const H = rect.height;
 
-  const { xLabels = [], yMin: rawYMin, yMax: rawYMax, title = '', smooth = false } = options;
+  const { xLabels = [], yMin: rawYMin, yMax: rawYMax, title = '', smooth = false, showXLabels = false, showDeltas = false, firstPointDelta = false } = options;
 
   let allY = [];
   datasets.forEach(ds => ds.data.forEach(pt => allY.push(pt.y)));
@@ -49,8 +49,8 @@ function drawLineChart(canvas, datasets, options = {}) {
   const yMax = rawYMax !== undefined ? rawYMax : Math.ceil(dataYMax + (dataYMax - dataYMin) * 0.1);
   const yRange = yMax - yMin || 1;
 
-  // Padding: left space for Y-axis labels
-  const pad = { top: title ? 28 : 10, right: 10, bottom: 10, left: 40 };
+  // Padding: left space for Y-axis labels, bottom space for X-axis labels when shown
+  const pad = { top: title ? 28 : 10, right: 10, bottom: showXLabels ? 22 : 10, left: 40 };
   const plotW = W - pad.left - pad.right;
   const plotH = H - pad.top - pad.bottom;
 
@@ -136,8 +136,37 @@ function drawLineChart(canvas, datasets, options = {}) {
       ctx.arc(px, py, 3.5, 0, Math.PI * 2);
       ctx.fillStyle = ds.color;
       ctx.fill();
+
+      // ELO change above each point; green up, red down.
+      // First point (x===0) only labelled when firstPointDelta is set.
+      if (showDeltas && (pt.x > 0 || firstPointDelta)) {
+        const d = pt.delta ?? 0;
+        const deltaStr = `${d > 0 ? '+' : ''}${d}`;
+        ctx.fillStyle = d < 0
+          ? (cssVar('--color-danger') || '#ef4444')
+          : (cssVar('--color-success') || '#22c55e');
+        ctx.font = `600 9px ${cssVar('--font-family') || 'sans-serif'}`;
+        // Keep edge labels inside the chart (align at the edges).
+        const isLast = pt.x >= xCount - 1;
+        const isFirst = pt.x === 0;
+        ctx.textAlign = isLast ? 'right' : (isFirst ? 'left' : 'center');
+        ctx.textBaseline = 'bottom';
+        const lx = isLast ? px + 6 : (isFirst ? px - 6 : px);
+        ctx.fillText(deltaStr, lx, py - 6);
+      }
     });
   });
+
+  // X-axis labels (round numbers for Latest Tournament)
+  if (showXLabels && xLabels.length) {
+    ctx.fillStyle = textColor;
+    ctx.font = `10px ${cssVar('--font-family') || 'sans-serif'}`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    xLabels.forEach((label, xi) => {
+      ctx.fillText(String(label), xPos(xi), pad.top + plotH + 6);
+    });
+  }
 
   canvas._chartMeta = { pad, plotW, plotH, yMin, yRange, xCount, datasets, xLabels };
 }
@@ -342,6 +371,18 @@ function formatDateShort(dateStr) {
 
 // ─── Member Picker ───
 
+export function updateEloCache(cache, name) {
+  const list = Array.isArray(cache) ? [...cache] : [];
+  if (!name || list.includes(name)) return list;
+  list.push(name);
+  return list;
+}
+
+export function removeFromEloCache(cache, name) {
+  const list = Array.isArray(cache) ? [...cache] : [];
+  return list.filter(n => n !== name);
+}
+
 export function filterMemberSuggestions(allMembers, selectedMembers, query) {
   const q = (query || '').trim().toLowerCase();
   return allMembers
@@ -350,12 +391,19 @@ export function filterMemberSuggestions(allMembers, selectedMembers, query) {
     .sort((a, b) => a.localeCompare(b));
 }
 
-function renderMemberPicker(container, { allMembers, selectedMembers, colorMap, onChange }) {
+function renderMemberPicker(container, { allMembers, selectedMembers, eloCache, colorMap, onToggle, onAdd, onRemove, onToggleRemoveMode, removeMode = false, addContainer }) {
   container.innerHTML = '';
+  const addHost = addContainer || container;
+  if (addContainer) addContainer.innerHTML = '';
 
-  [...selectedMembers].sort((a, b) => a.localeCompare(b)).forEach(name => {
-    const chip = document.createElement('span');
-    chip.className = 'elo-member-chip';
+  const cacheSet = new Set(eloCache);
+
+  // Cache chips: greyed when deselected, highlighted when selected. Click toggles.
+  // In remove mode each chip shows a "−" indicator and clicking removes it.
+  eloCache.forEach(name => {
+    const selected = selectedMembers.has(name);
+    const chip = document.createElement('button');
+    chip.className = 'elo-cache-chip' + (selected ? ' active' : '') + (removeMode ? ' removable' : '');
 
     const dot = document.createElement('span');
     dot.className = 'elo-member-chip-dot';
@@ -363,26 +411,27 @@ function renderMemberPicker(container, { allMembers, selectedMembers, colorMap, 
     chip.appendChild(dot);
     chip.appendChild(document.createTextNode(name));
 
-    if (selectedMembers.size > 1) {
-      const removeBtn = document.createElement('button');
-      removeBtn.className = 'elo-member-chip-remove';
-      removeBtn.innerHTML = '×';
-      removeBtn.title = `Remove ${name}`;
-      removeBtn.addEventListener('click', () => { selectedMembers.delete(name); onChange(); });
-      chip.appendChild(removeBtn);
+    if (removeMode) {
+      const rm = document.createElement('span');
+      rm.className = 'elo-cache-chip-remove';
+      rm.textContent = '−';
+      chip.appendChild(rm);
+      chip.addEventListener('click', () => onRemove(name));
+    } else {
+      chip.addEventListener('click', () => onToggle(name));
     }
-
     container.appendChild(chip);
   });
 
-  const available = allMembers.filter(m => !selectedMembers.has(m));
+  const available = allMembers.filter(m => !cacheSet.has(m));
   if (available.length > 0) {
     const wrapper = document.createElement('div');
-    wrapper.className = 'elo-add-member-wrapper';
+    wrapper.className = 'elo-add-member-wrapper' + (addContainer ? ' elo-header-add-wrapper' : '');
 
     const addBtn = document.createElement('button');
-    addBtn.className = 'elo-add-member-btn';
-    addBtn.textContent = '+ Add';
+    addBtn.className = 'elo-add-member-btn' + (addContainer ? ' elo-header-add-btn' : '');
+    addBtn.textContent = addContainer ? '+' : '+ Add';
+    if (addContainer) addBtn.title = 'Add player';
     wrapper.appendChild(addBtn);
 
     const input = document.createElement('input');
@@ -408,13 +457,12 @@ function renderMemberPicker(container, { allMembers, selectedMembers, colorMap, 
     }
 
     function pick(name) {
-      selectedMembers.add(name);
-      onChange();
+      onAdd(name);
     }
 
     function renderSuggestions() {
       closeDropdown();
-      const matches = filterMemberSuggestions(allMembers, selectedMembers, input.value);
+      const matches = filterMemberSuggestions(allMembers, cacheSet, input.value);
       dropdown = document.createElement('div');
       dropdown.className = 'elo-add-member-dropdown';
 
@@ -464,7 +512,7 @@ function renderMemberPicker(container, { allMembers, selectedMembers, colorMap, 
         if (items.length) setActive((activeIdx - 1 + items.length) % items.length);
       } else if (e.key === 'Enter') {
         e.preventDefault();
-        const matches = filterMemberSuggestions(allMembers, selectedMembers, input.value);
+        const matches = filterMemberSuggestions(allMembers, cacheSet, input.value);
         const chosen = activeIdx >= 0 ? matches[activeIdx] : matches[0];
         if (chosen) pick(chosen);
       } else if (e.key === 'Escape') {
@@ -479,7 +527,17 @@ function renderMemberPicker(container, { allMembers, selectedMembers, colorMap, 
       setTimeout(() => { if (document.activeElement !== input) closeInput(); }, 120);
     });
 
-    container.appendChild(wrapper);
+    addHost.appendChild(wrapper);
+  }
+
+  // Remove toggle: enters/exits remove mode. Shows "−" normally, "✓" (save) while active.
+  if (eloCache.length > 0 && onToggleRemoveMode) {
+    const removeBtn = document.createElement('button');
+    removeBtn.className = 'elo-remove-toggle-btn' + (addContainer ? ' elo-header-remove-btn' : '') + (removeMode ? ' active' : '');
+    removeBtn.textContent = removeMode ? '✓' : '−';
+    removeBtn.title = removeMode ? 'Save changes' : 'Remove players';
+    removeBtn.addEventListener('click', (e) => { e.stopPropagation(); onToggleRemoveMode(); });
+    addHost.appendChild(removeBtn);
   }
 }
 
@@ -663,8 +721,22 @@ export function renderEloCharts(container, params = {}) {
   container.innerHTML = '';
 
   const header = document.createElement('div');
-  header.className = 'page-header';
-  header.innerHTML = '<h1>ELO Charts</h1>';
+  header.className = 'page-header elo-page-header';
+  const headerTitle = document.createElement('h1');
+  headerTitle.textContent = 'ELO Charts';
+  const headerAddSlot = document.createElement('div');
+  headerAddSlot.className = 'elo-header-add-slot';
+  const headerSmoothSlot = document.createElement('div');
+  headerSmoothSlot.className = 'elo-header-smooth-slot';
+  const headerDeltaSlot = document.createElement('div');
+  headerDeltaSlot.className = 'elo-header-smooth-slot';
+  const headerControls = document.createElement('div');
+  headerControls.className = 'elo-header-controls';
+  headerControls.appendChild(headerSmoothSlot);
+  headerControls.appendChild(headerDeltaSlot);
+  headerControls.appendChild(headerAddSlot);
+  header.appendChild(headerTitle);
+  header.appendChild(headerControls);
   container.appendChild(header);
 
   const content = document.createElement('div');
@@ -761,43 +833,119 @@ export function renderEloCharts(container, params = {}) {
 
     // ── Smooth state (shared) ──
     let smooth = prefs['smooth'] === true;
+    // ── Delta labels state (Latest Tournament) — default on ──
+    let showDeltas = prefs['delta-labels'] !== false;
 
     const cleanupFns = [];
 
-    // ── Shared member picker (above both sections) ──
+    // ── ELO Cache: rolling last-5 quick-toggle chips (combined with + Add) ──
+    let eloCache = Array.isArray(prefs['elo-cache']) ? [...prefs['elo-cache']] : [];
+    if (eloCache.length === 0) {
+      [...selectedMembers].forEach(name => { eloCache = updateEloCache(eloCache, name); });
+    }
+    eloCache = eloCache.filter(name => allMemberNames.includes(name));
+
+    function persistCache() {
+      const p = loadPrefs();
+      p['elo-cache'] = eloCache;
+      savePrefs(p);
+    }
+
+    function refreshSelection() {
+      persistMembers();
+      renderSharedPicker();
+      renderTournamentChart();
+      loadSelectedPlayerHistories();
+    }
+
+    // ── Combined row: cache toggle chips (+ Add lives in the page header) ──
     const sharedPickerEl = document.createElement('div');
-    sharedPickerEl.className = 'elo-member-picker';
+    sharedPickerEl.className = 'elo-member-picker elo-cache-picker';
     sharedPickerEl.style.cssText = 'padding:var(--space-sm) var(--space-md);';
     content.appendChild(sharedPickerEl);
+
+    function toggleMember(name) {
+      if (selectedMembers.has(name)) {
+        if (selectedMembers.size <= 1) return;
+        selectedMembers.delete(name);
+      } else {
+        selectedMembers.add(name);
+      }
+      refreshSelection();
+    }
+
+    function addMember(name) {
+      eloCache = updateEloCache(eloCache, name);
+      selectedMembers.add(name);
+      persistCache();
+      refreshSelection();
+    }
+
+    // Remove mode: click "−" to enter, chips show "−" and become clickable to remove;
+    // click "✓" to persist the trimmed cache and exit.
+    let removeMode = false;
+
+    function removeCachedMember(name) {
+      eloCache = removeFromEloCache(eloCache, name);
+      selectedMembers.delete(name);
+      if (selectedMembers.size === 0 && eloCache.length) {
+        selectedMembers.add(eloCache[0]);
+      }
+      persistMembers();
+      renderSharedPicker();
+      renderTournamentChart();
+      loadSelectedPlayerHistories();
+    }
+
+    function toggleRemoveMode() {
+      removeMode = !removeMode;
+      if (!removeMode) persistCache();
+      renderSharedPicker();
+    }
 
     function renderSharedPicker() {
       renderMemberPicker(sharedPickerEl, {
         allMembers: allMemberNames,
         selectedMembers,
+        eloCache,
         colorMap,
-        onChange: () => { persistMembers(); renderSharedPicker(); renderTournamentChart(); loadSelectedPlayerHistories(); },
+        addContainer: headerAddSlot,
+        onToggle: toggleMember,
+        onAdd: addMember,
+        onRemove: removeCachedMember,
+        onToggleRemoveMode: toggleRemoveMode,
+        removeMode,
       });
     }
 
-    // ── Shared controls bar: smooth toggle only (applies to both charts) ──
-    const sharedControlsEl = document.createElement('div');
-    sharedControlsEl.className = 'elo-controls';
-    sharedControlsEl.style.cssText = 'padding:0 var(--space-md) var(--space-xs);';
-    content.appendChild(sharedControlsEl);
-
+    // ── Smooth/straight toggle: icon control in the page header (before + Add) ──
     const smoothBtn = document.createElement('button');
-    smoothBtn.className = 'elo-control-btn' + (smooth ? ' active' : '');
-    smoothBtn.title = 'Toggle smooth/rough lines';
-    smoothBtn.textContent = smooth ? '〰 Smooth' : '⟋ Straight';
+    smoothBtn.className = 'elo-header-smooth-btn' + (smooth ? ' active' : '');
+    smoothBtn.title = 'Toggle smooth/straight lines';
+    smoothBtn.textContent = smooth ? '〰' : '⟋';
     smoothBtn.addEventListener('click', () => {
       smooth = !smooth;
       smoothBtn.classList.toggle('active', smooth);
-      smoothBtn.textContent = smooth ? '〰 Smooth' : '⟋ Straight';
+      smoothBtn.textContent = smooth ? '〰' : '⟋';
       const p = loadPrefs(); p['smooth'] = smooth; savePrefs(p);
       renderTournamentChart();
       renderHistoryChart();
     });
-    sharedControlsEl.appendChild(smoothBtn);
+    headerSmoothSlot.appendChild(smoothBtn);
+
+    // ── Delta labels toggle: shows/hides ELO change above tournament points ──
+    const deltaBtn = document.createElement('button');
+    deltaBtn.className = 'elo-header-smooth-btn' + (showDeltas ? ' active' : '');
+    deltaBtn.title = 'Toggle ELO change labels';
+    deltaBtn.textContent = 'Δ';
+    deltaBtn.addEventListener('click', () => {
+      showDeltas = !showDeltas;
+      deltaBtn.classList.toggle('active', showDeltas);
+      const p = loadPrefs(); p['delta-labels'] = showDeltas; savePrefs(p);
+      renderTournamentChart();
+      renderHistoryChart();
+    });
+    headerDeltaSlot.appendChild(deltaBtn);
 
     // ── Interval controls (ELO History only) ──
     let interval = prefs['interval'] || '3m';
@@ -917,7 +1065,7 @@ export function renderEloCharts(container, params = {}) {
       }
 
       function draw() {
-        drawLineChart(tCanvas, datasets, { xLabels: history.rounds || [], smooth });
+        drawLineChart(tCanvas, datasets, { xLabels: history.rounds || [], smooth, showXLabels: true, showDeltas });
       }
       requestAnimationFrame(draw);
 
@@ -1021,7 +1169,7 @@ export function renderEloCharts(container, params = {}) {
       }
 
       function draw() {
-        drawLineChart(hCanvas, datasets, { xLabels: history.dates || [], smooth });
+        drawLineChart(hCanvas, datasets, { xLabels: history.dates || [], smooth, showDeltas, firstPointDelta: interval !== 'all' });
       }
       requestAnimationFrame(draw);
 
