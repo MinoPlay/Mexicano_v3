@@ -6,6 +6,7 @@ import { showToast } from './components/toast.js';
 import { showRefreshDialog } from './components/refresh-dialog.js';
 import { pullForRoute } from './services/github.js';
 import { showOnboardingDialog } from './components/onboarding-dialog.js';
+import { parsePatFromUrl } from './services/pat-url.js';
 
 // Pages
 import { renderHome } from './pages/home.js';
@@ -25,6 +26,14 @@ async function loadAdministrators() {
     const list = await fetch('data/administrators.json').then(r => r.ok ? r.json() : []);
     if (Array.isArray(list)) Store.setAdministrators(list);
   } catch { /* fall back to empty admin list */ }
+}
+
+// ─── PAT-in-URL bootstrap: read PAT from shareable link, then strip from URL ───
+function loadPatFromUrl() {
+  const { pat, cleanUrl } = parsePatFromUrl(window.location.href);
+  if (!pat) return;
+  Store.setGitHubConfig({ owner: 'MinoPlay', repo: 'DataHub_Mexicano', pat, basePath: 'mexicano_v3/backup-data' });
+  try { history.replaceState(null, '', cleanUrl); } catch { /* ignore */ }
 }
 
 // ─── Dev secrets: auto-inject GitHub config on localhost ───
@@ -79,6 +88,7 @@ async function init() {
   localStorage.removeItem('mexicano_azure_conn_str');
 
   await loadAdministrators();
+  loadPatFromUrl();
   await loadDevSecrets();
 
   await showOnboardingDialog();
