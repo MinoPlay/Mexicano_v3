@@ -17,7 +17,7 @@ export function renderNav() {
 
   function renderItems() {
     const visibleItems = NAV_ITEMS.filter(item =>
-      item.path !== '/logs' || Store.isAdministrator()
+      item.path !== '/logs' || (Store.isAdministrator() && Store.isLogsEnabled())
     );
 
     nav.innerHTML = visibleItems.map(item => `

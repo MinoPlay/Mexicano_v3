@@ -154,6 +154,19 @@ export const Store = {
     return administrators.includes(user);
   },
 
+  // ─── Logs feature toggle ───
+  // Default enabled when nothing stored (preserves prior behavior).
+
+  isLogsEnabled() {
+    const v = this.get('logs_enabled');
+    return v === null ? true : !!v;
+  },
+
+  setLogsEnabled(enabled) {
+    this.set('logs_enabled', !!enabled);
+    notifyUserChanged();
+  },
+
   // ─── GitHub Backend config ───
 
   getGitHubConfig() {

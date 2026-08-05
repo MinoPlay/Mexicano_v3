@@ -81,6 +81,17 @@ export function renderSettings(container, params) {
         </details>
       </div>
 
+      <!-- Logs -->
+      <div class="settings-section" id="logs-section">
+        <label class="settings-toggle-row" style="cursor:pointer;">
+          <span class="settings-section-title" style="margin:0;">Enable Logs</span>
+          <span class="switch">
+            <input type="checkbox" id="logs-enabled-toggle" />
+            <span class="switch-slider"></span>
+          </span>
+        </label>
+      </div>
+
       <!-- Manual Attendance -->
       <div class="settings-section" id="attendance-section">
         <div class="settings-section-title">Attendance</div>
@@ -124,13 +135,23 @@ export function renderSettings(container, params) {
   // (refreshSummariesSection, etc.) which check isAdministrator().
   const membersSection = container.querySelector('.members-header')?.closest('.settings-section');
   const attendanceSection = container.querySelector('#attendance-section');
+  const logsSection = container.querySelector('#logs-section');
 
   function refreshAdminVisibility() {
     const isAdmin = Store.isAdministrator();
     if (membersSection) membersSection.style.display = isAdmin ? '' : 'none';
     if (attendanceSection) attendanceSection.style.display = isAdmin ? '' : 'none';
+    if (logsSection) logsSection.style.display = isAdmin ? '' : 'none';
   }
   refreshAdminVisibility();
+
+  // Logs enable/disable toggle
+  const logsToggle = container.querySelector('#logs-enabled-toggle');
+  logsToggle.checked = Store.isLogsEnabled();
+  logsToggle.addEventListener('change', () => {
+    Store.setLogsEnabled(logsToggle.checked);
+    showToast(logsToggle.checked ? 'Logs enabled' : 'Logs disabled');
+  });
 
   // Current user select
   const userSelect = container.querySelector('#settings-user-select');
