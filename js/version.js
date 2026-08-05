@@ -1,6 +1,8 @@
-// Single source of truth for the app version / cache name.
-// Bump APP_VERSION by +1 each release AND set matching CACHE_NAME in sw.js.
-export const APP_VERSION = 37;
+// Version lives in sw.js (single source of truth). Re-export for app use.
+// Bump APP_VERSION by +1 each release in sw.js.
+import { APP_VERSION } from '../sw.js';
+
+export { APP_VERSION };
 
 export function getVersionLabel() {
   return `mexicano-v${APP_VERSION}`;

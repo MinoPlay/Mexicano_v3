@@ -79,13 +79,14 @@ describe('Settings — App Version', () => {
     expect(btn.textContent).toContain(getVersionLabel());
   });
 
-  it('sw.js CACHE_NAME derives from APP_VERSION (single source of truth)', async () => {
+  it('sw.js declares APP_VERSION and version.js imports it (single source of truth)', async () => {
     const fs = await import('node:fs');
     const path = await import('node:path');
-    const swPath = path.resolve(process.cwd(), 'sw.js');
-    const sw = fs.readFileSync(swPath, 'utf8');
-    expect(sw).toMatch(/import\s*\{\s*APP_VERSION\s*\}\s*from\s*['"]\.\/js\/version\.js['"]/);
+    const sw = fs.readFileSync(path.resolve(process.cwd(), 'sw.js'), 'utf8');
+    const ver = fs.readFileSync(path.resolve(process.cwd(), 'js/version.js'), 'utf8');
+    expect(sw).toMatch(/export\s+const\s+APP_VERSION\s*=\s*\d+/);
     expect(sw).toMatch(/CACHE_NAME\s*=\s*[`'"]mexicano-v\$\{APP_VERSION\}/);
+    expect(ver).toMatch(/import\s*\{\s*APP_VERSION\s*\}\s*from\s*['"]\.\.\/sw\.js['"]/);
   });
 });
 

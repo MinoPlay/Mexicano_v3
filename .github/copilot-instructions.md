@@ -12,7 +12,7 @@ Load more files only when blocker appears (missing symbol, unclear dependency, f
 Do not pre-load unrelated files "just in case".
 
 ## After Every Task
-Always bump version as final step (no git hook does this — manual). Increment `APP_VERSION` by +1 in `js/version.js`. That's the ONLY edit — `sw.js` is a module service worker that imports `APP_VERSION` and derives `CACHE_NAME = mexicano-v<APP_VERSION>` automatically. This forces service worker to bust stale GitHub Pages cache.
+Always bump version as final step (no git hook does this — manual). Increment `APP_VERSION` by +1 in `sw.js`. That's the ONLY edit — `sw.js` is a module service worker that declares `APP_VERSION` (single source of truth) and derives `CACHE_NAME = mexicano-v<APP_VERSION>` automatically; `js/version.js` imports `APP_VERSION` from `sw.js`. This forces service worker to bust stale GitHub Pages cache.
 
 ## Skill Topology
 Dev flow lives in skills under `.github/skills/*/SKILL.md`. All caveman.

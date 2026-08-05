@@ -30,7 +30,7 @@ Drive ONE Mexicano feature through strict TDD, inline, in this conversation. Cav
 3. **GREEN** — minimal `js/` change to pass. ES6 modules, vanilla JS, no frameworks, no build.
    `npx vitest run <test-file>` until GREEN. Then `npx vitest run` (full) — no regressions.
 4. **Finalize** — confirm whole suite passes. Ensure feature MD matches final behavior.
-   Bump version: `APP_VERSION` +1 in `js/version.js` (only edit — `sw.js` imports it and derives `CACHE_NAME`). Manual, last step, once.
+   Bump version: `APP_VERSION` +1 in `sw.js` (only edit — `sw.js` declares it & derives `CACHE_NAME`; `js/version.js` imports it). Manual, last step, once.
 
 ## Hard limits
 - Tests edited only under `tests/**`. Implementation only under `js/**`. MD only `.github/features/*.md`.

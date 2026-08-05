@@ -1,4 +1,6 @@
-import { APP_VERSION } from './js/version.js';
+// Single source of truth for the app version / cache name.
+// Bump APP_VERSION by +1 each release. js/version.js imports it.
+export const APP_VERSION = 38;
 
 const CACHE_NAME = `mexicano-v${APP_VERSION}`;
 const ASSETS = [
@@ -40,28 +42,33 @@ const ASSETS = [
   './js/pages/settings.js'
 ];
 
-self.addEventListener('install', (event) => {
-  event.waitUntil(
-    caches.open(CACHE_NAME)
-      .then(cache => cache.addAll(ASSETS))
-      .then(() => self.skipWaiting())
-  );
-});
+const isServiceWorker = typeof ServiceWorkerGlobalScope !== 'undefined'
+  && self instanceof ServiceWorkerGlobalScope;
 
-self.addEventListener('activate', (event) => {
-  event.waitUntil(
-    caches.keys()
-      .then(keys => Promise.all(
-        keys.filter(k => k !== CACHE_NAME).map(k => caches.delete(k))
-      ))
-      .then(() => self.clients.claim())
-  );
-});
+if (isServiceWorker) {
+  self.addEventListener('install', (event) => {
+    event.waitUntil(
+      caches.open(CACHE_NAME)
+        .then(cache => cache.addAll(ASSETS))
+        .then(() => self.skipWaiting())
+    );
+  });
 
-self.addEventListener('fetch', (event) => {
-  event.respondWith(
-    caches.match(event.request)
-      .then(cached => cached || fetch(event.request))
-      .catch(() => caches.match('./index.html'))
-  );
-});
+  self.addEventListener('activate', (event) => {
+    event.waitUntil(
+      caches.keys()
+        .then(keys => Promise.all(
+          keys.filter(k => k !== CACHE_NAME).map(k => caches.delete(k))
+        ))
+        .then(() => self.clients.claim())
+    );
+  });
+
+  self.addEventListener('fetch', (event) => {
+    event.respondWith(
+      caches.match(event.request)
+        .then(cached => cached || fetch(event.request))
+        .catch(() => caches.match('./index.html'))
+    );
+  });
+}
