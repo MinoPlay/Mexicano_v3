@@ -153,5 +153,5 @@ function getPageName(hash) {
 
 // Register service worker
 if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('./sw.js', { type: 'module' }).catch(() => {});
+  navigator.serviceWorker.register('./sw.js', { type: 'module', updateViaCache: 'none' }).catch(() => {});
 }
