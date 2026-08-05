@@ -730,10 +730,13 @@ export function renderEloCharts(container, params = {}) {
   headerSmoothSlot.className = 'elo-header-smooth-slot';
   const headerDeltaSlot = document.createElement('div');
   headerDeltaSlot.className = 'elo-header-smooth-slot';
+  const headerDeltaHistSlot = document.createElement('div');
+  headerDeltaHistSlot.className = 'elo-header-smooth-slot';
   const headerControls = document.createElement('div');
   headerControls.className = 'elo-header-controls';
   headerControls.appendChild(headerSmoothSlot);
   headerControls.appendChild(headerDeltaSlot);
+  headerControls.appendChild(headerDeltaHistSlot);
   headerControls.appendChild(headerAddSlot);
   header.appendChild(headerTitle);
   header.appendChild(headerControls);
@@ -833,8 +836,9 @@ export function renderEloCharts(container, params = {}) {
 
     // ── Smooth state (shared) ──
     let smooth = prefs['smooth'] === true;
-    // ── Delta labels state (Latest Tournament) — default on ──
-    let showDeltas = prefs['delta-labels'] !== false;
+    // ── Delta labels state — separate per chart, default off ──
+    let showDeltasTournament = prefs['delta-labels-tournament'] === true;
+    let showDeltasHistory = prefs['delta-labels-history'] === true;
 
     const cleanupFns = [];
 
@@ -933,19 +937,30 @@ export function renderEloCharts(container, params = {}) {
     });
     headerSmoothSlot.appendChild(smoothBtn);
 
-    // ── Delta labels toggle: shows/hides ELO change above tournament points ──
+    // ── Delta labels toggles: separate for Latest Tournament & ELO History ──
     const deltaBtn = document.createElement('button');
-    deltaBtn.className = 'elo-header-smooth-btn' + (showDeltas ? ' active' : '');
-    deltaBtn.title = 'Toggle ELO change labels';
-    deltaBtn.textContent = 'Δ';
+    deltaBtn.className = 'elo-header-smooth-btn' + (showDeltasTournament ? ' active' : '');
+    deltaBtn.title = 'Toggle Latest Tournament ELO change labels';
+    deltaBtn.textContent = 'Δᴸ';
     deltaBtn.addEventListener('click', () => {
-      showDeltas = !showDeltas;
-      deltaBtn.classList.toggle('active', showDeltas);
-      const p = loadPrefs(); p['delta-labels'] = showDeltas; savePrefs(p);
+      showDeltasTournament = !showDeltasTournament;
+      deltaBtn.classList.toggle('active', showDeltasTournament);
+      const p = loadPrefs(); p['delta-labels-tournament'] = showDeltasTournament; savePrefs(p);
       renderTournamentChart();
-      renderHistoryChart();
     });
     headerDeltaSlot.appendChild(deltaBtn);
+
+    const deltaHistBtn = document.createElement('button');
+    deltaHistBtn.className = 'elo-header-smooth-btn' + (showDeltasHistory ? ' active' : '');
+    deltaHistBtn.title = 'Toggle ELO History change labels';
+    deltaHistBtn.textContent = 'Δᴴ';
+    deltaHistBtn.addEventListener('click', () => {
+      showDeltasHistory = !showDeltasHistory;
+      deltaHistBtn.classList.toggle('active', showDeltasHistory);
+      const p = loadPrefs(); p['delta-labels-history'] = showDeltasHistory; savePrefs(p);
+      renderHistoryChart();
+    });
+    headerDeltaHistSlot.appendChild(deltaHistBtn);
 
     // ── Interval controls (ELO History only) ──
     let interval = prefs['interval'] || '3m';
@@ -1065,7 +1080,7 @@ export function renderEloCharts(container, params = {}) {
       }
 
       function draw() {
-        drawLineChart(tCanvas, datasets, { xLabels: history.rounds || [], smooth, showXLabels: true, showDeltas });
+        drawLineChart(tCanvas, datasets, { xLabels: history.rounds || [], smooth, showXLabels: true, showDeltas: showDeltasTournament });
       }
       requestAnimationFrame(draw);
 
@@ -1169,7 +1184,7 @@ export function renderEloCharts(container, params = {}) {
       }
 
       function draw() {
-        drawLineChart(hCanvas, datasets, { xLabels: history.dates || [], smooth, showDeltas, firstPointDelta: interval !== 'all' });
+        drawLineChart(hCanvas, datasets, { xLabels: history.dates || [], smooth, showDeltas: showDeltasHistory, firstPointDelta: interval !== 'all' });
       }
       requestAnimationFrame(draw);
 
