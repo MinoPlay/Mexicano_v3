@@ -151,7 +151,15 @@ function getPageName(hash) {
   return names[path] || 'Data';
 }
 
-// Register service worker
+// Register service worker. Auto-reload once when a NEW sw version takes control
+// (an update), so opening the app forces the user onto the latest build.
 if ('serviceWorker' in navigator) {
+  const hadController = !!navigator.serviceWorker.controller;
+  let reloading = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (reloading || !hadController) return;
+    reloading = true;
+    location.reload();
+  });
   navigator.serviceWorker.register('./sw.js', { type: 'module', updateViaCache: 'none' }).catch(() => {});
 }

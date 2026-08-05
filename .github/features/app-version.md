@@ -7,6 +7,10 @@ App carry simple integer version. No more guid/datetime cache name.
 - Single source of truth: `sw.js` -> `export const APP_VERSION` (Number).
 - `sw.js` is a **module service worker** (`register('./sw.js', { type: 'module' })`) that
   declares `APP_VERSION` and derives `CACHE_NAME = ` + "`mexicano-v${APP_VERSION}`" + `.
+- **Fetch strategy = network-first**: every request tries the network (so opening the app
+  pulls the latest files and refreshes the cache); cache is used only as offline fallback.
+- **Auto-update**: `js/app.js` reloads the page once on `controllerchange` (only when a
+  controller already existed = an update, not first install), forcing latest build on open.
 - `js/version.js` `import { APP_VERSION } from '../sw.js'` and re-exports it. No manual duplicate to keep in sync.
 - Cache name label = `mexicano-v<APP_VERSION>` (e.g. `mexicano-v5`).
 

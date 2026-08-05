@@ -1,6 +1,6 @@
 // Single source of truth for the app version / cache name.
 // Bump APP_VERSION by +1 each release. js/version.js imports it.
-export const APP_VERSION = 39;
+export const APP_VERSION = 40;
 
 const CACHE_NAME = `mexicano-v${APP_VERSION}`;
 const ASSETS = [
@@ -65,10 +65,18 @@ if (isServiceWorker) {
   });
 
   self.addEventListener('fetch', (event) => {
+    const req = event.request;
+    if (req.method !== 'GET') return;
+    // Network-first: always try the network so an open pulls the latest files,
+    // refresh the cache, and fall back to cache only when offline.
     event.respondWith(
-      caches.match(event.request)
-        .then(cached => cached || fetch(event.request))
-        .catch(() => caches.match('./index.html'))
+      fetch(req)
+        .then((res) => {
+          const copy = res.clone();
+          caches.open(CACHE_NAME).then(cache => cache.put(req, copy)).catch(() => {});
+          return res;
+        })
+        .catch(() => caches.match(req).then(cached => cached || caches.match('./index.html')))
     );
   });
 }
