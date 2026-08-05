@@ -8,7 +8,8 @@ export function getVersionLabel() {
   return `mexicano-v${APP_VERSION}`;
 }
 
-// Clear caches, update the service worker, and reload to pull the latest files.
+// Clear caches, UNREGISTER the service worker, and reload so the page comes
+// back with no SW controlling it and re-fetches every asset fresh from network.
 export async function refreshApp() {
   try {
     if (typeof caches !== 'undefined') {
@@ -17,7 +18,7 @@ export async function refreshApp() {
     }
     if (typeof navigator !== 'undefined' && navigator.serviceWorker) {
       const regs = await navigator.serviceWorker.getRegistrations();
-      await Promise.all(regs.map(r => r.update()));
+      await Promise.all(regs.map(r => r.unregister()));
     }
   } finally {
     if (typeof location !== 'undefined') location.reload();

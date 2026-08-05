@@ -15,13 +15,13 @@ Version button lives in the Settings page header row: title `Settings` anchored 
 button `#app-refresh-btn` anchored right, styled blue (`btn btn-primary`), label = `getVersionLabel()` (e.g. `mexicano-v3`).
 - Click -> `refreshApp()`:
   - clear all caches (`caches.keys()` -> delete),
-  - update service worker registration,
-  - `location.reload()` to pull latest files from network.
+  - **unregister** all service worker registrations (so reload runs with no SW controlling),
+  - `location.reload()` to pull latest files fresh from network. SW re-registers on load.
 
 ## API — `js/version.js`
 - `APP_VERSION` — Number, re-exported from `sw.js`.
 - `getVersionLabel()` — returns `mexicano-v<APP_VERSION>`.
-- `refreshApp()` — async; clears caches, updates SW, reloads. Guards missing `caches`/`serviceWorker`.
+- `refreshApp()` — async; clears caches, unregisters SW, reloads. Guards missing `caches`/`serviceWorker`.
 
 ## Bump rule
 Release = increment `APP_VERSION` in `sw.js`. That's the only edit —

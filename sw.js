@@ -1,6 +1,6 @@
 // Single source of truth for the app version / cache name.
 // Bump APP_VERSION by +1 each release. js/version.js imports it.
-export const APP_VERSION = 38;
+export const APP_VERSION = 39;
 
 const CACHE_NAME = `mexicano-v${APP_VERSION}`;
 const ASSETS = [
