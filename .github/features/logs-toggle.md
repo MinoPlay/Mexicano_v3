@@ -20,7 +20,7 @@ Admin setting to enable/disable the round Logs feature.
 - Toggling dispatches `mexicano:user-changed` so the bottom nav re-renders live.
 
 ## Acceptance (input => expected)
-- No stored value => `Store.isLogsEnabled()` === `true`.
+- No stored value => `Store.isLogsEnabled()` === `false`.
 - `setLogsEnabled(false)` => `isLogsEnabled()` === `false` (persisted).
 - `setLogsEnabled(true)` => `isLogsEnabled()` === `true`.
 - admin + enabled => nav has `.nav-item[data-path="/logs"]`.

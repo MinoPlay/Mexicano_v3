@@ -45,8 +45,8 @@ beforeEach(() => {
 });
 
 describe('Store logs-enabled flag', () => {
-  it('defaults to enabled when nothing stored', () => {
-    expect(Store.isLogsEnabled()).toBe(true);
+  it('defaults to disabled when nothing stored', () => {
+    expect(Store.isLogsEnabled()).toBe(false);
   });
 
   it('persists disabled state', () => {

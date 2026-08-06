@@ -155,11 +155,11 @@ export const Store = {
   },
 
   // ─── Logs feature toggle ───
-  // Default enabled when nothing stored (preserves prior behavior).
+  // Default disabled when nothing stored.
 
   isLogsEnabled() {
     const v = this.get('logs_enabled');
-    return v === null ? true : !!v;
+    return v === null ? false : !!v;
   },
 
   setLogsEnabled(enabled) {
