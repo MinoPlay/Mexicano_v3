@@ -9,20 +9,42 @@ import { pullEloHistoryForPlayerIds, getCachedEloHistoryForPlayerIds } from '../
 
 // ─── Color Generator ───
 
-function generateColors(count) {
-  const colors = [];
-  for (let i = 0; i < count; i++) {
-    const hue = Math.round((360 / count) * i);
-    colors.push(`hsl(${hue}, 70%, 50%)`);
-  }
-  return colors;
+// Prefixed color table: color is linked to the selected player's entry number
+// (0-based selection order), NOT the player name. This guarantees the first
+// selected players get maximally-distinct, hard-to-confuse colors.
+// First 5 are very different from each other; entries 5–9 stay distinct too.
+// Past 10 entries colors are generated (golden-angle hue spread).
+export const ELO_ENTRY_COLORS = [
+  '#e6194b', // 0 red
+  '#3cb44b', // 1 green
+  '#4363d8', // 2 blue
+  '#911eb4', // 3 purple
+  '#ffe119', // 4 yellow
+  '#f58231', // 5 orange
+  '#42d4f4', // 6 cyan
+  '#f032e6', // 7 magenta
+  '#9a6324', // 8 brown
+  '#469990', // 9 teal
+];
+
+// Map an entry number (selection index) to its color.
+export function colorForEntryIndex(i) {
+  if (i < ELO_ENTRY_COLORS.length) return ELO_ENTRY_COLORS[i];
+  // Deterministic spread using the golden angle so extra players stay distinct.
+  const hue = Math.round((i * 137.508) % 360);
+  return `hsl(${hue}, 70%, 50%)`;
 }
 
-function getMemberColorMap(members) {
-  const sorted = [...members].sort((a, b) => a.localeCompare(b));
-  const colors = generateColors(sorted.length);
+// Build a name→color map from an ordered list of selected members.
+// Entry number = first-seen position in the ordered list.
+export function buildEntryColorMap(orderedNames) {
   const map = {};
-  sorted.forEach((name, i) => { map[name] = colors[i]; });
+  let idx = 0;
+  for (const name of orderedNames) {
+    if (Object.prototype.hasOwnProperty.call(map, name)) continue;
+    map[name] = colorForEntryIndex(idx);
+    idx++;
+  }
   return map;
 }
 
@@ -802,7 +824,7 @@ export function renderEloCharts(container, params = {}) {
     const playerNameById = new Map(playersSummary
       .filter(p => p && p.id)
       .map(p => [String(p.id), String(p.name || '')]));
-    const colorMap = getMemberColorMap(allMemberNames);
+    let colorMap = {};
 
     // Load persisted prefs
     const prefs = loadPrefs();
@@ -834,6 +856,12 @@ export function renderEloCharts(container, params = {}) {
       savePrefs(p);
     }
 
+    // Colors are keyed to selection (entry) order — see buildEntryColorMap.
+    function rebuildColorMap() {
+      colorMap = buildEntryColorMap([...selectedMembers]);
+    }
+    rebuildColorMap();
+
     // ── Smooth state (shared) ──
     let smooth = prefs['smooth'] === true;
     // ── Delta labels state — separate per chart, default off ──
@@ -857,6 +885,7 @@ export function renderEloCharts(container, params = {}) {
 
     function refreshSelection() {
       persistMembers();
+      rebuildColorMap();
       renderSharedPicker();
       renderTournamentChart();
       loadSelectedPlayerHistories();
@@ -896,6 +925,7 @@ export function renderEloCharts(container, params = {}) {
         selectedMembers.add(eloCache[0]);
       }
       persistMembers();
+      rebuildColorMap();
       renderSharedPicker();
       renderTournamentChart();
       loadSelectedPlayerHistories();
