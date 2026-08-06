@@ -748,15 +748,12 @@ export function renderEloCharts(container, params = {}) {
   headerTitle.textContent = 'ELO Charts';
   const headerAddSlot = document.createElement('div');
   headerAddSlot.className = 'elo-header-add-slot';
-  const headerSmoothSlot = document.createElement('div');
-  headerSmoothSlot.className = 'elo-header-smooth-slot';
   const headerDeltaSlot = document.createElement('div');
   headerDeltaSlot.className = 'elo-header-smooth-slot';
   const headerDeltaHistSlot = document.createElement('div');
   headerDeltaHistSlot.className = 'elo-header-smooth-slot';
   const headerControls = document.createElement('div');
   headerControls.className = 'elo-header-controls';
-  headerControls.appendChild(headerSmoothSlot);
   headerControls.appendChild(headerDeltaSlot);
   headerControls.appendChild(headerDeltaHistSlot);
   headerControls.appendChild(headerAddSlot);
@@ -862,8 +859,8 @@ export function renderEloCharts(container, params = {}) {
     }
     rebuildColorMap();
 
-    // ── Smooth state (shared) ──
-    let smooth = prefs['smooth'] === true;
+    // ── Smooth state (shared): lines always smooth ──
+    const smooth = true;
     // ── Delta labels state — separate per chart, default off ──
     let showDeltasTournament = prefs['delta-labels-tournament'] === true;
     let showDeltasHistory = prefs['delta-labels-history'] === true;
@@ -951,21 +948,6 @@ export function renderEloCharts(container, params = {}) {
         removeMode,
       });
     }
-
-    // ── Smooth/straight toggle: icon control in the page header (before + Add) ──
-    const smoothBtn = document.createElement('button');
-    smoothBtn.className = 'elo-header-smooth-btn' + (smooth ? ' active' : '');
-    smoothBtn.title = 'Toggle smooth/straight lines';
-    smoothBtn.textContent = smooth ? '〰' : '⟋';
-    smoothBtn.addEventListener('click', () => {
-      smooth = !smooth;
-      smoothBtn.classList.toggle('active', smooth);
-      smoothBtn.textContent = smooth ? '〰' : '⟋';
-      const p = loadPrefs(); p['smooth'] = smooth; savePrefs(p);
-      renderTournamentChart();
-      renderHistoryChart();
-    });
-    headerSmoothSlot.appendChild(smoothBtn);
 
     // ── Delta labels toggles: separate for Latest Tournament & ELO History ──
     const deltaBtn = document.createElement('button');
