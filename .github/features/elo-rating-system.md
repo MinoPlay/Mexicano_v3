@@ -73,7 +73,7 @@ result = round(new_elo × 100) / 100
   "team2Player2Elo": 984.00
 }
 ```
-ELO fields represent each player's ELO **after** this match. Embedded at tournament completion and used by the Latest Tournament chart directly.
+ELO fields represent each player's ELO **after** this match, embedded at tournament completion. They are a frozen snapshot and are **not** shown by the UI in the normal path: the Latest Tournament chart (`getEloHistoryForLatestTournament`) and Home/Statistics tables (`getEloSnapshots`) **recompute** ELO live from match scores (seeded from `players.json` PreviousELO). The embedded fields are read only as a last-resort fallback in the Statistics table via `getEloFromEmbeddedMatches` when full matches, summary, and per-player history files are all unavailable. Live recomputed values can therefore differ from the embedded snapshot if the seed ELO, match ordering, or K constant changed since completion.
 
 ## Edge Cases & Behaviors
 

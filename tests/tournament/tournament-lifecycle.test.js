@@ -7,6 +7,10 @@ import { vi, describe, it, expect, beforeEach } from 'vitest';
 
 // ─── Mock dynamic imports used by store.js and tournament.js ───
 
+// Holds the "full" match history that ensureAllMatchesLoaded resolves with.
+// Defined via vi.hoisted so it is safely available inside the hoisted vi.mock factory.
+const eloFixture = vi.hoisted(() => ({ full: [] }));
+
 vi.mock('../../js/services/github.js', () => ({
   schedulePush: vi.fn(),
   cancelPendingSync: vi.fn(),
@@ -16,6 +20,9 @@ vi.mock('../../js/services/github.js', () => ({
   keyToPath: vi.fn().mockReturnValue(null),
   readFile: vi.fn().mockResolvedValue(null),
   deleteFile: vi.fn().mockResolvedValue(undefined),
+  // Return a fresh copy each call so completeTournament appending entities
+  // never mutates the shared fixture between runs.
+  ensureAllMatchesLoaded: vi.fn(async () => eloFixture.full.map(m => ({ ...m }))),
 }));
 
 vi.mock('../../js/services/local.js', () => ({
@@ -72,6 +79,7 @@ function makeCompletedTournament() {
 beforeEach(() => {
   localStorageStub.clear();
   State._listeners = {};
+  eloFixture.full = [];
 });
 
 // ─── Tests ───
@@ -302,19 +310,19 @@ describe('startNextRound', () => {
 });
 
 describe('completeTournament', () => {
-  it('marks tournament as completed', () => {
+  it('marks tournament as completed', async () => {
     const t = makeCompletedTournament();
 
-    completeTournament(t);
+    await completeTournament(t);
 
     expect(t.isCompleted).toBe(true);
     expect(t.completedAt).not.toBeNull();
   });
 
-  it('keeps active tournament in Store until push succeeds (offline-safe)', () => {
+  it('keeps active tournament in Store until push succeeds (offline-safe)', async () => {
     const t = makeCompletedTournament();
 
-    completeTournament(t);
+    await completeTournament(t);
 
     // Tournament stays in localStorage marked completed — cleared only after push succeeds
     const stored = Store.getActiveTournament();
@@ -322,10 +330,10 @@ describe('completeTournament', () => {
     expect(stored.isCompleted).toBe(true);
   });
 
-  it('Store.getMatches contains all completed match entities', () => {
+  it('Store.getMatches contains all completed match entities', async () => {
     const t = makeCompletedTournament();
 
-    completeTournament(t);
+    await completeTournament(t);
 
     const matches = Store.getMatches();
     expect(matches).toHaveLength(1);
@@ -334,29 +342,29 @@ describe('completeTournament', () => {
     expect(matches[0].scoreTeam2).toBe(10);
   });
 
-  it('match entities have correct _key format', () => {
+  it('match entities have correct _key format', async () => {
     const t = makeCompletedTournament();
 
-    completeTournament(t);
+    await completeTournament(t);
 
     const matches = Store.getMatches();
     expect(matches[0]._key).toBe(`${DATE}_R1M1`);
   });
 
-  it('match entities have all player names', () => {
+  it('match entities have all player names', async () => {
     const t = makeCompletedTournament();
 
-    completeTournament(t);
+    await completeTournament(t);
 
     const m = Store.getMatches()[0];
     const allNames = [m.team1Player1Name, m.team1Player2Name, m.team2Player1Name, m.team2Player2Name];
     expect(allNames.every(n => typeof n === 'string' && n.length > 0)).toBe(true);
   });
 
-  it('match entities have embedded ELO fields after completion', () => {
+  it('match entities have embedded ELO fields after completion', async () => {
     const t = makeCompletedTournament();
 
-    completeTournament(t);
+    await completeTournament(t);
 
     const m = Store.getMatches()[0];
     expect(typeof m.team1Player1Elo).toBe('number');
@@ -369,14 +377,14 @@ describe('completeTournament', () => {
     expect(m.team2Player2Elo).toBeGreaterThan(0);
   });
 
-  it('multi-round: all match entities have embedded ELO fields', () => {
+  it('multi-round: all match entities have embedded ELO fields', async () => {
     const t = createTournament(DATE, PLAYERS_4);
     startTournament(t);
     setMatchScore(t, 1, 1, 15, 10);
     startNextRound(t);
     setMatchScore(t, 2, 1, 13, 12);
 
-    completeTournament(t);
+    await completeTournament(t);
 
     const matches = Store.getMatches();
     for (const m of matches) {
@@ -385,26 +393,61 @@ describe('completeTournament', () => {
     }
   });
 
-  it('emits tournament-changed', () => {
+  it('embeds ELO from full history even when local match cache is partial', async () => {
+    // Prior tournament history = the complete truth. Alice/Bob beat Carol/Dave,
+    // so the pre-tournament baseline is NOT a flat 1000 for anyone.
+    const prior = [{
+      date: '2025-05-01', roundNumber: 1, _key: '2025-05-01_R1M1',
+      team1Player1Name: 'Alice', team1Player2Name: 'Bob',
+      team2Player1Name: 'Carol', team2Player2Name: 'Dave',
+      scoreTeam1: 21, scoreTeam2: 3,
+    }];
+
+    // ── Oracle: complete with the FULL history present in Store ──
+    eloFixture.full = prior;
+    Store.setMatches(prior.map(m => ({ ...m })));
+    Store.set('matches_fully_loaded', true);
+    const tFull = makeCompletedTournament();
+    await completeTournament(tFull);
+    const full = Store.getMatches().find(m => m.date === DATE && m.roundNumber === 1);
+
+    // ── Under test: local cache is PARTIAL (missing prior), but
+    //    ensureAllMatchesLoaded supplies the full history ──
+    localStorageStub.clear();
+    eloFixture.full = prior;
+    Store.setMatches([]);
+    Store.set('matches_fully_loaded', false);
+    const tPartial = makeCompletedTournament();
+    await completeTournament(tPartial);
+    const partial = Store.getMatches().find(m => m.date === DATE && m.roundNumber === 1);
+
+    // The embedded ELO must reflect the full-history baseline, not the partial cache.
+    expect(partial.team1Player1Elo).toBe(full.team1Player1Elo);
+    expect(partial.team1Player2Elo).toBe(full.team1Player2Elo);
+    expect(partial.team2Player1Elo).toBe(full.team2Player1Elo);
+    expect(partial.team2Player2Elo).toBe(full.team2Player2Elo);
+  });
+
+  it('emits tournament-changed', async () => {
     const t = makeCompletedTournament();
 
     const events = [];
     State.on('tournament-changed', (data) => events.push(data));
 
-    completeTournament(t);
+    await completeTournament(t);
 
     expect(events).toHaveLength(1);
     expect(events[0].isCompleted).toBe(true);
   });
 
-  it('multi-round: all rounds persisted to Store.getMatches', () => {
+  it('multi-round: all rounds persisted to Store.getMatches', async () => {
     const t = createTournament(DATE, PLAYERS_4);
     startTournament(t);
     setMatchScore(t, 1, 1, 15, 10);
     startNextRound(t);
     setMatchScore(t, 2, 1, 13, 12);
 
-    completeTournament(t);
+    await completeTournament(t);
 
     const matches = Store.getMatches();
     expect(matches).toHaveLength(2);
@@ -412,14 +455,14 @@ describe('completeTournament', () => {
     expect(matches.some(m => m.roundNumber === 2)).toBe(true);
   });
 
-  it('updates tournaments index immediately with isComplete=true', () => {
+  it('updates tournaments index immediately with isComplete=true', async () => {
     const t = makeCompletedTournament();
 
     // Clear index to start fresh
     Store.setTournamentsIndex([]);
     expect(Store.getTournamentsIndex()).toHaveLength(0);
 
-    completeTournament(t);
+    await completeTournament(t);
 
     // Index should be updated immediately (synchronously)
     const index = Store.getTournamentsIndex();

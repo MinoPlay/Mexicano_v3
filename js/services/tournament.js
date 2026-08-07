@@ -7,6 +7,7 @@ import { State } from '../state.js';
 import { rankPlayers } from './ranking.js';
 import { calculateAllEloRankings, processMatchElo } from './elo.js';
 import { logRoundResult } from './round-log.js';
+import { ensureAllMatchesLoaded } from './github.js';
 
 // ─── Helpers ───
 
@@ -310,7 +311,7 @@ export function completeTournament(tournament) {
   // Idempotent guard: if already completed, just retry the push
   if (tournament.isCompleted && tournament.completedAt) {
     retryCompletedTournamentPush();
-    return tournament;
+    return Promise.resolve(tournament);
   }
 
   tournament.isCompleted = true;
@@ -319,8 +320,23 @@ export function completeTournament(tournament) {
   // Log final round results
   logRoundResult(tournament, tournament.currentRoundNumber);
 
-  // Persist all matches as MatchEntities
-  const allMatches = Store.getMatches();
+  return finalizeCompletedTournament(tournament);
+}
+
+async function finalizeCompletedTournament(tournament) {
+  // The pre-tournament ELO baseline is derived by replaying the ENTIRE match
+  // history from scratch (calculateAllEloRankings starts every player at 1000).
+  // If the local cache is only partially loaded (lazy loading), that baseline
+  // — and therefore every embedded Team*Elo value — would be wrong. Ensure the
+  // full history is loaded first. Falls back to the local cache when offline.
+  let allMatches;
+  try {
+    const loaded = await ensureAllMatchesLoaded();
+    if (Array.isArray(loaded)) allMatches = loaded;
+  } catch (e) {
+    console.warn('[tournament] ensureAllMatchesLoaded failed; using local cache:', e);
+  }
+  if (!allMatches) allMatches = Store.getMatches();
 
   // Compute starting player ELO states from all matches BEFORE this tournament
   const { players: playerStates } = calculateAllEloRankings(allMatches);

@@ -430,7 +430,7 @@ export function renderTournament(container, params) {
         ? `Ending the tournament will remove ${unscoredCount} match${unscoredCount > 1 ? 'es' : ''} that ${unscoredCount > 1 ? 'have' : 'has'} no score. This cannot be undone.`
         : 'This will finalize the tournament. Match history will be saved.';
 
-      showConfirmDialog(title, message, () => {
+      showConfirmDialog(title, message, async () => {
         try {
           if (unscoredCount > 0) {
             for (const round of tournament.rounds) {
@@ -438,7 +438,7 @@ export function renderTournament(container, params) {
             }
             tournament.rounds = tournament.rounds.filter(r => r.matches.length > 0);
           }
-          completeTournament(tournament);
+          await completeTournament(tournament);
           import('../services/telegram.js')
             .then(({ sendTournamentCompletedAlert }) => sendTournamentCompletedAlert(tournament))
             .catch(err => console.warn('[telegram] tournament-completed alert failed:', err));

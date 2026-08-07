@@ -6,7 +6,7 @@
  */
 import { vi, describe, it, expect, beforeEach } from 'vitest';
 
-const githubMock = {
+const githubMock = vi.hoisted(() => ({
   schedulePush: vi.fn(),
   cancelPendingSync: vi.fn(),
   flushPush: vi.fn().mockResolvedValue(undefined),
@@ -14,7 +14,8 @@ const githubMock = {
   markMatchDateDirty: vi.fn(),
   keyToPath: vi.fn().mockReturnValue(null),
   readFile: vi.fn().mockResolvedValue(null),
-};
+  ensureAllMatchesLoaded: vi.fn().mockResolvedValue([]),
+}));
 
 vi.mock('../../js/services/github.js', () => githubMock);
 vi.mock('../../js/services/local.js', () => ({

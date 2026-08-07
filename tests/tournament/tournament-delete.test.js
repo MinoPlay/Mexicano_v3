@@ -9,7 +9,7 @@ import { vi, describe, it, expect, beforeEach } from 'vitest';
 
 // ─── Mock dynamic imports used by store.js and tournament.js ───
 
-const githubMock = {
+const githubMock = vi.hoisted(() => ({
   schedulePush: vi.fn(),
   cancelPendingSync: vi.fn(),
   flushPush: vi.fn().mockResolvedValue(undefined),
@@ -20,7 +20,8 @@ const githubMock = {
   keyToPath: vi.fn().mockReturnValue(null),
   readFile: vi.fn().mockResolvedValue(null),
   deleteFile: vi.fn().mockResolvedValue(undefined),
-};
+  ensureAllMatchesLoaded: vi.fn().mockResolvedValue([]),
+}));
 
 vi.mock('../../js/services/github.js', () => githubMock);
 
