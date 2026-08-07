@@ -6,7 +6,7 @@
  */
 
 import { Store } from '../store.js';
-import { testConnection } from '../services/github.js';
+import { testConnection } from '../services/backend.js';
 
 const FIXED_CONFIG = {
   owner:    'MinoPlay',

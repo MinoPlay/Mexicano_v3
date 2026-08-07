@@ -62,7 +62,7 @@ export function renderTournaments(container, params) {
       <div id="tournament-list">
         ${index.length === 0 ? `
           <div id="tournaments-loading" class="text-sm text-secondary text-center" style="padding:var(--space-md);">
-            ${Store.getGitHubConfig()?.pat ? '⏳ Loading…' : `
+            ${Store.isBackendConfigured() ? '⏳ Loading…' : `
               <div class="empty-state">
                 <div class="empty-state-icon">🏆</div>
                 <div class="empty-state-text">No tournaments yet</div>
@@ -83,9 +83,9 @@ export function renderTournaments(container, params) {
   }
 
   // If index is empty and GitHub is configured, lazy-fetch tournaments.json
-  if (Store.getGitHubConfig()?.pat) {
+  if (Store.isBackendConfigured()) {
     const loadingEl = container.querySelector('#tournaments-loading');
-    import('../services/github.js')
+    import('../services/backend.js')
       .then(({ fetchTournamentsIndexPublic }) => fetchTournamentsIndexPublic())
       .then(() => {
         if (!loadingEl?.isConnected) return;

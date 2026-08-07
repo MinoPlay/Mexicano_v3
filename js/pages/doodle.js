@@ -4,7 +4,7 @@ import { Store } from '../store.js';
 import { State } from '../state.js';
 import { showToast } from '../components/toast.js';
 import { calculateAllEloRankings } from '../services/elo.js';
-import { pushDoodleNow, cancelPendingSync, pullDoodleMonth, clearSessionTTL, pullMonthlyOverview, ensureDayMatchesLoaded } from '../services/github.js';
+import { pushDoodleNow, cancelPendingSync, pullDoodleMonth, clearSessionTTL, pullMonthlyOverview, ensureDayMatchesLoaded } from '../services/backend.js';
 import { sendDoodleAlert } from '../services/telegram.js';
 
 const WEEKDAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -954,7 +954,7 @@ export function renderDoodle(container, params = {}) {
     renderChangelog();
     updateFooter();
     const ym = `${currentYear}-${String(currentMonth).padStart(2, '0')}`;
-    if (Store.getGitHubConfig()?.pat) {
+    if (Store.isBackendConfigured()) {
       clearSessionTTL(`doodle_${ym}`);
       pullDoodleMonth(ym).then(({ content, changelog, updated }) => {
         if (updated) {

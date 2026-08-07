@@ -50,11 +50,17 @@ function renderCalendar(el, year, month, monthData) {
 
   // Build lookup: day number → { count, players }
   const lookup = {};
-  if (monthData && monthData.days) {
-    monthData.days.forEach(d => {
-      lookup[d.day] = d;
-    });
-  }
+  const days = Array.isArray(monthData) ? monthData : (monthData?.days || []);
+  days.forEach(d => {
+    // Service shape: { date:'YYYY-MM-DD', players:[], playerCount } → map to day number.
+    const dayNum = d.day ?? (d.date ? Number(d.date.slice(8, 10)) : null);
+    if (dayNum == null) return;
+    lookup[dayNum] = {
+      day: dayNum,
+      count: d.count ?? d.playerCount ?? (d.players ? d.players.length : 0),
+      players: d.players || [],
+    };
+  });
 
   // Leading empty cells
   for (let i = 0; i < startDay; i++) {
@@ -122,7 +128,13 @@ function showDayPlayers(players, year, month, day) {
 // ─── Stats Table ───
 
 function renderStatsTable(el, allMatches) {
-  const stats = getAttendanceStatistics(allMatches);
+  const rawStats = getAttendanceStatistics(allMatches);
+  const stats = (rawStats || []).map(s => ({
+    name: s.playerName ?? s.name,
+    attended: s.attendanceCount ?? s.attended ?? 0,
+    total: s.totalTournaments ?? s.total ?? 0,
+    rate: s.attendancePercentage != null ? s.attendancePercentage / 100 : (s.rate ?? 0),
+  }));
   el.innerHTML = '';
 
   if (!stats || !stats.length) {
@@ -229,14 +241,14 @@ export function renderAttendance(container, params = {}) {
   if (!allMatches.length) {
     const hasSummaryData = Store.getPlayersSummary().length > 0;
 
-    if (hasSummaryData && Store.getGitHubConfig()?.pat) {
+    if (hasSummaryData && Store.isBackendConfigured()) {
       content.innerHTML = `<div class="empty-state">
         <div class="empty-state-icon">⏳</div>
         <div class="empty-state-text">Loading match history…</div>
         <p class="text-secondary text-sm">This may take a moment</p>
       </div>`;
 
-      import('../services/github.js').then(({ ensureAllMatchesLoaded }) =>
+      import('../services/backend.js').then(({ ensureAllMatchesLoaded }) =>
         ensureAllMatchesLoaded()
       ).then(matches => {
         allMatches = matches;

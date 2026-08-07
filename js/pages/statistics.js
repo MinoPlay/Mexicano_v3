@@ -491,14 +491,14 @@ export function showPlayerProfile(playerName) {
   overlay.appendChild(dialog);
   document.body.appendChild(overlay);
 
-  import('../services/github.js').then(({ readPlayerSummary }) =>
+  import('../services/backend.js').then(({ readPlayerSummary }) =>
     readPlayerSummary(playerName)
   ).then(data => {
     if (data) {
       summaryData = data;
       renderBody();
     } else {
-      const hasGitHub = !!Store.getGitHubConfig()?.pat;
+      const hasGitHub = !!Store.isBackendConfigured();
       body.innerHTML = `
         <div class="empty-state">
           <div class="empty-state-icon">📊</div>
@@ -559,7 +559,7 @@ export async function attachEloFromPlayerHistoryFiles(stats, targetDate) {
   if (!playerIds.length) return;
 
   try {
-    const { pullEloHistoryForPlayerIds, getCachedEloHistoryForPlayerIds } = await import('../services/github.js');
+    const { pullEloHistoryForPlayerIds, getCachedEloHistoryForPlayerIds } = await import('../services/backend.js');
     await pullEloHistoryForPlayerIds(playerIds);
     const files = getCachedEloHistoryForPlayerIds(playerIds);
 
@@ -846,10 +846,10 @@ export function renderStatistics(container, params = {}) {
       const prevMonth = mo === 1
         ? `${y - 1}-12`
         : `${y}-${String(mo - 1).padStart(2, '0')}`;
-      if (Store.getGitHubConfig()?.pat) {
+      if (Store.isBackendConfigured()) {
         tableContainer.innerHTML = '<p class="text-center mt-lg">⏳ Loading…</p>';
         try {
-          const { pullMonthlyOverview } = await import('../services/github.js');
+          const { pullMonthlyOverview } = await import('../services/backend.js');
           await Promise.all([
             pullMonthlyOverview(activeFilter),
             pullMonthlyOverview(prevMonth),
@@ -899,9 +899,9 @@ export function renderStatistics(container, params = {}) {
     }
 
     // Try loading from GitHub
-    if (Store.getGitHubConfig()?.pat) {
+    if (Store.isBackendConfigured()) {
       tableContainer.innerHTML = '<p class="text-center mt-lg">⏳ Loading…</p>';
-      import('../services/github.js').then(({ ensureDayMatchesLoaded }) =>
+      import('../services/backend.js').then(({ ensureDayMatchesLoaded }) =>
         ensureDayMatchesLoaded(targetDate)
       ).then(async matches => {
         if (matches.length > 0) {
@@ -1102,7 +1102,7 @@ function renderAttendanceSection(panel) {
     const raw = {};
     let pull = null;
     try {
-      ({ pullMonthlyOverviewRaw: pull } = await import('../services/github.js'));
+      ({ pullMonthlyOverviewRaw: pull } = await import('../services/backend.js'));
     } catch { pull = null; }
     for (const ym of months) {
       let arr = null;

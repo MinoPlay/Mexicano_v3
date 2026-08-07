@@ -4,7 +4,7 @@ import { State } from './state.js';
 import { renderNav } from './components/nav.js';
 import { showToast } from './components/toast.js';
 import { showRefreshDialog } from './components/refresh-dialog.js';
-import { pullForRoute } from './services/github.js';
+import { pullForRoute } from './services/backend.js';
 import { showOnboardingDialog } from './components/onboarding-dialog.js';
 import { parsePatFromUrl } from './services/pat-url.js';
 
@@ -53,7 +53,7 @@ async function loadDevSecrets() {
 async function loadLocalData() {
   // Skip local data loading on deployed version or if GitHub is already configured
   const isDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-  if (!isDev || Store.getGitHubConfig()?.pat) return;
+  if (!isDev || Store.isBackendConfigured()) return;
 
   try {
     const status = await fetch('/api/local-data/status').then(r => {
@@ -98,9 +98,9 @@ async function init() {
 }
 init();
 
-// Cross-tab PAT sync: when another tab saves/clears the GitHub config, reload data here too.
+// Cross-tab config sync: when another tab saves/clears a backend config, reload data here too.
 window.addEventListener('storage', (e) => {
-  if (e.key !== 'mexicano_github_config') return;
+  if (e.key !== 'mexicano_github_config' && e.key !== 'mexicano_supabase_config') return;
   if (e.newValue) {
     loadFromGitHub();
   } else {
@@ -108,16 +108,16 @@ window.addEventListener('storage', (e) => {
   }
 });
 
-// Auto-pull from GitHub on every page open/refresh if configured.
+// Auto-pull from the active backend on every page open/refresh if configured.
 // In-memory Cache is empty on every page refresh, so pull always runs fresh.
 async function loadFromGitHub() {
-  if (!Store.getGitHubConfig()?.pat) return;
+  if (!Store.isBackendConfigured()) return;
   try {
     await pullForRoute(window.location.hash);
     // Re-render the current page with freshly pulled data
     router.resolve();
   } catch (e) {
-    console.warn('GitHub auto-pull failed:', e);
+    console.warn('Backend auto-pull failed:', e);
     showToast(`⚠️ Sync failed: ${e.message}`);
   }
 }

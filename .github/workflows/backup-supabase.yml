@@ -1,0 +1,66 @@
+name: Backup Supabase to GitHub archive
+
+# Reads raw source-of-truth from Supabase and commits it back to the archive
+# repository as JSON (the same layout the app used to produce). GitHub is a
+# read-only backup; the live backend is Supabase.
+#
+# Required secrets (repo or environment):
+#   SUPABASE_URL                 - https://xxxx.supabase.co
+#   SUPABASE_SERVICE_ROLE_KEY    - service_role key (read access under RLS)
+#   ARCHIVE_REPO_TOKEN           - PAT with contents:write on the archive repo
+#
+# Optional repo variables (with sensible defaults):
+#   ARCHIVE_REPO      (default: MinoPlay/DataHub_Mexicano)
+#   ARCHIVE_BASE_PATH (default: mexicano_v3/backup-data)
+
+on:
+  schedule:
+    - cron: '0 3 * * *'   # daily at 03:00 UTC
+  workflow_dispatch: {}
+
+concurrency:
+  group: supabase-backup
+  cancel-in-progress: false
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout app repo (for the backup script)
+        uses: actions/checkout@v4
+
+      - name: Checkout archive repo
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ vars.ARCHIVE_REPO || 'MinoPlay/DataHub_Mexicano' }}
+          token: ${{ secrets.ARCHIVE_REPO_TOKEN }}
+          path: _archive
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install -r scripts/requirements.txt
+
+      - name: Dump Supabase to archive layout
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          python scripts/backup_supabase_to_github.py \
+            --out-dir "_archive/${{ vars.ARCHIVE_BASE_PATH || 'mexicano_v3/backup-data' }}"
+
+      - name: Commit and push on diff
+        working-directory: _archive
+        run: |
+          git config user.name  "mexicano-backup-bot"
+          git config user.email "actions@github.com"
+          if [ -n "$(git status --porcelain)" ]; then
+            git add -A
+            git commit -m "chore(backup): Supabase snapshot $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            git push
+          else
+            echo "No changes to back up."
+          fi

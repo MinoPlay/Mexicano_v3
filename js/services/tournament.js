@@ -7,7 +7,7 @@ import { State } from '../state.js';
 import { rankPlayers } from './ranking.js';
 import { calculateAllEloRankings, processMatchElo } from './elo.js';
 import { logRoundResult } from './round-log.js';
-import { ensureAllMatchesLoaded } from './github.js';
+import { ensureAllMatchesLoaded } from './backend.js';
 
 // ─── Helpers ───
 
@@ -158,7 +158,7 @@ export function startTournament(tournament) {
 export function triggerNewTournamentDayFile(tournament) {
   const date = tournament.tournamentDate;
   console.log('[tournament] trigger day file:', date);
-  return import('./github.js').then(({ cancelPendingSync, pushTournamentDayFile }) => {
+  return import('./backend.js').then(({ cancelPendingSync, pushTournamentDayFile }) => {
     cancelPendingSync();
     return pushTournamentDayFile(tournament);
   })
@@ -173,7 +173,7 @@ export function triggerNewTournamentDayFile(tournament) {
 export function triggerTournamentIndexEntry(tournament) {
   const date = tournament.tournamentDate;
   console.log('[tournament] trigger tournaments.json:', date);
-  import('./github.js').then(({ updateTournamentIndexEntry }) =>
+  import('./backend.js').then(({ updateTournamentIndexEntry }) =>
     updateTournamentIndexEntry({
       date,
       playerCount: tournament.players.length,
@@ -233,7 +233,7 @@ export function setMatchScore(tournament, roundNumber, matchId, team1Score, team
 
   saveTournamentState(tournament);
   // Suppress auto-push on individual score updates — only push on round advance / end tournament
-  import('./github.js').then(({ cancelPendingSync }) => cancelPendingSync()).catch(() => {});
+  import('./backend.js').then(({ cancelPendingSync }) => cancelPendingSync()).catch(() => {});
   return tournament;
 }
 
@@ -299,7 +299,7 @@ export function startNextRound(tournament) {
 
   saveTournamentState(tournament);
   // Push all scores for this round in one commit
-  import('./github.js').then(({ cancelPendingSync, flushPush }) => {
+  import('./backend.js').then(({ cancelPendingSync, flushPush }) => {
     cancelPendingSync();
     flushPush();
   }).catch(() => {});
@@ -470,7 +470,7 @@ async function finalizeCompletedTournament(tournament) {
   }).catch(() => {});
 
   // Immediately sync completed tournament to GitHub
-  import('./github.js').then(async ({ flushPush, markMatchDateDirty, updateTournamentIndexEntry }) => {
+  import('./backend.js').then(async ({ flushPush, markMatchDateDirty, updateTournamentIndexEntry }) => {
     markMatchDateDirty(tournament.tournamentDate);
 
     try {
@@ -504,7 +504,7 @@ export function retryCompletedTournamentPush() {
 
   console.log('[tournament] retrying push for completed tournament:', marker);
 
-  import('./github.js').then(({ flushPush, markMatchDateDirty, updateTournamentIndexEntry }) => {
+  import('./backend.js').then(({ flushPush, markMatchDateDirty, updateTournamentIndexEntry }) => {
     markMatchDateDirty(tournament.tournamentDate);
 
     const indexPlayers = new Set();
@@ -730,7 +730,7 @@ export function saveTournamentState(tournament) {
   State.emit('tournament-changed', tournament);
 
   // Mark this date dirty so only its match file is pushed
-  import('./github.js').then(({ markMatchDateDirty }) => {
+  import('./backend.js').then(({ markMatchDateDirty }) => {
     markMatchDateDirty(tournament.tournamentDate);
   }).catch(() => {});
 }
@@ -759,7 +759,7 @@ export async function deleteTournament(date) {
 
   // Remove remote copies: tournaments.json entry + the generated date file
   try {
-    const { removeTournamentIndexEntry, deleteTournamentDayFile, cancelPendingSync } = await import('./github.js');
+    const { removeTournamentIndexEntry, deleteTournamentDayFile, cancelPendingSync } = await import('./backend.js');
     cancelPendingSync();
     await removeTournamentIndexEntry(date);
     await deleteTournamentDayFile(date);
@@ -782,7 +782,7 @@ export function updateAccessCode(date, code) {
   State.emit('tournament-changed', tournament);
 
   // Push to GitHub with same pattern as other mutations
-  import('./github.js').then(({ markMatchDateDirty, flushPush }) => {
+  import('./backend.js').then(({ markMatchDateDirty, flushPush }) => {
     markMatchDateDirty(date);
     flushPush();
   }).catch(() => {});

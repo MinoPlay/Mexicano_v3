@@ -53,8 +53,8 @@ export function renderTournament(container, params) {
       render();
       // Fire a background refresh so we always show the latest round data,
       // bypassing the session-level pull guard that runs only once per page load.
-      if (Store.getGitHubConfig()?.pat) {
-        import('../services/github.js')
+      if (Store.isBackendConfigured()) {
+        import('../services/backend.js')
           .then(({ fetchActiveTournamentJson, ensureDayMatchesLoaded, readDayMatches }) => {
             return fetchActiveTournamentJson().then(fresh => {
               if (fresh && !fresh.isCompleted && fresh.tournamentDate === date) {
@@ -92,10 +92,10 @@ export function renderTournament(container, params) {
     }
 
     // Try loading from GitHub on demand
-    if (Store.getGitHubConfig()?.pat) {
+    if (Store.isBackendConfigured()) {
       isLoading = true;
       render(); // shows loading state
-      import('../services/github.js')
+      import('../services/backend.js')
         .then(({ ensureDayMatchesLoaded }) => ensureDayMatchesLoaded(date))
         .then(() => {
           tournament = loadTournamentByDate(date);

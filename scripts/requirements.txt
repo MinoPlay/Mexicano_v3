@@ -1,0 +1,2 @@
+# Python deps for Supabase migration + backup scripts (scripts/*.py).
+requests>=2.31

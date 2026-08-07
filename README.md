@@ -57,9 +57,48 @@ The server exposes these via local API endpoints:
 
 On app load, if the local data API is available, matches and players are imported into `localStorage` automatically (once per session).
 
-### Cloud / production — GitHub repository backend
+### Cloud / production — Supabase backend (preferred)
 
-When deployed (e.g., on GitHub Pages), data is persisted to a **GitHub repository** via the GitHub Contents API. No server is needed — the app calls the API directly from the browser.
+When a **Supabase** config is set, the app uses Supabase (Postgres) as the live
+backend. GitHub is demoted to a **read-only JSON archive** (see below).
+
+#### Setup
+
+1. Create a Supabase project and apply the schema in `supabase/migrations/0001_init.sql`
+   (SQL editor or `supabase db push`).
+2. Open the app → **Settings** (⚙️) → **Supabase Backend** → enter your project
+   **URL** and public **anon key**, then Save. Supabase is used whenever this config
+   is present (GitHub is the fallback otherwise).
+
+#### What is stored vs. derived
+
+Supabase stores **only raw source-of-truth**. Everything else is **computed at
+runtime** in the browser (`js/services/derive.js`) and never persisted:
+
+| Stored (Supabase table) | Derived at runtime (not stored) |
+|---|---|
+| `matches` (core) | ELO ratings |
+| `players` (registry: name, match_padel_id) | Player statistics (wins/losses/points/avg) |
+| `active_tournament` (in-progress state) | Monthly overviews |
+| `doodle`, `attendance_manual` | Per-player ELO history |
+| `changelog`, `administrators` | Tournaments index |
+
+#### Migration & backup
+
+| Task | Script / workflow |
+|---|---|
+| One-time populate Supabase from the GitHub archive | `python scripts/migrate_to_supabase.py --source-dir <backup-data>` (or `--gh-owner/--gh-repo`) |
+| Scheduled backup Supabase → GitHub JSON archive | `.github/workflows/backup-supabase.yml` (daily cron) using `scripts/backup_supabase_to_github.py` |
+
+Migration/backup need `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` env vars (see
+each script's header). The service role key must be a GitHub Action secret — never
+commit it.
+
+### Cloud / production — GitHub repository backend (legacy / archive)
+
+When deployed (e.g., on GitHub Pages) without Supabase, data is persisted to a
+**GitHub repository** via the GitHub Contents API. No server is needed — the app
+calls the API directly from the browser.
 
 #### Setup
 
@@ -93,7 +132,8 @@ Members, theme, and current user are **local-only** and not synced to GitHub.
 |---|---|---|
 | **Local dev** (no `local-config.json`) | Demo seed data | Auto-populated in `localStorage` on first load |
 | **Local dev** (with `local-config.json`) | Local JSON files on disk | Served by `server.js` via `/api/local-data/*` endpoints |
-| **Cloud / production** | GitHub repository | GitHub Contents API, configured in Settings |
+| **Cloud / production** (Supabase set) | Supabase (Postgres) | `@supabase/supabase-js`, configured in Settings |
+| **Cloud / production** (no Supabase) | GitHub repository | GitHub Contents API, configured in Settings |
 
 ## Testing
 

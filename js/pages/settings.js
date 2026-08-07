@@ -1,7 +1,7 @@
 import { Store } from '../store.js';
 import { getMembers, addMember, removeMember } from '../services/members.js';
 import { showToast } from '../components/toast.js';
-import { testConnection, onSyncStatus, getSyncStatus, pushDoodleNow, addPlayerToPlayersJson } from '../services/github.js';
+import { testConnection, onSyncStatus, getSyncStatus, pushDoodleNow, addPlayerToPlayersJson } from '../services/backend.js';
 import { isInstalled } from '../components/install-prompt.js';
 import { sendTelegramTestAlert, sendTournamentTestAlert } from '../services/telegram.js';
 import { showManualAttendanceDialog } from '../components/manual-attendance-dialog.js';
@@ -56,6 +56,30 @@ export function renderSettings(container, params) {
         </div>
       </div>
 
+      <!-- Supabase Backend -->
+      <div class="settings-section">
+        <details class="members-collapsible">
+        <summary class="settings-section-title members-summary">
+          Supabase Backend
+          <span id="supabase-sync-icon" class="github-sync-icon" title="Sync status">⬜</span>
+        </summary>
+        <p class="text-sm text-secondary" style="margin-bottom:var(--space-sm);">
+          Store app data in Supabase (preferred). When set, Supabase is used instead of GitHub.
+          Enter your project URL and the public <strong>anon</strong> key.
+        </p>
+        <div class="flex flex-col gap-sm">
+          <input type="text"     id="supabase-url"      placeholder="https://xxxx.supabase.co" autocomplete="off" />
+          <input type="password" id="supabase-anon-key" placeholder="anon public key" autocomplete="off" />
+        </div>
+        <div class="flex gap-sm mt-sm">
+          <button id="supabase-save-btn"  class="btn btn-primary"   style="flex:1;">Save</button>
+          <button id="supabase-test-btn"  class="btn btn-secondary" style="flex:1;">Test</button>
+          <button id="supabase-clear-btn" class="btn btn-ghost"     style="flex:1;">Clear</button>
+        </div>
+        <div id="supabase-status-msg" class="text-sm mt-sm" style="min-height:1.25rem;"></div>
+        </details>
+      </div>
+
       <!-- GitHub Backend -->
       <div class="settings-section">
         <details class="members-collapsible">
@@ -64,7 +88,7 @@ export function renderSettings(container, params) {
           <span id="github-sync-icon" class="github-sync-icon" title="Sync status">⬜</span>
         </summary>
         <p class="text-sm text-secondary" style="margin-bottom:var(--space-sm);">
-          Store app data in a GitHub repository. A Personal Access Token (PAT) with <strong>repo</strong> scope is required.
+          Legacy backend / read-only archive. Store app data in a GitHub repository. A Personal Access Token (PAT) with <strong>repo</strong> scope is required.
         </p>
         <div class="flex flex-col gap-sm">
           <input type="text"  id="github-owner"     value="MinoPlay"                   disabled style="opacity:0.6;cursor:not-allowed;" />
@@ -220,6 +244,67 @@ export function renderSettings(container, params) {
   // Add attendance dialog
   container.querySelector('#attendance-add-btn').addEventListener('click', () => {
     showManualAttendanceDialog();
+  });
+
+  // ─── Supabase Backend ─────────────────────────────────────────────────────
+
+  const sbUrl      = container.querySelector('#supabase-url');
+  const sbKey      = container.querySelector('#supabase-anon-key');
+  const sbStatus   = container.querySelector('#supabase-status-msg');
+  const sbSyncIcon = container.querySelector('#supabase-sync-icon');
+
+  const savedSb = Store.getSupabaseConfig();
+  if (savedSb) {
+    sbUrl.value = savedSb.url || '';
+    sbKey.value = savedSb.anonKey || '';
+  }
+
+  function updateSbSyncIcon(status) {
+    const map = { idle: '⬜', syncing: '🔄', success: '✅', error: '❌' };
+    sbSyncIcon.textContent = map[status] || '⬜';
+    sbSyncIcon.title = `Sync: ${status}`;
+  }
+  updateSbSyncIcon(getSyncStatus());
+
+  function setSbStatusMsg(msg, isError = false) {
+    sbStatus.textContent = msg;
+    sbStatus.style.color = isError ? 'var(--color-danger, #ef4444)' : 'var(--color-success, #22c55e)';
+  }
+
+  container.querySelector('#supabase-save-btn').addEventListener('click', () => {
+    const url = sbUrl.value.trim();
+    const anonKey = sbKey.value.trim();
+    if (!url || !anonKey) {
+      setSbStatusMsg('Both project URL and anon key are required.', true);
+      return;
+    }
+    Store.setSupabaseConfig({ url, anonKey });
+    showToast('Supabase config saved — reloading…');
+    location.reload();
+  });
+
+  container.querySelector('#supabase-test-btn').addEventListener('click', async () => {
+    const url = sbUrl.value.trim();
+    const anonKey = sbKey.value.trim();
+    if (!url || !anonKey) {
+      setSbStatusMsg('Enter URL and anon key before testing.', true);
+      return;
+    }
+    Store.setSupabaseConfig({ url, anonKey });
+    setSbStatusMsg('Testing connection…');
+    updateSbSyncIcon('syncing');
+    const result = await testConnection();
+    updateSbSyncIcon(result.ok ? 'success' : 'error');
+    setSbStatusMsg(result.message, !result.ok);
+  });
+
+  container.querySelector('#supabase-clear-btn').addEventListener('click', () => {
+    Store.clearSupabaseConfig();
+    sbUrl.value = '';
+    sbKey.value = '';
+    setSbStatusMsg('Configuration cleared.');
+    updateSbSyncIcon('idle');
+    showToast('Supabase config cleared');
   });
 
   // ─── GitHub Backend ───────────────────────────────────────────────────────

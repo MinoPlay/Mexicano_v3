@@ -39,7 +39,7 @@ export const Store = {
     try {
       localStorage.setItem(PREFIX + key, JSON.stringify(value));
       // Trigger debounced auto-push (lazy import to avoid circular deps)
-      import('./services/github.js').then(({ schedulePush }) => schedulePush(key)).catch(() => {});
+      import('./services/backend.js').then(({ schedulePush }) => schedulePush(key)).catch(() => {});
     } catch (e) {
       console.error('Store.set error:', e);
     }
@@ -180,6 +180,36 @@ export const Store = {
 
   clearGitHubConfig() {
     this.remove('github_config');
+  },
+
+  // ─── Supabase Backend config ───
+
+  getSupabaseConfig() {
+    return this.get('supabase_config') || null;
+  },
+
+  setSupabaseConfig(cfg) {
+    // cfg: { url, anonKey } — stored as-is in localStorage
+    this.set('supabase_config', cfg);
+  },
+
+  clearSupabaseConfig() {
+    this.remove('supabase_config');
+  },
+
+  /** True when either backend (Supabase preferred, GitHub fallback) is configured. */
+  isBackendConfigured() {
+    const sb = this.getSupabaseConfig();
+    if (sb?.url && sb?.anonKey) return true;
+    return !!this.getGitHubConfig()?.pat;
+  },
+
+  /** Which backend is active: 'supabase' | 'github' | null. */
+  activeBackend() {
+    const sb = this.getSupabaseConfig();
+    if (sb?.url && sb?.anonKey) return 'supabase';
+    if (this.getGitHubConfig()?.pat) return 'github';
+    return null;
   },
 
   // ─── Summary data (pre-computed from Python scripts, read-only) ───

@@ -506,12 +506,12 @@ export function renderHome(container, params) {
   // Render table after DOM is ready
   if (latestTournamentStats.length > 0) {
     renderTable();
-  } else if (latestDate && Store.getGitHubConfig()?.pat) {
+  } else if (latestDate && Store.isBackendConfigured()) {
     // Lazy-fetch latest date's matches from GitHub (same pattern as statistics.js)
     const noDataEl = container.querySelector('#latest-no-data');
     if (noDataEl) {
       noDataEl.textContent = '⏳ Loading…';
-      import('../services/github.js').then(({ ensureDayMatchesLoaded }) =>
+      import('../services/backend.js').then(({ ensureDayMatchesLoaded }) =>
         ensureDayMatchesLoaded(latestDate)
       ).then(fetched => {
         if (!noDataEl.isConnected) return;
@@ -540,12 +540,12 @@ export function renderHome(container, params) {
   // Always fetch monthly overview to get correct month-over-month ELO change.
   // The fallback from local matches uses players_summary.previousElo which is
   // per-tournament, not per-month — so we must replace it once overview arrives.
-  if (Store.getGitHubConfig()?.pat) {
+  if (Store.isBackendConfigured()) {
     const noDataEl = container.querySelector('#current-month-no-data');
     if (currentMonthStats.length === 0 && noDataEl) {
       noDataEl.textContent = '⏳ Loading…';
     }
-    import('../services/github.js').then(({ pullMonthlyOverview }) =>
+    import('../services/backend.js').then(({ pullMonthlyOverview }) =>
       Promise.all([
         pullMonthlyOverview(currentYearMonth),
         pullMonthlyOverview(prevYearMonth),

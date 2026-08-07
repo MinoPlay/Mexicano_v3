@@ -5,7 +5,7 @@ import {
 } from '../services/elo.js';
 import { Store } from '../store.js';
 import { getMembers } from '../services/members.js';
-import { pullEloHistoryForPlayerIds, getCachedEloHistoryForPlayerIds } from '../services/github.js';
+import { pullEloHistoryForPlayerIds, getCachedEloHistoryForPlayerIds } from '../services/backend.js';
 
 // ─── Color Generator ───
 
@@ -773,7 +773,7 @@ export function renderEloCharts(container, params = {}) {
   const tournamentChartRef = { render: null };
 
   const playersSummary = Store.getPlayersSummary();
-  const needsPlayersPull = !playersSummary.length && Store.getGitHubConfig()?.pat;
+  const needsPlayersPull = !playersSummary.length && Store.isBackendConfigured();
 
   if (needsPlayersPull) {
     content.style.paddingLeft = '';
@@ -784,7 +784,7 @@ export function renderEloCharts(container, params = {}) {
       <p class="text-secondary text-sm">This may take a moment</p>
     </div>`;
 
-    import('../services/github.js').then(({ pullForRoute }) =>
+    import('../services/backend.js').then(({ pullForRoute }) =>
       pullForRoute('#/elo-charts')
     ).then(() => {
       allMatches = Store.getMatches();
