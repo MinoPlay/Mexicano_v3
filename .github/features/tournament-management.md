@@ -123,6 +123,23 @@ Admin names are loaded from `data/administrators.json` (not hardcoded) at app in
 - Complete tournaments (`completeTournament()`)
 - Edit access code (`updateAccessCode()`)
 
+### End Tournament — progress dialog
+The "End Tournament" confirm popup shows live per-operation status once confirmed.
+`completeTournament(tournament, onProgress)` accepts an optional progress reporter
+called as `onProgress(id, status, detail)` with `status` ∈ `pending | running | success | error`.
+Reported steps:
+| id | Step |
+|----|------|
+| `finalize` | Local finalize (ELO replay + Store writes) |
+| `push` | GitHub day-file push (`flushPush`) |
+| `index` | GitHub tournaments index update (`updateTournamentIndexEntry`) |
+| `telegram` | Telegram tournament-completed alert (reported by the page, not the service) |
+
+When a reporter is supplied, `completeTournament` **awaits** the GitHub sync (instead of
+the default fire-and-forget) and rejects if `push`/`index` fail, so the dialog can render
+✅ / ❌ and keep the popup open with the error message. Failures are also written to the
+Logs tab via `logError`. Without a reporter, behavior is unchanged (fire-and-forget sync).
+
 **Non-Admins**:
 - Cannot perform ANY mutations on tournaments (all write endpoints guarded in service layer)
 - Edit UI (score buttons, round actions, access code edit) hidden/disabled

@@ -430,23 +430,45 @@ export function renderTournament(container, params) {
         ? `Ending the tournament will remove ${unscoredCount} match${unscoredCount > 1 ? 'es' : ''} that ${unscoredCount > 1 ? 'have' : 'has'} no score. This cannot be undone.`
         : 'This will finalize the tournament. Match history will be saved.';
 
-      showConfirmDialog(title, message, async () => {
-        try {
-          if (unscoredCount > 0) {
-            for (const round of tournament.rounds) {
-              round.matches = round.matches.filter(m => isMatchComplete(m));
-            }
-            tournament.rounds = tournament.rounds.filter(r => r.matches.length > 0);
+      showProgressConfirmDialog(title, message, [
+        { id: 'finalize', label: 'Finalizing results & ELO' },
+        { id: 'push', label: 'Saving matches to GitHub' },
+        { id: 'index', label: 'Updating tournaments index' },
+        { id: 'telegram', label: 'Sending Telegram alert' },
+      ], async (api) => {
+        if (unscoredCount > 0) {
+          for (const round of tournament.rounds) {
+            round.matches = round.matches.filter(m => isMatchComplete(m));
           }
-          await completeTournament(tournament);
-          import('../services/telegram.js')
-            .then(({ sendTournamentCompletedAlert }) => sendTournamentCompletedAlert(tournament))
-            .catch(err => console.warn('[telegram] tournament-completed alert failed:', err));
-          showToast('Tournament completed!');
-          render();
-        } catch (err) {
-          showToast(err.message || 'Failed to end tournament');
+          tournament.rounds = tournament.rounds.filter(r => r.matches.length > 0);
         }
+
+        // completeTournament reports finalize/push/index progress. When any
+        // GitHub step fails it rejects — the step status already shows the error,
+        // so swallow here and still attempt the (independent) Telegram alert.
+        try {
+          await completeTournament(tournament, (id, status, detail) => api.setStep(id, status, detail));
+        } catch (err) {
+          console.warn('[tournament] completion sync failed:', err);
+          import('../services/round-log.js')
+            .then(({ logError }) => logError('end tournament', err))
+            .catch(() => {});
+        }
+
+        api.setStep('telegram', 'running');
+        try {
+          const { sendTournamentCompletedAlert } = await import('../services/telegram.js');
+          await sendTournamentCompletedAlert(tournament);
+          api.setStep('telegram', 'success');
+        } catch (err) {
+          console.warn('[telegram] tournament-completed alert failed:', err);
+          api.setStep('telegram', 'error', err);
+          import('../services/round-log.js')
+            .then(({ logError }) => logError('telegram tournament-completed', err))
+            .catch(() => {});
+        }
+
+        render();
       });
     });
 
@@ -679,7 +701,103 @@ export function renderTournament(container, params) {
     return el.innerHTML;
   }
 
-  // ─── Init ───
+  // ─── Confirm dialog with live operation status ───
+  // Shows the same confirm prompt, but on confirm keeps the dialog open and
+  // renders a checklist of async steps that flip to ✅ / ❌ as they settle.
+  // `onConfirm(api)` receives { setStep(id, status, detail) } and returns a
+  // promise; the dialog surfaces a Close/Done button once it resolves.
+  function showProgressConfirmDialog(title, message, steps, onConfirm) {
+    const STATUS_ICON = { pending: '○', running: '⏳', success: '✅', error: '❌' };
+    const state = new Map(steps.map(s => [s.id, { ...s, status: 'pending', detail: '' }]));
+
+    const overlay = document.createElement('div');
+    overlay.className = 'dialog-overlay';
+    overlay.innerHTML = `
+      <div class="dialog">
+        <div class="dialog-header">
+          <strong>${esc(title)}</strong>
+        </div>
+        <div class="dialog-body">
+          <p class="text-sm text-secondary mb-md">${esc(message)}</p>
+          <div id="dialog-steps" style="display:none;" class="mb-md"></div>
+          <div class="flex gap-sm">
+            <button class="btn btn-secondary" style="flex:1" id="dialog-cancel">Cancel</button>
+            <button class="btn btn-danger" style="flex:1" id="dialog-confirm">Confirm</button>
+          </div>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+    requestAnimationFrame(() => overlay.classList.add('active'));
+
+    const stepsEl = overlay.querySelector('#dialog-steps');
+    const cancelBtn = overlay.querySelector('#dialog-cancel');
+    const confirmBtn = overlay.querySelector('#dialog-confirm');
+
+    function renderSteps() {
+      stepsEl.innerHTML = [...state.values()].map(s => {
+        const color = s.status === 'error' ? 'var(--danger, #e53935)'
+          : s.status === 'success' ? 'var(--success, #2e7d32)'
+          : 'var(--text-primary)';
+        const detail = s.status === 'error' && s.detail
+          ? `<div style="font-size:var(--font-size-xs);color:var(--danger, #e53935);margin:0 0 4px 22px;white-space:pre-wrap;word-break:break-word;">${esc(s.detail)}</div>`
+          : '';
+        return `
+          <div style="display:flex;align-items:center;gap:8px;padding:3px 0;font-size:var(--font-size-sm);color:${color};">
+            <span style="width:16px;text-align:center;">${STATUS_ICON[s.status]}</span>
+            <span>${esc(s.label)}</span>
+          </div>${detail}`;
+      }).join('');
+    }
+
+    function setStep(id, status, detail) {
+      const s = state.get(id);
+      if (!s) return;
+      s.status = status;
+      if (detail !== undefined && detail !== null) {
+        s.detail = detail instanceof Error ? (detail.message || String(detail)) : String(detail);
+      }
+      renderSteps();
+    }
+
+    function close() {
+      overlay.classList.remove('active');
+      setTimeout(() => overlay.remove(), 300);
+    }
+
+    cancelBtn.addEventListener('click', close);
+    overlay.addEventListener('click', (e) => {
+      if (e.target === overlay && confirmBtn.dataset.running !== '1') close();
+    });
+
+    confirmBtn.addEventListener('click', async () => {
+      if (confirmBtn.dataset.running === '1') return;
+      confirmBtn.dataset.running = '1';
+      cancelBtn.style.display = 'none';
+      confirmBtn.disabled = true;
+      confirmBtn.textContent = 'Working…';
+      stepsEl.style.display = '';
+      renderSteps();
+
+      try {
+        await onConfirm({ setStep });
+      } catch (err) {
+        console.warn('[tournament] finish dialog handler failed:', err);
+      }
+
+      const anyError = [...state.values()].some(s => s.status === 'error');
+      confirmBtn.disabled = false;
+      confirmBtn.dataset.running = '0';
+      confirmBtn.textContent = anyError ? 'Close' : 'Done';
+      confirmBtn.className = anyError ? 'btn btn-secondary' : 'btn btn-primary';
+      confirmBtn.style.flex = '1';
+      const newBtn = confirmBtn.cloneNode(true);
+      confirmBtn.parentNode.replaceChild(newBtn, confirmBtn);
+      newBtn.addEventListener('click', close);
+      if (!anyError) showToast('Tournament completed!');
+    });
+  }
+
   // initLoad() is called at the top of renderTournament
 
   // Subscribe to external changes

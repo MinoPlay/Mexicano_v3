@@ -31,6 +31,22 @@ Show round-by-round results during active tournaments. Each entry captures match
 ## When Logged
 - When `startNextRound()` fires (logs the just-completed round)
 - When `completeTournament()` fires (logs the final round)
+- When a completion step **fails** (`logError`) — e.g. the fire-and-forget GitHub
+  push after finishing a tournament, or the Telegram alert dispatch. These are the
+  silent, often mobile-only failures where the tournament looks finished locally but
+  never reached GitHub. Error entries are captured for any admin **even when the Logs
+  toggle is off**, so they can be reviewed by enabling the tab afterwards.
+
+## Error Entry Shape
+```json
+{
+  "ts": "2026-08-11T07:00:00.000Z",
+  "type": "error",
+  "context": "post-complete GitHub push",
+  "message": "Error: HTTP 409 ..."
+}
+```
+Rendered newest-first with a red left border and ⚠️ header (`context — timestamp`).
 
 ## UI — `/logs` page
 - Bottom nav tab: 📝 Logs

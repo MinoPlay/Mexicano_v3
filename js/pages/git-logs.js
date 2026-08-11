@@ -13,12 +13,27 @@ function renderEntries(log) {
       No round results logged yet.
     </div>`;
   }
-  return log.map(e => `
+  return log.map(e => e.type === 'error' ? renderErrorEntry(e) : `
     <div style="padding:var(--space-sm) var(--space-md);border-bottom:1px solid var(--border-light);">
       <div style="font-size:var(--font-size-sm);font-weight:700;color:var(--text-primary);margin-bottom:2px;">${e.tournamentDate} Round ${e.roundNumber}</div>
       ${e.matches.map(renderMatch).join('')}
     </div>
   `).join('');
+}
+
+function esc(s) {
+  return String(s ?? '')
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function renderErrorEntry(e) {
+  const when = (e.ts || '').replace('T', ' ').replace(/\..*$/, '');
+  return `
+    <div style="padding:var(--space-sm) var(--space-md);border-bottom:1px solid var(--border-light);border-left:3px solid var(--danger, #e53935);">
+      <div style="font-size:var(--font-size-sm);font-weight:700;color:var(--danger, #e53935);margin-bottom:2px;">⚠️ ${esc(e.context)} — ${esc(when)}</div>
+      <div style="font-size:var(--font-size-xs);color:var(--text-primary);white-space:pre-wrap;word-break:break-word;">${esc(e.message)}</div>
+    </div>
+  `;
 }
 
 export function renderLogs(container) {

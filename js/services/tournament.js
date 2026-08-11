@@ -306,7 +306,7 @@ export function startNextRound(tournament) {
   return tournament;
 }
 
-export function completeTournament(tournament) {
+export function completeTournament(tournament, onProgress) {
   if (Store.getCurrentUser() && !Store.isAdministrator()) throw new Error("Tournament mutations require admin access");
   // Idempotent guard: if already completed, just retry the push
   if (tournament.isCompleted && tournament.completedAt) {
@@ -320,10 +320,17 @@ export function completeTournament(tournament) {
   // Log final round results
   logRoundResult(tournament, tournament.currentRoundNumber);
 
-  return finalizeCompletedTournament(tournament);
+  return finalizeCompletedTournament(tournament, onProgress);
 }
 
-async function finalizeCompletedTournament(tournament) {
+async function finalizeCompletedTournament(tournament, onProgress) {
+  // Optional progress reporter. Never allowed to throw into the completion flow.
+  const report = (id, status, detail) => {
+    if (typeof onProgress !== 'function') return;
+    try { onProgress(id, status, detail); } catch { /* ignore reporter errors */ }
+  };
+
+  report('finalize', 'running');
   // The pre-tournament ELO baseline is derived by replaying the ENTIRE match
   // history from scratch (calculateAllEloRankings starts every player at 1000).
   // If the local cache is only partially loaded (lazy loading), that baseline
@@ -450,6 +457,8 @@ async function finalizeCompletedTournament(tournament) {
   updatedEntries.sort((a, b) => a.date.localeCompare(b.date));
   Store.setTournamentsIndex(updatedEntries);
 
+  report('finalize', 'success');
+
   // Write completed tournament day + tournaments index to local dev server
   import('./local.js').then(({ writeTournamentDay, writeTournamentsIndex }) => {
     const dateMatches = allMatches.filter(m => m.date === tournament.tournamentDate);
@@ -469,23 +478,62 @@ async function finalizeCompletedTournament(tournament) {
       .catch(e => console.warn('[local] tournaments index write failed:', e));
   }).catch(() => {});
 
-  // Immediately sync completed tournament to GitHub
-  import('./github.js').then(async ({ flushPush, markMatchDateDirty, updateTournamentIndexEntry }) => {
+  // Immediately sync completed tournament to GitHub. When a progress reporter is
+  // supplied (finish-tournament dialog), the caller awaits this promise so the
+  // dialog can show live per-step status; otherwise it stays fire-and-forget.
+  report('push', 'pending');
+  report('index', 'pending');
+  const syncPromise = import('./github.js').then(async ({ flushPush, markMatchDateDirty, updateTournamentIndexEntry }) => {
     markMatchDateDirty(tournament.tournamentDate);
 
+    // Serialize commits: day file first, then index — concurrent writes to the
+    // same branch cause GitHub 409 fast-forward conflicts.
+    report('push', 'running');
     try {
-      // Serialize commits: day file first, then index — concurrent writes to the
-      // same branch cause GitHub 409 fast-forward conflicts.
       await flushPush();
-      await updateTournamentIndexEntry(indexEntry).catch(() => {});
-      // Push succeeded — safe to clear local tournament data
-      Store.clearActiveTournament();
-      localStorage.removeItem('mexicano_completion_marker');
+      report('push', 'success');
     } catch (e) {
+      report('push', 'error', e);
       console.warn('[tournament] post-complete push failed:', e);
+      // Surface in the Logs tab: this is the silent, mobile-only failure mode
+      // where the tournament looks finished locally but never reached GitHub.
+      import('./round-log.js')
+        .then(({ logError }) => logError('post-complete GitHub push', e))
+        .catch(() => {});
       // Push failed — local data preserved. Will retry on reconnect.
+      throw e;
     }
-  }).catch(() => {});
+
+    report('index', 'running');
+    try {
+      await updateTournamentIndexEntry(indexEntry);
+      report('index', 'success');
+    } catch (e) {
+      report('index', 'error', e);
+      console.warn('[tournament] post-complete index update failed:', e);
+      import('./round-log.js')
+        .then(({ logError }) => logError('post-complete tournaments index update', e))
+        .catch(() => {});
+      throw e;
+    }
+
+    // Push succeeded — safe to clear local tournament data
+    Store.clearActiveTournament();
+    localStorage.removeItem('mexicano_completion_marker');
+  }).catch((e) => {
+    // Module-load or push/index failure already reported above; report here only
+    // for the module-load case where no step-level report fired.
+    report('push', 'error', e);
+    import('./round-log.js')
+      .then(({ logError }) => logError('post-complete GitHub push (module load)', e))
+      .catch(() => {});
+  });
+
+  // Only make callers wait for the sync when they asked for progress. Existing
+  // callers keep the original fire-and-forget timing.
+  if (typeof onProgress === 'function') {
+    await syncPromise;
+  }
 
   return tournament;
 }
@@ -540,6 +588,9 @@ export function retryCompletedTournamentPush() {
       })
       .catch(e => {
         console.warn('[tournament] retry push failed, will try again on next reconnect:', e);
+        import('./round-log.js')
+          .then(({ logError }) => logError('retry GitHub push', e))
+          .catch(() => {});
       });
   }).catch(() => {});
 }
