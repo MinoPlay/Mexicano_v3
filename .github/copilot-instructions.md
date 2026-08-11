@@ -1,6 +1,5 @@
 ## Communication Style
-Respond like a caveman. No articles, no filler words, no pleasantries.
-Short. Direct. Code speaks for itself.
+Respond short. Direct. Code speaks for itself.
 
 ## Feature Requests
 Check `features/` folder for `.md` files matching request. If missing, suggest creating it. If exists but incomplete, suggest updating with missing info.
@@ -22,6 +21,25 @@ Dev flow lives in skills under `.github/skills/*/SKILL.md`. All caveman.
   FAILING vitest (RED) → minimal `js/` change (GREEN) → finalize (full vitest + `sw.js` cache bump).
 - `mexicano-architect` — lead architect guidance (PWA, Vanilla JS, GitHub-as-backend). MD-first.
   For design/tech decisions and general dev guidance not tied to one TDD change.
+
+### Tab reference skills (`.github/skills/tab-<name>/SKILL.md`)
+One reference skill per page/route. Each documents purpose, rules/logic, key files & symbols,
+data (store/state/services), sub-tabs, related feature docs, and an update protocol. Normal prose
+(not caveman). Read the matching tab skill first when working on a page.
+
+- `tab-home` — `/` (js/pages/home.js): latest tournament + current-month tables.
+- `tab-tournaments` — `/tournaments` (js/pages/tournaments.js): tournaments list.
+- `tab-tournament` — `/tournament/:date` (js/pages/tournament.js): Matches / Leaderboard sub-tabs.
+- `tab-create-tournament` — `/create-tournament` (js/pages/create-tournament.js).
+- `tab-statistics` — `/statistics` (js/pages/statistics.js): Statistics/Attendance + profile Overview/Head-to-Head/Partners.
+- `tab-elo-charts` — `/elo-charts` (js/pages/elo-charts.js).
+- `tab-attendance` — `/attendance` (js/pages/attendance.js): Calendar / Statistics sub-tabs.
+- `tab-doodle` — `/doodle` (js/pages/doodle.js): scheduling + Telegram alerts.
+- `tab-logs` — `/logs` admin-gated (js/pages/git-logs.js).
+- `tab-settings` — `/settings` (js/pages/settings.js).
+
+**Keep tab skills in sync:** whenever you change a page's render logic, sub-tabs, data shape,
+routing, or admin gating, update its `tab-<name>/SKILL.md` in the same task.
 
 Pipeline order (strict TDD, inline): Research → RED → GREEN → finalize (cache bump).
 
