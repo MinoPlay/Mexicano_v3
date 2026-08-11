@@ -46,6 +46,10 @@ Pipeline order (strict TDD, inline): Research → RED → GREEN → finalize (ca
 Rules:
 - `.github/features/*.md` = truth. Read first, update on behavior change.
 - Failing test (hardcoded expected data) FIRST, then implementation to green.
+- **Bug/issue protocol (strict TDD)**: for every bug or issue found, FIRST write a failing
+  test under `tests/**` that reproduces it (RED, confirmed failing for the right reason), THEN
+  fix the code under `js/**` until that test passes (GREEN), and confirm the full suite still
+  passes (`npx vitest run`). Never fix a bug without a reproducing test.
 - Tests edited only under `tests/**`; implementation only under `js/**`; MD only
   `.github/features/*.md`; `sw.js` cache bump is the finalize step (once per feature).
 - TDD runner: `npx vitest run <file>` (targeted), `npx vitest run` (full).
