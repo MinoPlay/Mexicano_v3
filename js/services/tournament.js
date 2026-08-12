@@ -7,7 +7,7 @@ import { State } from '../state.js';
 import { rankPlayers } from './ranking.js';
 import { calculateAllEloRankings, processMatchElo } from './elo.js';
 import { logRoundResult } from './round-log.js';
-import { ensureAllMatchesLoaded } from './github.js';
+import { ensureAllMatchesLoaded, cancelPendingSync, pushTournamentDayFile } from './github.js';
 
 // ─── Helpers ───
 
@@ -645,6 +645,26 @@ export function confirmAttendance(playerName) {
   if (!changed) return false;
   saveTournamentState(tournament);
   return true;
+}
+
+/**
+ * Confirm attendance AND persist it immediately to GitHub (verified, retried)
+ * instead of relying on the debounced auto-push, which can be lost if the app
+ * is closed or the route changes within the debounce window. Resolves only
+ * after the day file is verified on GitHub, so callers can fire the Telegram
+ * alert strictly after the backend is actually updated. Rejects if the push
+ * fails so the caller can withhold the alert.
+ *
+ * @param {string} playerName
+ * @returns {Promise<{changed: boolean, pushed: boolean}>}
+ */
+export async function confirmAttendanceAndPush(playerName) {
+  const changed = confirmAttendance(playerName);
+  if (!changed) return { changed: false, pushed: false };
+  const tournament = Store.getActiveTournament();
+  cancelPendingSync();
+  await pushTournamentDayFile(tournament);
+  return { changed: true, pushed: true };
 }
 
 export function loadTournamentByDate(date) {

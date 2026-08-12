@@ -11,7 +11,7 @@ import {
   recalculateAllPlayerStats,
   updateAccessCode,
   deleteTournament,
-  confirmAttendance
+  confirmAttendanceAndPush
 } from '../services/tournament.js';
 import { rankPlayers } from '../services/ranking.js';
 import { State } from '../state.js';
@@ -383,10 +383,28 @@ export function renderTournament(container, params) {
     });
 
     // Event: confirm attendance (self-confirm, any player)
-    content.querySelector('#confirm-attendance-btn')?.addEventListener('click', () => {
+    content.querySelector('#confirm-attendance-btn')?.addEventListener('click', async () => {
       const user = Store.getCurrentUser();
-      const changed = confirmAttendance(user);
-      if (changed) {
+      const btn = content.querySelector('#confirm-attendance-btn');
+      let btnLabel;
+      if (btn) {
+        btn.disabled = true;
+        btnLabel = btn.textContent;
+        btn.textContent = 'Confirming… don\u2019t close';
+      }
+      showToast('Saving confirmation… keep this page open');
+      let result;
+      try {
+        // Persist to GitHub (immediate + verified) BEFORE alerting, so the
+        // Telegram alert can never fire while the backend is left un-updated.
+        result = await confirmAttendanceAndPush(user);
+      } catch (err) {
+        console.warn('[attendance] confirm push failed:', err);
+        showToast('Confirm failed — check your connection and retry');
+        if (btn) { btn.disabled = false; btn.textContent = btnLabel; }
+        return;
+      }
+      if (result.changed) {
         Store.set(`confirmed_tournament_${tournament.tournamentDate}`, true);
         import('../services/telegram.js').then(({ sendTournamentConfirmationAlert }) => {
           sendTournamentConfirmationAlert(user, tournament.tournamentDate)
@@ -395,6 +413,9 @@ export function renderTournament(container, params) {
         showToast('Attendance confirmed!');
         tournament = getActiveTournament() || tournament;
         render();
+      } else if (btn) {
+        btn.disabled = false;
+        btn.textContent = btnLabel;
       }
     });
 

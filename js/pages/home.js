@@ -1,7 +1,7 @@
 import { Store } from '../store.js';
 import { State } from '../state.js';
 import { calculateAllEloRankings, getEloSnapshots, getEloForDate } from '../services/elo.js';
-import { getLatestCompleteTournamentDate, getActiveTournament, confirmAttendance } from '../services/tournament.js';
+import { getLatestCompleteTournamentDate, getActiveTournament, confirmAttendanceAndPush } from '../services/tournament.js';
 import { getMembers } from '../services/members.js';
 import { calculatePlayerStatistics } from '../services/statistics.js';
 
@@ -609,9 +609,23 @@ export function renderHome(container, params) {
       btn.textContent = 'CONFIRM';
       btn.className = 'btn btn-primary';
       btn.style.cssText = 'width:100%;font-size:var(--font-size-md);';
-      btn.addEventListener('click', () => {
+      btn.addEventListener('click', async () => {
+        btn.disabled = true;
+        btn.textContent = 'CONFIRMING… KEEP OPEN';
+        body.textContent = 'Saving your confirmation — please keep this page open for a moment.';
+        let result;
+        try {
+          // Persist to GitHub (immediate + verified) BEFORE alerting.
+          result = await confirmAttendanceAndPush(currentUser);
+        } catch (err) {
+          console.warn('[attendance] confirm push failed:', err);
+          btn.disabled = false;
+          btn.textContent = 'CONFIRM';
+          body.textContent = 'Save failed — check your connection and tap CONFIRM to retry.';
+          return;
+        }
+        if (!result.changed) { overlay.remove(); return; }
         Store.set(confirmKey, true);
-        confirmAttendance(currentUser);
         overlay.remove();
         import('../services/telegram.js').then(({ sendTournamentConfirmationAlert }) => {
           sendTournamentConfirmationAlert(currentUser, activeTournament.tournamentDate)
