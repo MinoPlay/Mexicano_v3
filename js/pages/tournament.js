@@ -468,6 +468,13 @@ export function renderTournament(container, params) {
             .catch(() => {});
         }
 
+        try {
+          const { sendTournamentCompletedPush } = await import('../services/push.js');
+          await sendTournamentCompletedPush(tournament);
+        } catch (err) {
+          console.warn('[push] tournament-completed push failed:', err);
+        }
+
         render();
       });
     });

@@ -12,8 +12,12 @@ import {
   isPushSupported,
   buildSubscribePayload,
   buildPushAlertPayload,
+  buildTournamentCreatedPush,
+  buildTournamentCompletedPush,
   dispatchSubscription,
   sendPushNotification,
+  sendTournamentCreatedPush,
+  sendTournamentCompletedPush,
 } from '../../js/services/push.js';
 
 beforeEach(() => {
@@ -110,6 +114,78 @@ describe('sendPushNotification', () => {
     expect(body.client_payload).toEqual({
       title: 'New tournament',
       body: '2026-07-15',
+      url: './tournament/2026-07-15',
+    });
+  });
+});
+
+describe('buildTournamentCreatedPush', () => {
+  it('builds title/body/url deep-linking to the tournament', () => {
+    expect(buildTournamentCreatedPush('2026-07-15')).toEqual({
+      title: '🎾 New tournament',
+      body: 'Tournament on 2026-07-15',
+      url: './tournament/2026-07-15',
+    });
+  });
+});
+
+describe('buildTournamentCompletedPush', () => {
+  it('names the winner (rank 1) in the body', () => {
+    const ranked = [
+      { rank: 1, name: 'Alice', totalPoints: 24 },
+      { rank: 2, name: 'Bob', totalPoints: 18 },
+    ];
+    expect(buildTournamentCompletedPush('2026-07-15', ranked)).toEqual({
+      title: '🏆 Tournament complete',
+      body: '2026-07-15 — Winner: Alice',
+      url: './tournament/2026-07-15',
+    });
+  });
+
+  it('omits the winner when there are no ranked players', () => {
+    expect(buildTournamentCompletedPush('2026-07-15', [])).toEqual({
+      title: '🏆 Tournament complete',
+      body: 'Tournament on 2026-07-15',
+      url: './tournament/2026-07-15',
+    });
+  });
+});
+
+describe('sendTournamentCreatedPush', () => {
+  it('dispatches a web_push for the created tournament', async () => {
+    const fetchMock = vi.fn(async () => ({ status: 204, json: async () => ({}) }));
+    global.fetch = fetchMock;
+
+    await sendTournamentCreatedPush({ tournamentDate: '2026-07-15' });
+
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(body.event_type).toBe('web_push');
+    expect(body.client_payload).toEqual({
+      title: '🎾 New tournament',
+      body: 'Tournament on 2026-07-15',
+      url: './tournament/2026-07-15',
+    });
+  });
+});
+
+describe('sendTournamentCompletedPush', () => {
+  it('ranks players and dispatches a web_push naming the winner', async () => {
+    const fetchMock = vi.fn(async () => ({ status: 204, json: async () => ({}) }));
+    global.fetch = fetchMock;
+
+    await sendTournamentCompletedPush({
+      tournamentDate: '2026-07-15',
+      players: [
+        { name: 'Bob', totalPoints: 18, wins: 2, gamesPlayed: 4 },
+        { name: 'Alice', totalPoints: 24, wins: 3, gamesPlayed: 4 },
+      ],
+    });
+
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(body.event_type).toBe('web_push');
+    expect(body.client_payload).toEqual({
+      title: '🏆 Tournament complete',
+      body: '2026-07-15 — Winner: Alice',
       url: './tournament/2026-07-15',
     });
   });

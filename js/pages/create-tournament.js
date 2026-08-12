@@ -334,6 +334,12 @@ export function renderCreateTournament(container, params = {}) {
           } catch (e) { console.warn('[telegram] tournament-created alert failed:', e); }
         }
 
+        try {
+          console.log('[create-tournament] trigger: push notification', date);
+          const { sendTournamentCreatedPush } = await import('../services/push.js');
+          await sendTournamentCreatedPush(tournament);
+        } catch (e) { console.warn('[push] tournament-created push failed:', e); }
+
         await sleep(1000);
 
         try {

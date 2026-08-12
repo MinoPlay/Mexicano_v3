@@ -1,4 +1,5 @@
 import { Store } from '../store.js';
+import { rankPlayers } from './ranking.js';
 
 // Web Push notifications are relayed through GitHub Actions instead of being sent
 // directly from the browser, mirroring the Telegram relay (see telegram.js):
@@ -91,6 +92,34 @@ export async function dispatchSubscription(subscription) {
 
 export async function sendPushNotification(title, body, url = './') {
   return dispatch(buildPushAlertPayload(title, body, url), PUSH_EVENT);
+}
+
+export function buildTournamentCreatedPush(date) {
+  return {
+    title: '🎾 New tournament',
+    body: `Tournament on ${date}`,
+    url: `./tournament/${date}`,
+  };
+}
+
+export function buildTournamentCompletedPush(date, rankedPlayers = []) {
+  const winner = rankedPlayers[0]?.name;
+  return {
+    title: '🏆 Tournament complete',
+    body: winner ? `${date} — Winner: ${winner}` : `Tournament on ${date}`,
+    url: `./tournament/${date}`,
+  };
+}
+
+export async function sendTournamentCreatedPush(tournament) {
+  const { title, body, url } = buildTournamentCreatedPush(tournament.tournamentDate);
+  return sendPushNotification(title, body, url);
+}
+
+export async function sendTournamentCompletedPush(tournament) {
+  const ranked = rankPlayers(tournament.players || []);
+  const { title, body, url } = buildTournamentCompletedPush(tournament.tournamentDate, ranked);
+  return sendPushNotification(title, body, url);
 }
 
 export async function subscribeToPush() {

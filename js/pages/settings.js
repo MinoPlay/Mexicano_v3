@@ -4,7 +4,7 @@ import { showToast } from '../components/toast.js';
 import { testConnection, onSyncStatus, getSyncStatus, pushDoodleNow, addPlayerToPlayersJson } from '../services/github.js';
 import { isInstalled } from '../components/install-prompt.js';
 import { sendTelegramTestAlert, sendTournamentTestAlert } from '../services/telegram.js';
-import { isPushSupported, subscribeToPush } from '../services/push.js';
+import { isPushSupported, subscribeToPush, sendPushNotification } from '../services/push.js';
 import { showManualAttendanceDialog } from '../components/manual-attendance-dialog.js';
 import { getVersionLabel, refreshApp } from '../version.js';
 
@@ -132,6 +132,22 @@ export function renderSettings(container, params) {
         <div id="push-status-msg" class="text-sm mt-sm" style="min-height:1.25rem;"></div>
       </div>
 
+      <!-- Custom Push (admin only) -->
+      <div class="settings-section" id="custom-push-section">
+        <div class="settings-section-title">Send Custom Push</div>
+        <p class="text-sm text-secondary" style="margin-bottom:var(--space-sm);">
+          Broadcast a custom notification to everyone who enabled push notifications.
+        </p>
+        <input id="custom-push-title" class="input" type="text" maxlength="60"
+          placeholder="Title" style="margin-bottom:var(--space-sm);">
+        <input id="custom-push-body" class="input" type="text" maxlength="140"
+          placeholder="Message" style="margin-bottom:var(--space-sm);">
+        <div class="flex gap-sm mt-sm">
+          <button id="custom-push-btn" class="btn btn-primary" style="flex:1;">📢 Send to all devices</button>
+        </div>
+        <div id="custom-push-status" class="text-sm mt-sm" style="min-height:1.25rem;"></div>
+      </div>
+
 
     </div>
   `;
@@ -150,12 +166,14 @@ export function renderSettings(container, params) {
   const membersSection = container.querySelector('.members-header')?.closest('.settings-section');
   const attendanceSection = container.querySelector('#attendance-section');
   const logsSection = container.querySelector('#logs-section');
+  const customPushSection = container.querySelector('#custom-push-section');
 
   function refreshAdminVisibility() {
     const isAdmin = Store.isAdministrator();
     if (membersSection) membersSection.style.display = isAdmin ? '' : 'none';
     if (attendanceSection) attendanceSection.style.display = isAdmin ? '' : 'none';
     if (logsSection) logsSection.style.display = isAdmin ? '' : 'none';
+    if (customPushSection) customPushSection.style.display = isAdmin ? '' : 'none';
   }
   refreshAdminVisibility();
 
@@ -382,6 +400,40 @@ export function renderSettings(container, params) {
       setPushStatus(`Could not enable push: ${err.message}`, true);
       showToast('Push notifications failed', 'error');
       pushEnableBtn.disabled = false;
+    }
+  });
+
+  // ─── Custom Push (admin only) ──────────────────────────────────────────────
+  const customPushTitle = container.querySelector('#custom-push-title');
+  const customPushBody = container.querySelector('#custom-push-body');
+  const customPushBtn = container.querySelector('#custom-push-btn');
+  const customPushStatus = container.querySelector('#custom-push-status');
+
+  function setCustomPushStatus(msg, isError = false) {
+    customPushStatus.textContent = msg;
+    customPushStatus.style.color = isError ? 'var(--color-danger, #ef4444)' : 'var(--color-success, #22c55e)';
+  }
+
+  customPushBtn.addEventListener('click', async () => {
+    const title = customPushTitle.value.trim();
+    const body = customPushBody.value.trim();
+    if (!title && !body) {
+      setCustomPushStatus('Enter a title or message first.', true);
+      return;
+    }
+    customPushBtn.disabled = true;
+    setCustomPushStatus('Sending push to all devices…');
+    try {
+      await sendPushNotification(title || 'Mexicano', body);
+      setCustomPushStatus('Push relayed. Subscribed devices will receive it shortly.');
+      showToast('Custom push sent');
+      customPushTitle.value = '';
+      customPushBody.value = '';
+    } catch (err) {
+      setCustomPushStatus(`Send failed: ${err.message}`, true);
+      showToast('Custom push failed', 'error');
+    } finally {
+      customPushBtn.disabled = false;
     }
   });
 }

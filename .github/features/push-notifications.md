@@ -47,10 +47,16 @@ Exported symbols (pure/testable unless noted):
   `{ event_type: 'web_push_subscribe', client_payload: { subscription, user } }`.
 - `buildPushAlertPayload(title, body, url)` →
   `{ event_type: 'web_push', client_payload: { title, body, url } }`. `url` defaults to `'./'`.
+- `buildTournamentCreatedPush(date)` → `{ title:'🎾 New tournament', body:'Tournament on <date>', url:'./tournament/<date>' }`.
+- `buildTournamentCompletedPush(date, rankedPlayers)` → `{ title:'🏆 Tournament complete',
+  body:'<date> — Winner: <name>' (or 'Tournament on <date>' when empty), url:'./tournament/<date>' }`.
 - `dispatchSubscription(subscriptionJson)` (async) — POSTs a `web_push_subscribe`
   `repository_dispatch`; resolves on HTTP 204, rejects with the GitHub error message otherwise.
 - `sendPushNotification(title, body, url)` (async) — POSTs a `web_push` dispatch; same
   204/error contract.
+- `sendTournamentCreatedPush(tournament)` / `sendTournamentCompletedPush(tournament)` (async) —
+  build from the tournament (`sendTournamentCompletedPush` ranks `tournament.players` via
+  `rankPlayers`) and call `sendPushNotification`.
 - `subscribeToPush()` (async, browser-only glue) — checks support, requests permission,
   gets `navigator.serviceWorker.ready`, subscribes via `PushManager`, then calls
   `dispatchSubscription(sub.toJSON())`. Throws if unsupported or permission denied.
@@ -67,11 +73,17 @@ throws `GitHub backend not configured — cannot relay push`.
 A "Push Notifications" section with an **Enable push notifications** button that calls
 `subscribeToPush()` and shows status. Button disabled when `isPushSupported()` is false.
 
-## Trigger Points (reuse Telegram's — fire `sendPushNotification` alongside)
-- Doodle save (`js/pages/doodle.js`)
-- Tournament confirmation (`js/pages/home.js`)
-- Tournament created (`js/pages/create-tournament.js`)
-- Tournament completed (`js/pages/tournament.js`)
+An admin-only "Send Custom Push" section (`#custom-push-section`, gated by
+`Store.isAdministrator()` in `refreshAdminVisibility()`) with title/message inputs and a
+**Send to all devices** button that calls `sendPushNotification(title, body)`.
+
+## Trigger Points
+- Tournament created — `js/pages/create-tournament.js` fires `sendTournamentCreatedPush(tournament)`
+  after the day file syncs (fire-and-forget; independent of the "Disable Telegram alert" checkbox).
+- Tournament completed — `js/pages/tournament.js` fires `sendTournamentCompletedPush(tournament)`
+  after `completeTournament()` (fire-and-forget, alongside the Telegram alert).
+- Admin custom broadcast — Settings "Send Custom Push" → `sendPushNotification(title, body)`.
+- (Doodle / confirmation triggers from Telegram are not yet wired for push.)
 
 ## Constraints
 - **iOS 16.4+**: Web Push works only when the PWA is installed to the home screen
