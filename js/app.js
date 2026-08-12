@@ -2,6 +2,7 @@ import { Router } from './router.js';
 import { Store } from './store.js';
 import { State } from './state.js';
 import { renderNav } from './components/nav.js';
+import { renderNotificationBell } from './components/notification-bell.js';
 import { showToast } from './components/toast.js';
 import { showRefreshDialog } from './components/refresh-dialog.js';
 import { pullForRoute } from './services/github.js';
@@ -125,6 +126,9 @@ async function loadFromGitHub() {
 // Mount bottom nav
 const app = document.getElementById('app');
 app.appendChild(renderNav());
+
+// Mount top-right notification bell
+app.appendChild(renderNotificationBell());
 
 // Page container
 const pageContainer = document.getElementById('page-container');
