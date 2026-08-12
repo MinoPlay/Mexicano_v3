@@ -54,8 +54,10 @@ export function buildSubscribePayload(subscription, user) {
   return { event_type: SUBSCRIBE_EVENT, client_payload: { subscription, user } };
 }
 
-export function buildPushAlertPayload(title, body, url = './') {
-  return { event_type: PUSH_EVENT, client_payload: { title, body, url } };
+export function buildPushAlertPayload(title, body, url = './', users = null) {
+  const client_payload = { title, body, url };
+  if (Array.isArray(users) && users.length > 0) client_payload.users = users;
+  return { event_type: PUSH_EVENT, client_payload };
 }
 
 async function dispatch(payload, kind) {
@@ -90,8 +92,8 @@ export async function dispatchSubscription(subscription) {
   return dispatch(buildSubscribePayload(subscription, user), SUBSCRIBE_EVENT);
 }
 
-export async function sendPushNotification(title, body, url = './') {
-  return dispatch(buildPushAlertPayload(title, body, url), PUSH_EVENT);
+export async function sendPushNotification(title, body, url = './', users = null) {
+  return dispatch(buildPushAlertPayload(title, body, url, users), PUSH_EVENT);
 }
 
 export function buildTournamentCreatedPush(date) {
@@ -113,7 +115,8 @@ export function buildTournamentCompletedPush(date, rankedPlayers = []) {
 
 export async function sendTournamentCreatedPush(tournament) {
   const { title, body, url } = buildTournamentCreatedPush(tournament.tournamentDate);
-  return sendPushNotification(title, body, url);
+  const users = (tournament.players || []).map(p => p.name).filter(Boolean);
+  return sendPushNotification(title, body, url, users);
 }
 
 export async function sendTournamentCompletedPush(tournament) {

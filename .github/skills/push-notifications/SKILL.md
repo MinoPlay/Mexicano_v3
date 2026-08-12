@@ -39,18 +39,20 @@ Client success = GitHub accepted the dispatch (HTTP 204); real delivery happens 
     `VAPID_PUBLIC_KEY` secret. Currently `BNQYxg9X…Qc4_I`.
   - `isPushSupported()` — `serviceWorker` + `PushManager` + `Notification` all present.
   - `urlBase64ToUint8Array(base64)` — VAPID key → `Uint8Array` for `applicationServerKey`.
-  - `buildSubscribePayload(subscription, user)` / `buildPushAlertPayload(title, body, url='./')`
-    — pure `repository_dispatch` payload builders.
+  - `buildSubscribePayload(subscription, user)` / `buildPushAlertPayload(title, body, url='./', users=null)`
+    — pure `repository_dispatch` payload builders. `buildPushAlertPayload` adds a `users`
+    array to `client_payload` only when a non-empty recipient list is passed (targeted send).
   - `buildTournamentCreatedPush(date)` → `{title:'🎾 New tournament', body:'Tournament on <date>', url:'./tournament/<date>'}`.
   - `buildTournamentCompletedPush(date, rankedPlayers)` → `{title:'🏆 Tournament complete',
     body:'<date> — Winner: <name>' | 'Tournament on <date>', url:'./tournament/<date>'}`.
-  - `dispatchSubscription(subscription)` / `sendPushNotification(title, body, url='./')` —
+  - `dispatchSubscription(subscription)` / `sendPushNotification(title, body, url='./', users=null)` —
     async; POST to `…/repos/<owner>/<repo>/dispatches`; resolve on 204, reject with the
     GitHub error message otherwise. Require configured backend or throw
-    `GitHub backend not configured — cannot relay push`.
+    `GitHub backend not configured — cannot relay push`. Optional `users` targets recipients.
   - `sendTournamentCreatedPush(tournament)` / `sendTournamentCompletedPush(tournament)` —
     build from the tournament (`Completed` ranks `tournament.players` via `rankPlayers`) and
-    call `sendPushNotification`.
+    call `sendPushNotification`. `Created` **targets only the tournament's players** (passes
+    `tournament.players[].name` as `users`); `Completed` broadcasts to everyone.
   - `subscribeToPush()` — browser-only glue; checks support, requests permission, gets
     `navigator.serviceWorker.ready`, subscribes, dispatches `sub.toJSON()`.
 - `sw.js` — module service worker.
@@ -61,9 +63,12 @@ Client success = GitHub accepted the dispatch (HTTP 204); real delivery happens 
 - `js/pages/settings.js` — "Push Notifications" section (`#push-enable-btn`,
   `subscribeToPush()`, disabled when unsupported) and admin-only "Send Custom Push" section
   (`#custom-push-section`, gated in `refreshAdminVisibility()` by `Store.isAdministrator()`;
-  `#custom-push-title`/`#custom-push-body`/`#custom-push-btn` → `sendPushNotification`).
+  `#custom-push-recipient` (All devices / a single member) / `#custom-push-title` /
+  `#custom-push-body` / `#custom-push-btn` → `sendPushNotification`, passing `[recipient]` as
+  `users` when a member is chosen).
 - `js/pages/create-tournament.js` — fires `sendTournamentCreatedPush(tournament)` after the
-  day file syncs (fire-and-forget; **not** suppressed by the "Disable Telegram alert" checkbox).
+  day file syncs (fire-and-forget; **not** suppressed by the "Disable Telegram alert"
+  checkbox). Targets only the tournament's players (their names go in `client_payload.users`).
 - `js/pages/tournament.js` — fires `sendTournamentCompletedPush(tournament)` after
   `completeTournament()` (fire-and-forget, alongside the Telegram alert).
 
@@ -72,13 +77,18 @@ Client success = GitHub accepted the dispatch (HTTP 204); real delivery happens 
   `permissions: contents: write`, installs `web-push`, runs the script, commits subscription
   changes. Env: `VAPID_PUBLIC_KEY`/`VAPID_PRIVATE_KEY` secrets, `VAPID_SUBJECT` var
   (default `mailto:admin@example.com`).
-- `.github/scripts/web-push-relay.mjs` — subscribe (store+dedupe) / send (loop subs, prune
-  404/410). State file: `mexicano_v3/push-subscriptions.json` (array of `PushSubscription` JSON).
+- `.github/scripts/web-push-relay.mjs` — subscribe (store+dedupe, attaches `user` to the sub
+  and refreshes it on re-subscribe) / send (optional `users` filter → only matching subs are
+  contacted, else broadcast; prune 404/410). State file: `mexicano_v3/push-subscriptions.json`
+  (array of `PushSubscription` JSON, each with an added `user` field).
 
 ## Data shapes
 - Dispatch (subscribe): `{ event_type:'web_push_subscribe', client_payload:{ subscription:{endpoint,keys:{p256dh,auth}}, user } }`.
-- Dispatch (send): `{ event_type:'web_push', client_payload:{ title, body, url } }`.
-- `mexicano_v3/push-subscriptions.json`: `[{ endpoint, expirationTime, keys:{ p256dh, auth } }]`.
+- Dispatch (send): `{ event_type:'web_push', client_payload:{ title, body, url[, users] } }`.
+  Optional `users` (array of player names) targets specific recipients; absent/empty = broadcast.
+- `mexicano_v3/push-subscriptions.json`: `[{ endpoint, expirationTime, keys:{ p256dh, auth }, user }]`.
+  `user` is the subscriber's player name (may be `null` for legacy subs) and is used to match
+  targeted sends. Legacy subs without `user` are excluded from targeted sends until re-subscribed.
 - GitHub config comes from `Store.getGitHubConfig()` → `{ owner:'MinoPlay', repo:'DataHub_Mexicano', pat }`.
 
 ## VAPID keys

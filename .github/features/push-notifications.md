@@ -20,11 +20,15 @@ relayed exactly like `telegram-alerts.md`:
    appends/dedupes the subscription (by `endpoint`) into `mexicano_v3/push-subscriptions.json`.
    Subscriptions never live in the client repo.
 3. **Send (data repo).** At trigger points the client fires a `repository_dispatch`
-   (`event_type: web_push`, `client_payload: { title, body, url }`). The same workflow reads
-   `mexicano_v3/push-subscriptions.json` and sends signed Web Push messages using the
-   `web-push` npm lib and **VAPID keys** (`VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` repo
-   secrets, optional `VAPID_SUBJECT` repo variable). Subscriptions that return HTTP 404/410
-   are pruned as expired and the file is committed back.
+   (`event_type: web_push`, `client_payload: { title, body, url, users? }`). The same
+   workflow reads `mexicano_v3/push-subscriptions.json` and sends signed Web Push messages
+   using the `web-push` npm lib and **VAPID keys** (`VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY`
+   repo secrets, optional `VAPID_SUBJECT` repo variable). When `client_payload.users` is a
+   non-empty array the send is **targeted**: only subscriptions whose stored `user` matches
+   (case-insensitive) a name in the list are contacted; subscriptions without a stored
+   `user` are skipped. When `users` is absent/empty the send **broadcasts** to everyone
+   (legacy behavior). Subscriptions that return HTTP 404/410 are pruned as expired and the
+   file is committed back.
 4. **Receive (service worker).** `sw.js` handles the `push` event →
    `self.registration.showNotification(...)`, and `notificationclick` → focus/open the app.
 
@@ -45,18 +49,20 @@ Exported symbols (pure/testable unless noted):
   for `applicationServerKey`. Pads to a multiple of 4, maps `-`→`+`, `_`→`/`.
 - `buildSubscribePayload(subscriptionJson, user)` →
   `{ event_type: 'web_push_subscribe', client_payload: { subscription, user } }`.
-- `buildPushAlertPayload(title, body, url)` →
-  `{ event_type: 'web_push', client_payload: { title, body, url } }`. `url` defaults to `'./'`.
+- `buildPushAlertPayload(title, body, url, users)` →
+  `{ event_type: 'web_push', client_payload: { title, body, url[, users] } }`. `url` defaults
+  to `'./'`; `users` (recipient names) is only included when a non-empty array is passed.
 - `buildTournamentCreatedPush(date)` → `{ title:'🎾 New tournament', body:'Tournament on <date>', url:'./tournament/<date>' }`.
 - `buildTournamentCompletedPush(date, rankedPlayers)` → `{ title:'🏆 Tournament complete',
   body:'<date> — Winner: <name>' (or 'Tournament on <date>' when empty), url:'./tournament/<date>' }`.
 - `dispatchSubscription(subscriptionJson)` (async) — POSTs a `web_push_subscribe`
   `repository_dispatch`; resolves on HTTP 204, rejects with the GitHub error message otherwise.
-- `sendPushNotification(title, body, url)` (async) — POSTs a `web_push` dispatch; same
-  204/error contract.
+- `sendPushNotification(title, body, url, users)` (async) — POSTs a `web_push` dispatch;
+  optional `users` targets specific recipients (see Send step); same 204/error contract.
 - `sendTournamentCreatedPush(tournament)` / `sendTournamentCompletedPush(tournament)` (async) —
   build from the tournament (`sendTournamentCompletedPush` ranks `tournament.players` via
-  `rankPlayers`) and call `sendPushNotification`.
+  `rankPlayers`) and call `sendPushNotification`. `sendTournamentCreatedPush` **targets only
+  the tournament's players** (passes their names as `users`); the completed push broadcasts.
 - `subscribeToPush()` (async, browser-only glue) — checks support, requests permission,
   gets `navigator.serviceWorker.ready`, subscribes via `PushManager`, then calls
   `dispatchSubscription(sub.toJSON())`. Throws if unsupported or permission denied.
@@ -74,15 +80,18 @@ A "Push Notifications" section with an **Enable push notifications** button that
 `subscribeToPush()` and shows status. Button disabled when `isPushSupported()` is false.
 
 An admin-only "Send Custom Push" section (`#custom-push-section`, gated by
-`Store.isAdministrator()` in `refreshAdminVisibility()`) with title/message inputs and a
-**Send to all devices** button that calls `sendPushNotification(title, body)`.
+`Store.isAdministrator()` in `refreshAdminVisibility()`) with a recipient dropdown
+(`#custom-push-recipient`: "All devices" or a single member), title/message inputs, and a
+send button that calls `sendPushNotification(title, body, './', users)` — `users` is
+`[recipient]` when a member is chosen, else `null` (broadcast to all).
 
 ## Trigger Points
 - Tournament created — `js/pages/create-tournament.js` fires `sendTournamentCreatedPush(tournament)`
   after the day file syncs (fire-and-forget; independent of the "Disable Telegram alert" checkbox).
 - Tournament completed — `js/pages/tournament.js` fires `sendTournamentCompletedPush(tournament)`
   after `completeTournament()` (fire-and-forget, alongside the Telegram alert).
-- Admin custom broadcast — Settings "Send Custom Push" → `sendPushNotification(title, body)`.
+- Admin custom push — Settings "Send Custom Push" → `sendPushNotification(title, body, './', users)`;
+  targets all devices or a single selected member.
 - (Doodle / confirmation triggers from Telegram are not yet wired for push.)
 
 ## Constraints

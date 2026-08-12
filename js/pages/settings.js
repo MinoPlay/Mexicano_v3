@@ -136,8 +136,12 @@ export function renderSettings(container, params) {
       <div class="settings-section" id="custom-push-section">
         <div class="settings-section-title">Send Custom Push</div>
         <p class="text-sm text-secondary" style="margin-bottom:var(--space-sm);">
-          Broadcast a custom notification to everyone who enabled push notifications.
+          Send a custom notification to everyone who enabled push, or to a single member.
         </p>
+        <select id="custom-push-recipient" class="input" style="margin-bottom:var(--space-sm);">
+          <option value="">📢 All devices</option>
+          ${members.map(m => `<option value="${m}">${m}</option>`).join('')}
+        </select>
         <input id="custom-push-title" class="input" type="text" maxlength="60"
           placeholder="Title" style="margin-bottom:var(--space-sm);">
         <input id="custom-push-body" class="input" type="text" maxlength="140"
@@ -404,6 +408,7 @@ export function renderSettings(container, params) {
   });
 
   // ─── Custom Push (admin only) ──────────────────────────────────────────────
+  const customPushRecipient = container.querySelector('#custom-push-recipient');
   const customPushTitle = container.querySelector('#custom-push-title');
   const customPushBody = container.querySelector('#custom-push-body');
   const customPushBtn = container.querySelector('#custom-push-btn');
@@ -414,6 +419,12 @@ export function renderSettings(container, params) {
     customPushStatus.style.color = isError ? 'var(--color-danger, #ef4444)' : 'var(--color-success, #22c55e)';
   }
 
+  function updateCustomPushBtnLabel() {
+    const to = customPushRecipient.value;
+    customPushBtn.textContent = to ? `📢 Send to ${to}` : '📢 Send to all devices';
+  }
+  customPushRecipient.addEventListener('change', updateCustomPushBtnLabel);
+
   customPushBtn.addEventListener('click', async () => {
     const title = customPushTitle.value.trim();
     const body = customPushBody.value.trim();
@@ -421,11 +432,17 @@ export function renderSettings(container, params) {
       setCustomPushStatus('Enter a title or message first.', true);
       return;
     }
+    const recipient = customPushRecipient.value;
+    const users = recipient ? [recipient] : null;
     customPushBtn.disabled = true;
-    setCustomPushStatus('Sending push to all devices…');
+    setCustomPushStatus(recipient ? `Sending push to ${recipient}…` : 'Sending push to all devices…');
     try {
-      await sendPushNotification(title || 'Mexicano', body);
-      setCustomPushStatus('Push relayed. Subscribed devices will receive it shortly.');
+      await sendPushNotification(title || 'Mexicano', body, './', users);
+      setCustomPushStatus(
+        recipient
+          ? `Push relayed. ${recipient}'s subscribed devices will receive it shortly.`
+          : 'Push relayed. Subscribed devices will receive it shortly.'
+      );
       showToast('Custom push sent');
       customPushTitle.value = '';
       customPushBody.value = '';

@@ -70,6 +70,18 @@ describe('buildPushAlertPayload', () => {
   it('defaults url to ./ when omitted', () => {
     expect(buildPushAlertPayload('T', 'B').client_payload.url).toBe('./');
   });
+
+  it('includes a users array when recipients are provided', () => {
+    expect(buildPushAlertPayload('T', 'B', './', ['Alice', 'Bob'])).toEqual({
+      event_type: 'web_push',
+      client_payload: { title: 'T', body: 'B', url: './', users: ['Alice', 'Bob'] },
+    });
+  });
+
+  it('omits users when the recipient list is empty or missing', () => {
+    expect(buildPushAlertPayload('T', 'B', './', []).client_payload).not.toHaveProperty('users');
+    expect(buildPushAlertPayload('T', 'B', './').client_payload).not.toHaveProperty('users');
+  });
 });
 
 describe('dispatchSubscription', () => {
@@ -116,6 +128,16 @@ describe('sendPushNotification', () => {
       body: '2026-07-15',
       url: './tournament/2026-07-15',
     });
+  });
+
+  it('forwards a users recipient list into the dispatch', async () => {
+    const fetchMock = vi.fn(async () => ({ status: 204, json: async () => ({}) }));
+    global.fetch = fetchMock;
+
+    await sendPushNotification('T', 'B', './', ['Alice', 'Bob']);
+
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(body.client_payload.users).toEqual(['Alice', 'Bob']);
   });
 });
 
@@ -165,6 +187,22 @@ describe('sendTournamentCreatedPush', () => {
       body: 'Tournament on 2026-07-15',
       url: './tournament/2026-07-15',
     });
+  });
+
+  it('targets only the tournament players when they are present', async () => {
+    const fetchMock = vi.fn(async () => ({ status: 204, json: async () => ({}) }));
+    global.fetch = fetchMock;
+
+    await sendTournamentCreatedPush({
+      tournamentDate: '2026-07-15',
+      players: [
+        { id: 1, name: 'Alice' },
+        { id: 2, name: 'Bob' },
+      ],
+    });
+
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(body.client_payload.users).toEqual(['Alice', 'Bob']);
   });
 });
 
