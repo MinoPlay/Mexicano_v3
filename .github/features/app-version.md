@@ -7,8 +7,13 @@ App carry simple integer version. No more guid/datetime cache name.
 - Single source of truth: `sw.js` -> `export const APP_VERSION` (Number).
 - `sw.js` is a **module service worker** (`register('./sw.js', { type: 'module' })`) that
   declares `APP_VERSION` and derives `CACHE_NAME = ` + "`mexicano-v${APP_VERSION}`" + `.
-- **Fetch strategy = network-first**: every request tries the network (so opening the app
-  pulls the latest files and refreshes the cache); cache is used only as offline fallback.
+- **Fetch strategy = network-first with HTTP-cache bypass**: every request tries the
+  network using `fetch(req, { cache: 'reload' })` (implemented in `js/sw-fetch.js`
+  `networkFirst`, imported by `sw.js`), so opening the app pulls the latest files and
+  refreshes the Cache API; the versioned cache is used only as an offline fallback. The
+  `cache: 'reload'` bypass is required so dynamically-imported modules (e.g.
+  `js/pages/settings.js`) are never served stale from the browser HTTP disk cache on
+  devices that cannot force-reload (installed mobile PWAs).
 - **Auto-update**: `js/app.js` reloads the page once on `controllerchange` (only when a
   controller already existed = an update, not first install), forcing latest build on open.
 - `js/version.js` `import { APP_VERSION } from '../sw.js'` and re-exports it. No manual duplicate to keep in sync.
@@ -19,13 +24,17 @@ Version button lives in the Settings page header row: title `Settings` anchored 
 button `#app-refresh-btn` anchored right, styled blue (`btn btn-primary`), label = `getVersionLabel()` (e.g. `mexicano-v3`).
 - Click -> `refreshApp()`:
   - clear all caches (`caches.keys()` -> delete),
-  - **unregister** all service worker registrations (so reload runs with no SW controlling),
-  - `location.reload()` to pull latest files fresh from network. SW re-registers on load.
+  - `location.reload()` to pull latest files fresh from network.
+  - The SW is **kept registered** on purpose: its network-first strategy uses
+    `cache: 'reload'` (see `js/sw-fetch.js`), so the controlled reload re-fetches every
+    asset fresh. Unregistering would leave the reload uncontrolled and let the browser
+    HTTP cache serve stale modules.
 
 ## API — `js/version.js`
 - `APP_VERSION` — Number, re-exported from `sw.js`.
 - `getVersionLabel()` — returns `mexicano-v<APP_VERSION>`.
-- `refreshApp()` — async; clears caches, unregisters SW, reloads. Guards missing `caches`/`serviceWorker`.
+- `refreshApp()` — async; clears caches and reloads (keeps SW registered so the
+  network-first `cache: 'reload'` strategy re-fetches fresh). Guards missing `caches`/`location`.
 
 ## Bump rule
 Release = increment `APP_VERSION` in `sw.js`. That's the only edit —
