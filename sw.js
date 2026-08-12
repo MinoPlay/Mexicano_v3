@@ -1,6 +1,6 @@
 // Single source of truth for the app version / cache name.
 // Bump APP_VERSION by +1 each release. js/version.js imports it.
-export const APP_VERSION = 49;
+export const APP_VERSION = 50;
 
 const CACHE_NAME = `mexicano-v${APP_VERSION}`;
 const ASSETS = [
@@ -23,6 +23,7 @@ const ASSETS = [
   './js/services/attendance.js',
   './js/services/doodle.js',
   './js/services/members.js',
+  './js/services/push.js',
   './js/components/nav.js',
   './js/components/match-card.js',
   './js/components/score-input.js',
@@ -77,6 +78,32 @@ if (isServiceWorker) {
           return res;
         })
         .catch(() => caches.match(req).then(cached => cached || caches.match('./index.html')))
+    );
+  });
+
+  self.addEventListener('push', (event) => {
+    let data = {};
+    try { data = event.data ? event.data.json() : {}; } catch { data = {}; }
+    const title = data.title || 'Mexicano';
+    const options = {
+      body: data.body || '',
+      icon: './assets/icons/icon-192.png',
+      badge: './assets/icons/icon-192.png',
+      data: { url: data.url || './' },
+    };
+    event.waitUntil(self.registration.showNotification(title, options));
+  });
+
+  self.addEventListener('notificationclick', (event) => {
+    event.notification.close();
+    const target = event.notification.data?.url || './';
+    event.waitUntil(
+      self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
+        for (const client of clientList) {
+          if ('focus' in client) return client.focus();
+        }
+        return self.clients.openWindow(target);
+      })
     );
   });
 }

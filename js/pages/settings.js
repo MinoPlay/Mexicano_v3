@@ -4,6 +4,7 @@ import { showToast } from '../components/toast.js';
 import { testConnection, onSyncStatus, getSyncStatus, pushDoodleNow, addPlayerToPlayersJson } from '../services/github.js';
 import { isInstalled } from '../components/install-prompt.js';
 import { sendTelegramTestAlert, sendTournamentTestAlert } from '../services/telegram.js';
+import { isPushSupported, subscribeToPush } from '../services/push.js';
 import { showManualAttendanceDialog } from '../components/manual-attendance-dialog.js';
 import { getVersionLabel, refreshApp } from '../version.js';
 
@@ -116,6 +117,19 @@ export function renderSettings(container, params) {
           <button id="tg-test-tournament-btn" class="btn btn-secondary" style="flex:1;">🎾 Test Tournament Group</button>
         </div>
         <div id="tg-status-msg" class="text-sm mt-sm" style="min-height:1.25rem;"></div>
+      </div>
+
+      <!-- Push Notifications -->
+      <div class="settings-section">
+        <div class="settings-section-title">Push Notifications</div>
+        <p class="text-sm text-secondary" style="margin-bottom:var(--space-sm);">
+          Get native notifications on this device when tournaments are created/completed.
+          Requires the app installed to your home screen (especially on iOS 16.4+).
+        </p>
+        <div class="flex gap-sm mt-sm">
+          <button id="push-enable-btn" class="btn btn-primary" style="flex:1;">🔔 Enable push notifications</button>
+        </div>
+        <div id="push-status-msg" class="text-sm mt-sm" style="min-height:1.25rem;"></div>
       </div>
 
 
@@ -340,6 +354,34 @@ export function renderSettings(container, params) {
       showToast('Tournament group test alert failed', 'error');
     } finally {
       tgTestTournamentBtn.disabled = false;
+    }
+  });
+
+  // ─── Push Notifications ────────────────────────────────────────────────────
+  const pushEnableBtn = container.querySelector('#push-enable-btn');
+  const pushStatus = container.querySelector('#push-status-msg');
+
+  function setPushStatus(msg, isError = false) {
+    pushStatus.textContent = msg;
+    pushStatus.style.color = isError ? 'var(--color-danger, #ef4444)' : 'var(--color-success, #22c55e)';
+  }
+
+  if (!isPushSupported()) {
+    pushEnableBtn.disabled = true;
+    setPushStatus('Push notifications are not supported in this browser.', true);
+  }
+
+  pushEnableBtn.addEventListener('click', async () => {
+    pushEnableBtn.disabled = true;
+    setPushStatus('Requesting notification permission…');
+    try {
+      await subscribeToPush();
+      setPushStatus('Push notifications enabled on this device.');
+      showToast('Push notifications enabled');
+    } catch (err) {
+      setPushStatus(`Could not enable push: ${err.message}`, true);
+      showToast('Push notifications failed', 'error');
+      pushEnableBtn.disabled = false;
     }
   });
 }
