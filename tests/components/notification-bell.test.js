@@ -18,10 +18,16 @@ function makeLocalStorage() {
 }
 vi.stubGlobal('localStorage', makeLocalStorage());
 
+vi.mock('../../js/services/push.js', () => ({
+  isPushEnabled: () => mockPushEnabled,
+}));
+let mockPushEnabled = false;
+
 import { renderNotificationBell } from '../../js/components/notification-bell.js';
 
 beforeEach(() => {
   document.body.innerHTML = '';
+  mockPushEnabled = false;
 });
 
 describe('Notification bell', () => {
@@ -29,6 +35,11 @@ describe('Notification bell', () => {
     const bell = renderNotificationBell();
     expect(bell.tagName).toBe('BUTTON');
     expect(bell.getAttribute('aria-label')).toBe('Notifications');
+  });
+
+  it('returns null (no bell) when push notifications are already enabled', () => {
+    mockPushEnabled = true;
+    expect(renderNotificationBell()).toBeNull();
   });
 
   it('opens a popup mentioning Settings + push notifications on click', () => {

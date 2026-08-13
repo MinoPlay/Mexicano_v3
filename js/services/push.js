@@ -41,6 +41,12 @@ export function isPushSupported() {
   );
 }
 
+// Whether push is already enabled on this device (permission granted). Used to
+// hide the "enable push" notification bell once the user has opted in.
+export function isPushEnabled() {
+  return typeof Notification !== 'undefined' && Notification.permission === 'granted';
+}
+
 export function urlBase64ToUint8Array(base64String) {
   const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
   const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');

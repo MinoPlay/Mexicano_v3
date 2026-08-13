@@ -10,6 +10,7 @@ vi.mock('../../js/store.js', () => ({
 import {
   urlBase64ToUint8Array,
   isPushSupported,
+  isPushEnabled,
   buildSubscribePayload,
   buildPushAlertPayload,
   buildTournamentCreatedPush,
@@ -45,6 +46,31 @@ describe('isPushSupported', () => {
     const orig = global.Notification;
     delete global.Notification;
     expect(isPushSupported()).toBe(false);
+    if (orig !== undefined) global.Notification = orig;
+  });
+});
+
+describe('isPushEnabled', () => {
+  it('is true when notification permission is granted', () => {
+    const orig = global.Notification;
+    global.Notification = { permission: 'granted' };
+    expect(isPushEnabled()).toBe(true);
+    global.Notification = orig;
+  });
+
+  it('is false when permission is default or denied', () => {
+    const orig = global.Notification;
+    global.Notification = { permission: 'default' };
+    expect(isPushEnabled()).toBe(false);
+    global.Notification = { permission: 'denied' };
+    expect(isPushEnabled()).toBe(false);
+    global.Notification = orig;
+  });
+
+  it('is false when the Notification API is missing', () => {
+    const orig = global.Notification;
+    delete global.Notification;
+    expect(isPushEnabled()).toBe(false);
     if (orig !== undefined) global.Notification = orig;
   });
 });

@@ -45,6 +45,8 @@ Exported symbols (pure/testable unless noted):
 - `VAPID_PUBLIC_KEY` — base64url application server key (placeholder until real key set).
 - `isPushSupported()` — `true` when `serviceWorker`, `PushManager`, and `Notification`
   are all available in the current environment.
+- `isPushEnabled()` — `true` when `Notification.permission === 'granted'` (push already
+  opted in on this device). Used to hide the notification bell once enabled.
 - `urlBase64ToUint8Array(base64String)` — converts a base64url VAPID key to a `Uint8Array`
   for `applicationServerKey`. Pads to a multiple of 4, maps `-`→`+`, `_`→`/`.
 - `buildSubscribePayload(subscriptionJson, user)` →
@@ -69,6 +71,12 @@ Exported symbols (pure/testable unless noted):
 
 All dispatches require a configured GitHub backend (`owner`/`repo`/`pat`); missing config
 throws `GitHub backend not configured — cannot relay push`.
+
+## Notification bell — `js/components/notification-bell.js`
+A top-right bell (`renderNotificationBell()`, mounted in `js/app.js`) that opens a popup
+prompting the user to enable push from Settings. Returns `null` (renders nothing) when
+`isPushEnabled()` is true, so the hint disappears once the user has opted in. `app.js`
+only appends it when non-null.
 
 ## Service worker — `sw.js`
 - `push` listener: parses `event.data.json()` → `showNotification(title, { body, icon, data:{ url } })`.

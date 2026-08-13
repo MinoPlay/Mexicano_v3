@@ -127,8 +127,9 @@ async function loadFromGitHub() {
 const app = document.getElementById('app');
 app.appendChild(renderNav());
 
-// Mount top-right notification bell
-app.appendChild(renderNotificationBell());
+// Mount top-right notification bell (hidden when push is already enabled)
+const notificationBell = renderNotificationBell();
+if (notificationBell) app.appendChild(notificationBell);
 
 // Page container
 const pageContainer = document.getElementById('page-container');

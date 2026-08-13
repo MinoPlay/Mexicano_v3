@@ -38,6 +38,7 @@ Client success = GitHub accepted the dispatch (HTTP 204); real delivery happens 
   - `VAPID_PUBLIC_KEY` — base64url app server key; **must match** the data-repo
     `VAPID_PUBLIC_KEY` secret. Currently `BNQYxg9X…Qc4_I`.
   - `isPushSupported()` — `serviceWorker` + `PushManager` + `Notification` all present.
+  - `isPushEnabled()` — `Notification.permission === 'granted'`; hides the notification bell once opted in.
   - `urlBase64ToUint8Array(base64)` — VAPID key → `Uint8Array` for `applicationServerKey`.
   - `buildSubscribePayload(subscription, user)` / `buildPushAlertPayload(title, body, url='./', users=null)`
     — pure `repository_dispatch` payload builders. `buildPushAlertPayload` adds a `users`
@@ -55,6 +56,9 @@ Client success = GitHub accepted the dispatch (HTTP 204); real delivery happens 
     `tournament.players[].name` as `users`); `Completed` broadcasts to everyone.
   - `subscribeToPush()` — browser-only glue; checks support, requests permission, gets
     `navigator.serviceWorker.ready`, subscribes, dispatches `sub.toJSON()`.
+- `js/components/notification-bell.js` — top-right bell prompting users to enable push from
+  Settings; `renderNotificationBell()` returns `null` (renders nothing) when `isPushEnabled()`,
+  so it disappears once opted in. Mounted in `js/app.js` (appended only when non-null).
 - `sw.js` — module service worker.
   - Listeners `push` (parses `event.data.json()` → `showNotification(title, { body, icon,
     badge, data:{ url } })`) and `notificationclick` (focus existing client or

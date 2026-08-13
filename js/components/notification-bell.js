@@ -1,8 +1,10 @@
 /**
  * Notification bell — a bell icon anchored at the top-right of the page.
  * Clicking it opens a small popup informing the user that push notifications
- * can now be enabled from the Settings page.
+ * can now be enabled from the Settings page. Hidden once push is enabled.
  */
+
+import { isPushEnabled } from '../services/push.js';
 
 let openPopup = null;
 
@@ -40,6 +42,9 @@ function buildPopup(anchor) {
 }
 
 export function renderNotificationBell() {
+  // Hide the bell entirely once push notifications are enabled on this device.
+  if (isPushEnabled()) return null;
+
   const btn = document.createElement('button');
   btn.className = 'notif-bell';
   btn.type = 'button';
