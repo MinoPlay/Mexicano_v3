@@ -4,6 +4,7 @@ import {
   startNextRound,
   completeTournament,
   loadTournamentByDate,
+  getLatestCompleteTournamentDate,
   saveTournamentState,
   isMatchComplete,
   isRoundComplete,
@@ -524,7 +525,8 @@ export function renderTournament(container, params) {
     const dayMatches = allMatches.filter(m => m.date === date);
 
     if (dayMatches.length > 0) {
-      await renderDayStatsInto(content, dayMatches, date, false, name => showPlayerProfile(name));
+      const isLatest = date === getLatestCompleteTournamentDate();
+      await renderDayStatsInto(content, dayMatches, date, isLatest, name => showPlayerProfile(name));
       return;
     }
 
