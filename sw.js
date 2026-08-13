@@ -2,7 +2,7 @@
 // Bump APP_VERSION by +1 each release. js/version.js imports it.
 import { networkFirst, shouldHandleRequest } from './js/sw-fetch.js';
 
-export const APP_VERSION = 62;
+export const APP_VERSION = 63;
 
 const CACHE_NAME = `mexicano-v${APP_VERSION}`;
 const ASSETS = [

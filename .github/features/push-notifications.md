@@ -22,14 +22,18 @@ relayed exactly like `telegram-alerts.md`:
    endpoint **updates its `user` tag** (does not skip), so legacy subs stored before targeted
    sends get back-filled. Subscriptions never live in the client repo.
 3. **Send (data repo).** At trigger points the client fires a `repository_dispatch`
-   (`event_type: web_push`, `client_payload: { title, body, url, users? }`). The same
+   (`event_type: web_push`, `client_payload: { title, body, url, users? }` **or**
+   `client_payload: { messages: [{ users, title, body, url }] }` for per-recipient sends).
+   The same
    workflow reads `mexicano_v3/push-subscriptions.json` and sends signed Web Push messages
    using the `web-push` npm lib and **VAPID keys** (`VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY`
-   repo secrets, optional `VAPID_SUBJECT` repo variable). When `client_payload.users` is a
+   repo secrets, optional `VAPID_SUBJECT` repo variable). When `users` is a
    non-empty array the send is **targeted**: only subscriptions whose stored `user` matches
-   (case-insensitive) a name in the list are contacted; subscriptions without a stored
+   a name in the list are contacted; subscriptions without a stored
    `user` are skipped. When `users` is absent/empty the send **broadcasts** to everyone
-   (legacy behavior). Subscriptions that return HTTP 404/410 are pruned as expired and the
+   (legacy behavior). With `messages`, each entry is resolved in order and a subscription
+   receives at most the first message it matches (never two notifications for one dispatch).
+   Subscriptions that return HTTP 404/410 are pruned as expired and the
    file is committed back.
 4. **Receive (service worker).** `sw.js` handles the `push` event →
    `self.registration.showNotification(...)`, and `notificationclick` → focus/open the app.
@@ -59,14 +63,32 @@ Exported symbols (pure/testable unless noted):
 - `buildTournamentCreatedPush(date)` → `{ title:'🎾 New tournament', body:'Tournament on <date>', url:'./tournament/<date>' }`.
 - `buildTournamentCompletedPush(date, rankedPlayers)` → `{ title:'🏆 Tournament complete',
   body:'<date> — Winner: <name>' (or 'Tournament on <date>' when empty), url:'./tournament/<date>' }`.
+  Legacy broadcast summary, now only used as a no-players fallback.
+- `buildPushMessagesPayload(messages)` → `{ event_type:'web_push', client_payload:{ messages } }`
+  where each message is `{ users, title, body, url }` — one dispatch, a different
+  notification per recipient.
+- `computeTournamentEloChanges(allMatches, date)` → `{ <name>: { elo, eloChange } }`. Replays
+  the full ELO history with and without the tournament's own matches (`calculateAllEloRankings`)
+  and returns each player's post-tournament ELO plus the delta it caused (both rounded to
+  whole numbers). Returns `{}` when there are no matches.
+- `buildPlayerResultPush(date, player, totalPlayers)` → `{ users:[name],
+  title:'🏆 Tournament complete — <date>', body:'Rank <r>/<n> · <pts> pts · <avg> avg\nELO <elo> (<±change>)',
+  url:'./tournament/<date>' }`. The ELO line is omitted when the player has no ELO.
+- `buildTournamentCompletedMessages(date, rankedPlayers, eloByPlayer)` → one
+  `buildPlayerResultPush` message per ranked participant (players without a name are skipped).
 - `dispatchSubscription(subscriptionJson)` (async) — POSTs a `web_push_subscribe`
   `repository_dispatch`; resolves on HTTP 204, rejects with the GitHub error message otherwise.
 - `sendPushNotification(title, body, url, users)` (async) — POSTs a `web_push` dispatch;
   optional `users` targets specific recipients (see Send step); same 204/error contract.
-- `sendTournamentCreatedPush(tournament)` / `sendTournamentCompletedPush(tournament)` (async) —
+- `sendPushMessages(messages)` (async) — POSTs a `web_push` dispatch carrying a
+  `messages` array so each recipient gets their own title/body in a single dispatch.
+- `sendTournamentCreatedPush(tournament)` / `sendTournamentCompletedPush(tournament, allMatches?)` (async) —
   build from the tournament (`sendTournamentCompletedPush` ranks `tournament.players` via
-  `rankPlayers`) and call `sendPushNotification`. `sendTournamentCreatedPush` **targets only
-  the tournament's players** (passes their names as `users`); the completed push broadcasts.
+  `rankPlayers`). `sendTournamentCreatedPush` **targets only the tournament's players**
+  (passes their names as `users`). `sendTournamentCompletedPush` sends **one personalised
+  message per participant** via `sendPushMessages`; `allMatches` defaults to
+  `Store.getMatches()`. It falls back to the legacy broadcast
+  (`buildTournamentCompletedPush`) only when the tournament has no players.
 - `subscribeToPush()` (async, browser-only glue) — checks support, requests permission,
   gets `navigator.serviceWorker.ready`, subscribes via `PushManager`, then calls
   `dispatchSubscription(sub.toJSON())`. Throws if unsupported or permission denied.
@@ -106,7 +128,8 @@ send button that calls `sendPushNotification(title, body, './', users)` — `use
 - Tournament created — `js/pages/create-tournament.js` fires `sendTournamentCreatedPush(tournament)`
   after the day file syncs (fire-and-forget; independent of the "Disable Telegram alert" checkbox).
 - Tournament completed — `js/pages/tournament.js` fires `sendTournamentCompletedPush(tournament)`
-  after `completeTournament()` (fire-and-forget, alongside the Telegram alert).
+  after `completeTournament()` (fire-and-forget, alongside the Telegram alert). Only the
+  tournament's participants are notified, each with their own rank/points/average/ELO result.
 - Admin custom push — Settings "Send Custom Push" → `sendPushNotification(title, body, './', users)`;
   targets all devices or a single selected member.
 - (Doodle / confirmation triggers from Telegram are not yet wired for push.)

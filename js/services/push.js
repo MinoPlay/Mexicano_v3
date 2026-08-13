@@ -1,5 +1,8 @@
 import { Store } from '../store.js';
 import { rankPlayers } from './ranking.js';
+import { calculateAllEloRankings } from './elo.js';
+
+const INITIAL_ELO = 1000;
 
 // Web Push notifications are relayed through GitHub Actions instead of being sent
 // directly from the browser, mirroring the Telegram relay (see telegram.js):
@@ -66,6 +69,13 @@ export function buildPushAlertPayload(title, body, url = './', users = null) {
   return { event_type: PUSH_EVENT, client_payload };
 }
 
+// Multi-recipient dispatch: each message carries its own `users` list plus a
+// personalised title/body, so one dispatch can deliver a different notification
+// to every participant.
+export function buildPushMessagesPayload(messages) {
+  return { event_type: PUSH_EVENT, client_payload: { messages } };
+}
+
 async function dispatch(payload, kind) {
   const gh = Store.getGitHubConfig();
   if (!gh?.owner || !gh?.repo || !gh?.pat) {
@@ -102,6 +112,10 @@ export async function sendPushNotification(title, body, url = './', users = null
   return dispatch(buildPushAlertPayload(title, body, url, users), PUSH_EVENT);
 }
 
+export async function sendPushMessages(messages) {
+  return dispatch(buildPushMessagesPayload(messages), PUSH_EVENT);
+}
+
 export function buildTournamentCreatedPush(date) {
   return {
     title: '🎾 New tournament',
@@ -119,16 +133,74 @@ export function buildTournamentCompletedPush(date, rankedPlayers = []) {
   };
 }
 
+// Per-player ELO after this tournament and the change it caused, derived by
+// replaying the full match history with and without the tournament's own matches.
+export function computeTournamentEloChanges(allMatches, date) {
+  const matches = allMatches || [];
+  if (matches.length === 0) return {};
+
+  const { players: after } = calculateAllEloRankings(matches);
+  const { players: before } = calculateAllEloRankings(matches.filter(m => m.date < date));
+
+  const out = {};
+  for (const [name, state] of Object.entries(after)) {
+    const prev = before[name]?.elo ?? INITIAL_ELO;
+    out[name] = {
+      elo: Math.round(state.elo),
+      eloChange: Math.round(state.elo - prev),
+    };
+  }
+  return out;
+}
+
+// Personal result notification for one participant.
+export function buildPlayerResultPush(date, player, totalPlayers) {
+  const games = player.gamesPlayed || 0;
+  const points = player.totalPoints || 0;
+  const avg = (games > 0 ? points / games : 0).toFixed(1);
+  const lines = [`Rank ${player.rank}/${totalPlayers} · ${points} pts · ${avg} avg`];
+  if (player.elo != null) {
+    const change = player.eloChange || 0;
+    lines.push(`ELO ${player.elo} (${change >= 0 ? '+' : ''}${change})`);
+  }
+  return {
+    users: [player.name],
+    title: `🏆 Tournament complete — ${date}`,
+    body: lines.join('\n'),
+    url: `./tournament/${date}`,
+  };
+}
+
+export function buildTournamentCompletedMessages(date, rankedPlayers = [], eloByPlayer = {}) {
+  const total = rankedPlayers.length;
+  return rankedPlayers
+    .filter(p => p.name)
+    .map(p => buildPlayerResultPush(date, { ...p, ...(eloByPlayer[p.name] || {}) }, total));
+}
+
 export async function sendTournamentCreatedPush(tournament) {
   const { title, body, url } = buildTournamentCreatedPush(tournament.tournamentDate);
   const users = (tournament.players || []).map(p => p.name).filter(Boolean);
   return sendPushNotification(title, body, url, users);
 }
 
-export async function sendTournamentCompletedPush(tournament) {
+export async function sendTournamentCompletedPush(tournament, allMatches) {
   const ranked = rankPlayers(tournament.players || []);
-  const { title, body, url } = buildTournamentCompletedPush(tournament.tournamentDate, ranked);
-  return sendPushNotification(title, body, url);
+  const date = tournament.tournamentDate;
+  const matches = Array.isArray(allMatches) ? allMatches : (Store.getMatches?.() || []);
+  const messages = buildTournamentCompletedMessages(
+    date,
+    ranked,
+    computeTournamentEloChanges(matches, date),
+  );
+
+  // No participants (e.g. an empty tournament): keep the legacy broadcast so the
+  // completion is still announced.
+  if (messages.length === 0) {
+    const { title, body, url } = buildTournamentCompletedPush(date, ranked);
+    return sendPushNotification(title, body, url);
+  }
+  return sendPushMessages(messages);
 }
 
 // Silently re-register an already-granted subscription so its `user` tag is

@@ -20,6 +20,10 @@ import {
   sendTournamentCreatedPush,
   sendTournamentCompletedPush,
   resyncPushSubscription,
+  buildPushMessagesPayload,
+  buildPlayerResultPush,
+  buildTournamentCompletedMessages,
+  computeTournamentEloChanges,
 } from '../../js/services/push.js';
 
 beforeEach(() => {
@@ -234,10 +238,122 @@ describe('sendTournamentCreatedPush', () => {
   });
 });
 
+describe('buildPushMessagesPayload', () => {
+  it('wraps per-recipient messages in a web_push dispatch', () => {
+    const messages = [{ users: ['Alice'], title: 'T', body: 'B', url: './x' }];
+    expect(buildPushMessagesPayload(messages)).toEqual({
+      event_type: 'web_push',
+      client_payload: { messages },
+    });
+  });
+});
+
+describe('buildPlayerResultPush', () => {
+  it('builds a personal result message with rank, points, average, ELO and ELO change', () => {
+    expect(buildPlayerResultPush('2026-07-15', {
+      rank: 1,
+      name: 'Alice',
+      totalPoints: 24,
+      gamesPlayed: 4,
+      elo: 1016,
+      eloChange: 16,
+    }, 4)).toEqual({
+      users: ['Alice'],
+      title: '🏆 Tournament complete — 2026-07-15',
+      body: 'Rank 1/4 · 24 pts · 6.0 avg\nELO 1016 (+16)',
+      url: './tournament/2026-07-15',
+    });
+  });
+
+  it('renders a negative ELO change with its sign', () => {
+    expect(buildPlayerResultPush('2026-07-15', {
+      rank: 4,
+      name: 'Dave',
+      totalPoints: 9,
+      gamesPlayed: 4,
+      elo: 984,
+      eloChange: -16,
+    }, 4).body).toBe('Rank 4/4 · 9 pts · 2.3 avg\nELO 984 (-16)');
+  });
+
+  it('omits the ELO line when no ELO is known', () => {
+    expect(buildPlayerResultPush('2026-07-15', {
+      rank: 2,
+      name: 'Bob',
+      totalPoints: 18,
+      gamesPlayed: 0,
+    }, 2).body).toBe('Rank 2/2 · 18 pts · 0.0 avg');
+  });
+});
+
+describe('computeTournamentEloChanges', () => {
+  it('returns per-player ELO after the tournament and the change it caused', () => {
+    const matches = [{
+      date: '2026-07-15',
+      roundNumber: 1,
+      team1Player1Name: 'Alice',
+      team1Player2Name: 'Bob',
+      team2Player1Name: 'Carl',
+      team2Player2Name: 'Dave',
+      scoreTeam1: 6,
+      scoreTeam2: 2,
+    }];
+    expect(computeTournamentEloChanges(matches, '2026-07-15')).toEqual({
+      Alice: { elo: 1016, eloChange: 16 },
+      Bob: { elo: 1016, eloChange: 16 },
+      Carl: { elo: 985, eloChange: -15 },
+      Dave: { elo: 985, eloChange: -15 },
+    });
+  });
+
+  it('returns an empty map when there are no matches', () => {
+    expect(computeTournamentEloChanges([], '2026-07-15')).toEqual({});
+  });
+});
+
+describe('buildTournamentCompletedMessages', () => {
+  it('builds one targeted message per participant', () => {
+    const ranked = [
+      { rank: 1, name: 'Alice', totalPoints: 24, gamesPlayed: 4 },
+      { rank: 2, name: 'Bob', totalPoints: 18, gamesPlayed: 4 },
+    ];
+    const elo = { Alice: { elo: 1016, eloChange: 16 }, Bob: { elo: 984, eloChange: -16 } };
+    expect(buildTournamentCompletedMessages('2026-07-15', ranked, elo)).toEqual([
+      {
+        users: ['Alice'],
+        title: '🏆 Tournament complete — 2026-07-15',
+        body: 'Rank 1/2 · 24 pts · 6.0 avg\nELO 1016 (+16)',
+        url: './tournament/2026-07-15',
+      },
+      {
+        users: ['Bob'],
+        title: '🏆 Tournament complete — 2026-07-15',
+        body: 'Rank 2/2 · 18 pts · 4.5 avg\nELO 984 (-16)',
+        url: './tournament/2026-07-15',
+      },
+    ]);
+  });
+
+  it('returns an empty list when there are no players', () => {
+    expect(buildTournamentCompletedMessages('2026-07-15', [], {})).toEqual([]);
+  });
+});
+
 describe('sendTournamentCompletedPush', () => {
-  it('ranks players and dispatches a web_push naming the winner', async () => {
+  it('dispatches one personalised message per participant only', async () => {
     const fetchMock = vi.fn(async () => ({ status: 204, json: async () => ({}) }));
     global.fetch = fetchMock;
+
+    const matches = [{
+      date: '2026-07-15',
+      roundNumber: 1,
+      team1Player1Name: 'Alice',
+      team1Player2Name: 'Bob',
+      team2Player1Name: 'Carl',
+      team2Player2Name: 'Dave',
+      scoreTeam1: 6,
+      scoreTeam2: 2,
+    }];
 
     await sendTournamentCompletedPush({
       tournamentDate: '2026-07-15',
@@ -245,13 +361,39 @@ describe('sendTournamentCompletedPush', () => {
         { name: 'Bob', totalPoints: 18, wins: 2, gamesPlayed: 4 },
         { name: 'Alice', totalPoints: 24, wins: 3, gamesPlayed: 4 },
       ],
-    });
+    }, matches);
 
+    expect(fetchMock).toHaveBeenCalledTimes(1);
     const body = JSON.parse(fetchMock.mock.calls[0][1].body);
     expect(body.event_type).toBe('web_push');
     expect(body.client_payload).toEqual({
+      messages: [
+        {
+          users: ['Alice'],
+          title: '🏆 Tournament complete — 2026-07-15',
+          body: 'Rank 1/2 · 24 pts · 6.0 avg\nELO 1016 (+16)',
+          url: './tournament/2026-07-15',
+        },
+        {
+          users: ['Bob'],
+          title: '🏆 Tournament complete — 2026-07-15',
+          body: 'Rank 2/2 · 18 pts · 4.5 avg\nELO 1016 (+16)',
+          url: './tournament/2026-07-15',
+        },
+      ],
+    });
+  });
+
+  it('falls back to a broadcast summary when the tournament has no players', async () => {
+    const fetchMock = vi.fn(async () => ({ status: 204, json: async () => ({}) }));
+    global.fetch = fetchMock;
+
+    await sendTournamentCompletedPush({ tournamentDate: '2026-07-15', players: [] }, []);
+
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(body.client_payload).toEqual({
       title: '🏆 Tournament complete',
-      body: '2026-07-15 — Winner: Alice',
+      body: 'Tournament on 2026-07-15',
       url: './tournament/2026-07-15',
     });
   });

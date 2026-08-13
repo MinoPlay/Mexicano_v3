@@ -44,6 +44,14 @@ Client success = GitHub accepted the dispatch (HTTP 204); real delivery happens 
   - `buildSubscribePayload(subscription, user)` / `buildPushAlertPayload(title, body, url='./', users=null)`
     — pure `repository_dispatch` payload builders. `buildPushAlertPayload` adds a `users`
     array to `client_payload` only when a non-empty recipient list is passed (targeted send).
+  - `buildPushMessagesPayload(messages)` / `sendPushMessages(messages)` — one dispatch,
+    `client_payload.messages = [{ users, title, body, url }]`, a different notification per recipient.
+  - `computeTournamentEloChanges(allMatches, date)` → `{ name: { elo, eloChange } }`; replays
+    ELO with and without the tournament's matches via `calculateAllEloRankings`.
+  - `buildPlayerResultPush(date, player, totalPlayers)` → personal message
+    `{users:[name], title:'🏆 Tournament complete — <date>', body:'Rank r/n · p pts · a avg\nELO e (±c)', url}`.
+    ELO line omitted when unknown.
+  - `buildTournamentCompletedMessages(date, rankedPlayers, eloByPlayer)` → one message per participant.
   - `buildTournamentCreatedPush(date)` → `{title:'🎾 New tournament', body:'Tournament on <date>', url:'./tournament/<date>'}`.
   - `buildTournamentCompletedPush(date, rankedPlayers)` → `{title:'🏆 Tournament complete',
     body:'<date> — Winner: <name>' | 'Tournament on <date>', url:'./tournament/<date>'}`.
@@ -51,10 +59,13 @@ Client success = GitHub accepted the dispatch (HTTP 204); real delivery happens 
     async; POST to `…/repos/<owner>/<repo>/dispatches`; resolve on 204, reject with the
     GitHub error message otherwise. Require configured backend or throw
     `GitHub backend not configured — cannot relay push`. Optional `users` targets recipients.
-  - `sendTournamentCreatedPush(tournament)` / `sendTournamentCompletedPush(tournament)` —
+  - `sendTournamentCreatedPush(tournament)` / `sendTournamentCompletedPush(tournament, allMatches?)` —
     build from the tournament (`Completed` ranks `tournament.players` via `rankPlayers`) and
-    call `sendPushNotification`. `Created` **targets only the tournament's players** (passes
-    `tournament.players[].name` as `users`); `Completed` broadcasts to everyone.
+    dispatch. `Created` **targets only the tournament's players** (passes
+    `tournament.players[].name` as `users`); `Completed` sends **one personalised message per
+    participant** (rank/points/average/ELO/ELO change) through `sendPushMessages`, falling
+    back to the legacy broadcast only when there are no players. `allMatches` defaults to
+    `Store.getMatches()`.
   - `subscribeToPush()` — browser-only glue; checks support, requests permission, gets
     `navigator.serviceWorker.ready`, subscribes, dispatches `sub.toJSON()`.
   - `resyncPushSubscription()` — browser-only glue; **silent** startup re-tag. No-ops unless
@@ -88,14 +99,17 @@ Client success = GitHub accepted the dispatch (HTTP 204); real delivery happens 
   changes. Env: `VAPID_PUBLIC_KEY`/`VAPID_PRIVATE_KEY` secrets, `VAPID_SUBJECT` var
   (default `mailto:admin@example.com`).
 - `.github/scripts/web-push-relay.mjs` — subscribe (store+dedupe, attaches `user` to the sub
-  and refreshes it on re-subscribe) / send (optional `users` filter → only matching subs are
-  contacted, else broadcast; prune 404/410). State file: `mexicano_v3/push-subscriptions.json`
-  (array of `PushSubscription` JSON, each with an added `user` field).
+  and refreshes it on re-subscribe) / send (single `{title,body,url,users?}` or a
+  `messages[]` list; optional `users` filter → only matching subs are contacted, else
+  broadcast; one notification max per subscription; prune 404/410). State file:
+  `mexicano_v3/push-subscriptions.json` (array of `PushSubscription` JSON, each with an added `user` field).
 
 ## Data shapes
 - Dispatch (subscribe): `{ event_type:'web_push_subscribe', client_payload:{ subscription:{endpoint,keys:{p256dh,auth}}, user } }`.
-- Dispatch (send): `{ event_type:'web_push', client_payload:{ title, body, url[, users] } }`.
+- Dispatch (send): `{ event_type:'web_push', client_payload:{ title, body, url[, users] } }`
+  or `{ event_type:'web_push', client_payload:{ messages:[{ users, title, body, url }] } }`.
   Optional `users` (array of player names) targets specific recipients; absent/empty = broadcast.
+  With `messages`, each subscription receives at most the first message it matches.
 - `mexicano_v3/push-subscriptions.json`: `[{ endpoint, expirationTime, keys:{ p256dh, auth }, user }]`.
   `user` is the subscriber's player name (may be `null` for legacy subs) and is used to match
   targeted sends. Legacy subs without `user` are excluded from targeted sends until re-subscribed.
