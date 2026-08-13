@@ -3,6 +3,7 @@ import { Store } from './store.js';
 import { State } from './state.js';
 import { renderNav } from './components/nav.js';
 import { renderNotificationBell } from './components/notification-bell.js';
+import { resyncPushSubscription } from './services/push.js';
 import { showToast } from './components/toast.js';
 import { showRefreshDialog } from './components/refresh-dialog.js';
 import { pullForRoute } from './services/github.js';
@@ -96,6 +97,10 @@ async function init() {
 
   await loadLocalData();
   loadFromGitHub();
+
+  // Back-fill the `user` tag on an already-granted push subscription so targeted
+  // sends can reach this device without the user re-enabling push. Fire-and-forget.
+  resyncPushSubscription().catch(() => {});
 }
 init();
 

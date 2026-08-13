@@ -17,8 +17,10 @@ relayed exactly like `telegram-alerts.md`:
    configured data repo (`Store.getGitHubConfig()` → `owner`/`repo`/`pat`).
 2. **Store subscription (data repo).** A workflow in the data repo
    (`.github/workflows/web-push-relay.yml`, logic in `.github/scripts/web-push-relay.mjs`)
-   appends/dedupes the subscription (by `endpoint`) into `mexicano_v3/push-subscriptions.json`.
-   Subscriptions never live in the client repo.
+   appends/dedupes the subscription (by `endpoint`) into `mexicano_v3/push-subscriptions.json`,
+   storing the subscriber's `user` name on the record. A re-subscribe for an existing
+   endpoint **updates its `user` tag** (does not skip), so legacy subs stored before targeted
+   sends get back-filled. Subscriptions never live in the client repo.
 3. **Send (data repo).** At trigger points the client fires a `repository_dispatch`
    (`event_type: web_push`, `client_payload: { title, body, url, users? }`). The same
    workflow reads `mexicano_v3/push-subscriptions.json` and sends signed Web Push messages
@@ -68,6 +70,13 @@ Exported symbols (pure/testable unless noted):
 - `subscribeToPush()` (async, browser-only glue) — checks support, requests permission,
   gets `navigator.serviceWorker.ready`, subscribes via `PushManager`, then calls
   `dispatchSubscription(sub.toJSON())`. Throws if unsupported or permission denied.
+- `resyncPushSubscription()` (async, browser-only glue) — **silent** re-tag on startup:
+  no-ops unless push is supported and already granted, reads the existing
+  `pushManager.getSubscription()` and, if present, re-dispatches it via
+  `dispatchSubscription` so the data repo refreshes the record's `user` tag from
+  `mexicano_current_user`. Never prompts. Returns `true` when it dispatched, else `false`
+  (and swallows errors). Called fire-and-forget from `js/app.js` `init()` so legacy
+  subscriptions gain a `user` tag without users re-enabling push.
 
 All dispatches require a configured GitHub backend (`owner`/`repo`/`pat`); missing config
 throws `GitHub backend not configured — cannot relay push`.

@@ -131,6 +131,24 @@ export async function sendTournamentCompletedPush(tournament) {
   return sendPushNotification(title, body, url);
 }
 
+// Silently re-register an already-granted subscription so its `user` tag is
+// refreshed from the current profile. Runs on app startup (no permission prompt)
+// so legacy subscriptions stored before targeted sends existed get back-filled
+// with `mexicano_current_user`, without asking users to re-enable push.
+export async function resyncPushSubscription() {
+  if (!isPushSupported() || !isPushEnabled()) return false;
+  try {
+    const reg = await navigator.serviceWorker.ready;
+    const sub = await reg.pushManager.getSubscription();
+    if (!sub) return false;
+    await dispatchSubscription(sub.toJSON());
+    return true;
+  } catch (e) {
+    log('warn', 'Push resync failed.', { error: e?.message });
+    return false;
+  }
+}
+
 export async function subscribeToPush() {
   if (!isPushSupported()) {
     throw new Error('Push notifications are not supported in this browser');

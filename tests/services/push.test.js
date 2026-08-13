@@ -19,10 +19,12 @@ import {
   sendPushNotification,
   sendTournamentCreatedPush,
   sendTournamentCompletedPush,
+  resyncPushSubscription,
 } from '../../js/services/push.js';
 
 beforeEach(() => {
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 });
 
 describe('urlBase64ToUint8Array', () => {
@@ -252,5 +254,53 @@ describe('sendTournamentCompletedPush', () => {
       body: '2026-07-15 — Winner: Alice',
       url: './tournament/2026-07-15',
     });
+  });
+});
+
+describe('resyncPushSubscription', () => {
+  function stubPushEnv({ permission = 'granted', subscription } = {}) {
+    const getSubscription = vi.fn(async () =>
+      subscription ? { toJSON: () => subscription } : null,
+    );
+    vi.stubGlobal('Notification', { permission });
+    vi.stubGlobal('PushManager', function PushManager() {});
+    vi.stubGlobal('navigator', {
+      serviceWorker: { ready: Promise.resolve({ pushManager: { getSubscription } }) },
+    });
+    return { getSubscription };
+  }
+
+  it('silently re-dispatches the existing subscription tagged with the current user', async () => {
+    const sub = { endpoint: 'https://push.example/abc', keys: { p256dh: 'k', auth: 'a' } };
+    stubPushEnv({ subscription: sub });
+    const fetchMock = vi.fn(async () => ({ status: 204, json: async () => ({}) }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await resyncPushSubscription();
+
+    expect(result).toBe(true);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(body.event_type).toBe('web_push_subscribe');
+    expect(body.client_payload.subscription).toEqual(sub);
+    expect(body.client_payload.user).toBe('Tester');
+  });
+
+  it('does nothing when notification permission is not granted', async () => {
+    stubPushEnv({ permission: 'default', subscription: { endpoint: 'x' } });
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+
+    expect(await resyncPushSubscription()).toBe(false);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('does nothing when there is no existing subscription on this device', async () => {
+    stubPushEnv({ subscription: undefined });
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+
+    expect(await resyncPushSubscription()).toBe(false);
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });

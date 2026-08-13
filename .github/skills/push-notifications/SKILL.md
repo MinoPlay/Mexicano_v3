@@ -22,7 +22,8 @@ Web Push needs a signed sender, so the client never sends pushes directly. Flow:
    returns a `PushSubscription`. Client fires GitHub `repository_dispatch`
    (`event_type: web_push_subscribe`, `client_payload: { subscription, user }`).
 2. **Store** — data-repo workflow appends/dedupes (by `endpoint`) into
-   `mexicano_v3/push-subscriptions.json` and commits it.
+   `mexicano_v3/push-subscriptions.json`, tagging each record with `user`. A re-subscribe for
+   an existing endpoint **updates the `user` tag** (does not skip), back-filling legacy subs.
 3. **Send** — client fires `repository_dispatch` (`event_type: web_push`,
    `client_payload: { title, body, url }`). Same workflow reads the subscriptions file and
    sends signed Web Push via the `web-push` npm lib + VAPID secrets. 404/410 endpoints are
@@ -56,6 +57,11 @@ Client success = GitHub accepted the dispatch (HTTP 204); real delivery happens 
     `tournament.players[].name` as `users`); `Completed` broadcasts to everyone.
   - `subscribeToPush()` — browser-only glue; checks support, requests permission, gets
     `navigator.serviceWorker.ready`, subscribes, dispatches `sub.toJSON()`.
+  - `resyncPushSubscription()` — browser-only glue; **silent** startup re-tag. No-ops unless
+    push supported + already granted; reads the existing `pushManager.getSubscription()` and
+    re-dispatches it via `dispatchSubscription` so the data repo refreshes the record's `user`
+    from `mexicano_current_user`. Never prompts; returns `true`/`false`, swallows errors.
+    Called fire-and-forget from `js/app.js` `init()` to back-fill legacy subs.
 - `js/components/notification-bell.js` — top-right bell prompting users to enable push from
   Settings; `renderNotificationBell()` returns `null` (renders nothing) when `isPushEnabled()`,
   so it disappears once opted in. Mounted in `js/app.js` (appended only when non-null).
