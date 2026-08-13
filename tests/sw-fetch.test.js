@@ -6,7 +6,7 @@
  * can be served stale on devices that cannot force-reload (mobile PWAs).
  */
 import { describe, it, expect, vi } from 'vitest';
-import { networkFirst } from '../js/sw-fetch.js';
+import { networkFirst, shouldHandleRequest } from '../js/sw-fetch.js';
 
 function makeCaches({ matchResults = [] } = {}) {
   const put = vi.fn();
@@ -65,5 +65,31 @@ describe('networkFirst', () => {
     expect(caches.match).toHaveBeenNthCalledWith(1, 'REQ');
     expect(caches.match).toHaveBeenNthCalledWith(2, './index.html');
     expect(out).toBe(shell);
+  });
+});
+
+describe('shouldHandleRequest', () => {
+  const ORIGIN = 'https://minoplay.github.io';
+
+  it('handles same-origin GET app-asset requests', () => {
+    const req = { method: 'GET', url: `${ORIGIN}/Mexicano_v3/js/pages/tournament.js` };
+    expect(shouldHandleRequest(req, ORIGIN)).toBe(true);
+  });
+
+  it('does NOT handle cross-origin GitHub API requests (they must hit the network directly)', () => {
+    // This is the mobile-PWA hang: the SW re-fetching an auth'd api.github.com
+    // GET (without the page's AbortController) and caching the response.
+    const req = { method: 'GET', url: 'https://api.github.com/repos/MinoPlay/DataHub_Mexicano/contents/x.json' };
+    expect(shouldHandleRequest(req, ORIGIN)).toBe(false);
+  });
+
+  it('does NOT handle cross-origin Telegram/push requests', () => {
+    const req = { method: 'GET', url: 'https://api.telegram.org/bot123/sendMessage' };
+    expect(shouldHandleRequest(req, ORIGIN)).toBe(false);
+  });
+
+  it('does NOT handle non-GET requests', () => {
+    const req = { method: 'PUT', url: `${ORIGIN}/Mexicano_v3/index.html` };
+    expect(shouldHandleRequest(req, ORIGIN)).toBe(false);
   });
 });

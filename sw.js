@@ -1,8 +1,8 @@
 // Single source of truth for the app version / cache name.
 // Bump APP_VERSION by +1 each release. js/version.js imports it.
-import { networkFirst } from './js/sw-fetch.js';
+import { networkFirst, shouldHandleRequest } from './js/sw-fetch.js';
 
-export const APP_VERSION = 58;
+export const APP_VERSION = 59;
 
 const CACHE_NAME = `mexicano-v${APP_VERSION}`;
 const ASSETS = [
@@ -70,7 +70,11 @@ if (isServiceWorker) {
 
   self.addEventListener('fetch', (event) => {
     const req = event.request;
-    if (req.method !== 'GET') return;
+    // Only same-origin GETs use the cache strategy. Cross-origin requests
+    // (GitHub API, Telegram, push) bypass the SW so their AbortController
+    // timeouts work and auth'd responses are never cached — otherwise an
+    // installed mobile PWA hangs on completion (End Tournament → finalize).
+    if (!shouldHandleRequest(req, self.location.origin)) return;
     // Network-first with HTTP-cache bypass (see js/sw-fetch.js): always pull the
     // latest files so updates reach every device; cache is offline fallback only.
     event.respondWith(networkFirst(req, { fetch, caches, cacheName: CACHE_NAME }));
