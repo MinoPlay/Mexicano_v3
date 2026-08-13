@@ -17,6 +17,33 @@ import { Cache } from '../cache.js';
 
 const API_BASE = 'https://api.github.com';
 
+// Maximum time to wait for any single GitHub request. Without this a stalled
+// connection (common on mobile) leaves fetch pending forever, which is exactly
+// what makes the tournament-completion progress dialog hang with nothing
+// happening. On timeout the request is aborted and rejects so callers (and the
+// progress dialog) can surface an error and retry instead of waiting forever.
+const REQUEST_TIMEOUT_MS = 20000;
+
+/**
+ * fetch() with a hard timeout. Aborts the underlying request and rejects with a
+ * clear "timed out" error once REQUEST_TIMEOUT_MS elapses, even if the network
+ * never responds.
+ */
+function fetchWithTimeout(url, options = {}, timeoutMs = REQUEST_TIMEOUT_MS) {
+  const controller = new AbortController();
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => {
+      controller.abort();
+      reject(new Error(`GitHub request timed out after ${timeoutMs}ms`));
+    }, timeoutMs);
+  });
+  return Promise.race([
+    fetch(url, { ...options, signal: controller.signal }),
+    timeout,
+  ]).finally(() => clearTimeout(timer));
+}
+
 // ─── Path guard ──────────────────────────────────────────────────────────────
 
 /**
@@ -162,7 +189,7 @@ export async function readFile(path) {
   const safePath = guardPath(path);
 
   const url = `${API_BASE}/repos/${encodeURIComponent(cfg.owner)}/${encodeURIComponent(cfg.repo)}/contents/${safePath}`;
-  const res = await fetch(url, { headers: authHeaders(cfg.pat) });
+  const res = await fetchWithTimeout(url, { headers: authHeaders(cfg.pat) });
 
   if (res.status === 404) { return null; }
   if (!res.ok) throw new Error(`GitHub read failed (${res.status}): ${safePath}`);
@@ -184,7 +211,7 @@ export async function listContents(path) {
   const safePath = guardPath(path);
 
   const url = `${API_BASE}/repos/${encodeURIComponent(cfg.owner)}/${encodeURIComponent(cfg.repo)}/contents/${safePath}`;
-  const res = await fetch(url, { headers: authHeaders(cfg.pat) });
+  const res = await fetchWithTimeout(url, { headers: authHeaders(cfg.pat) });
 
   if (res.status === 404) return [];
   if (!res.ok) throw new Error(`GitHub list failed (${res.status}): ${safePath}`);
@@ -208,7 +235,7 @@ export async function deleteFile(path, sha) {
     message: `mexicano: delete ${safePath}`,
     sha,
   };
-  const res = await fetch(url, {
+  const res = await fetchWithTimeout(url, {
     method: 'DELETE',
     headers: authHeaders(cfg.pat),
     body: JSON.stringify(body),
@@ -241,7 +268,7 @@ export async function writeFile(path, data, sha) {
       content: btoa(unescape(encodeURIComponent(JSON.stringify(data, null, 2)))),
       ...(currentSha ? { sha: currentSha } : {}),
     };
-    return fetch(url, {
+    return fetchWithTimeout(url, {
       method: 'PUT',
       headers: authHeaders(cfg.pat),
       body: JSON.stringify(body),
@@ -275,7 +302,7 @@ export async function testConnection() {
 
   try {
     const url = `${API_BASE}/repos/${encodeURIComponent(cfg.owner)}/${encodeURIComponent(cfg.repo)}`;
-    const res = await fetch(url, { headers: authHeaders(cfg.pat) });
+    const res = await fetchWithTimeout(url, { headers: authHeaders(cfg.pat) });
     if (res.status === 401) return { ok: false, message: 'Invalid PAT (401 Unauthorized)' };
     if (res.status === 403) return { ok: false, message: 'Forbidden — check PAT scopes' };
     if (res.status === 404) return { ok: false, message: 'Repository not found' };
