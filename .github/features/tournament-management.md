@@ -66,6 +66,13 @@ Match: Team1 = (player1 + player2). Team2 = (player3 + player4).
   3. Number of Players selector
   4. Players slots
 
+### Player Count Switching (name preservation)
+Switching the "Number of Players" selector **never clears already-typed names**:
+- **Shrinking** (e.g. 12 → 8): the first N names are kept, the surplus slots (and their names) are dropped.
+- **Growing** (e.g. 12 → 16): all existing names stay in place, the new slots are rendered blank.
+- Implemented by the pure helper `resizePlayerNames(names, newCount)` in `js/pages/create-tournament.js`,
+  which returns an array of exactly `newCount` entries (truncated or `''`-padded).
+
 ### Tournament View Header
 - Access code (if present) displayed **next to** the "Matches" and "Leaderboard" tab labels
 - Format: `"Code: ABC-123"` (or similar display, admin-configurable)

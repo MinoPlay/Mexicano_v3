@@ -4,6 +4,16 @@ import { showToast } from '../components/toast.js';
 
 const PLAYER_COUNTS = [4, 8, 12, 16];
 
+/**
+ * Resize a list of player names to exactly `newCount` entries:
+ * shrinking keeps the top N names, growing keeps all and pads with blanks.
+ */
+export function resizePlayerNames(names, newCount) {
+  const out = [];
+  for (let i = 0; i < newCount; i++) out.push(names[i] || '');
+  return out;
+}
+
 function todayStr() {
   return new Date().toISOString().split('T')[0];
 }
@@ -107,6 +117,7 @@ export function renderCreateTournament(container, params = {}) {
   });
 
   function renderPlayerSlots(count) {
+    const previous = resizePlayerNames(playerInputs.map(inp => inp.value), count);
     playerInputs = [];
     slotsContainer.innerHTML = '';
     for (let i = 0; i < count; i++) {
@@ -120,23 +131,25 @@ export function renderCreateTournament(container, params = {}) {
         <button class="player-slot-shift-btn shift-down" title="Shift down" data-index="${i}">▼</button>
       `;
       const input = slot.querySelector('input');
+      input.value = previous[i];
       input.addEventListener('focus', updateSuggestions);
       input.addEventListener('input', () => { updateSuggestions(); refreshShiftButtons(); });
       playerInputs.push(input);
       slotsContainer.appendChild(slot);
     }
 
-    slotsContainer.addEventListener('click', (e) => {
-      const btn = e.target.closest('.player-slot-shift-btn');
-      if (!btn || btn.disabled) return;
-      const idx = parseInt(btn.dataset.index, 10);
-      if (btn.classList.contains('shift-down')) shiftDown(idx);
-      else if (btn.classList.contains('shift-up')) shiftUp(idx);
-    });
-
     refreshShiftButtons();
+    updateSuggestions();
     startBtn.disabled = false;
   }
+
+  slotsContainer.addEventListener('click', (e) => {
+    const btn = e.target.closest('.player-slot-shift-btn');
+    if (!btn || btn.disabled) return;
+    const idx = parseInt(btn.dataset.index, 10);
+    if (btn.classList.contains('shift-down')) shiftDown(idx);
+    else if (btn.classList.contains('shift-up')) shiftUp(idx);
+  });
 
   function shiftDown(idx) {
     const total = playerInputs.length;
