@@ -68,7 +68,7 @@ Match: Team1 = (player1 + player2). Team2 = (player3 + player4).
 
 ### Tournament View Header
 - Access code (if present) displayed **next to** the "Matches" and "Leaderboard" tab labels
-- Format: `"Access Code: ABC-123"` (or similar display, admin-configurable)
+- Format: `"Code: ABC-123"` (or similar display, admin-configurable)
 - When no access code is set, display is omitted or shows placeholder (e.g., "— no access code —")
 
 ### Access Code Edit (Admin Only)

@@ -198,7 +198,7 @@ export function renderTournament(container, params) {
         <button class="tab ${currentTab === 'matches' ? 'active' : ''}" data-tab="matches">Matches</button>
         <button class="tab ${currentTab === 'leaderboard' ? 'active' : ''}" data-tab="leaderboard">Leaderboard</button>
         <div style="display:flex;align-items:center;gap:var(--space-xs);margin-left:auto" id="access-code-area">
-          ${tournament.accessCode ? `<span class="text-sm text-secondary"><strong>Access Code: ${tournament.accessCode}</strong></span>` : ''}
+          ${tournament.accessCode ? `<span class="text-sm text-secondary"><strong>Code: ${tournament.accessCode}</strong></span>` : ''}
           ${isAdmin ? `<button class="btn btn-ghost btn-xs" id="edit-access-code" title="Edit access code">✎</button>` : ''}
         </div>
       </div>
