@@ -17,7 +17,7 @@ The page header shows `Settings`, the current-user avatar and selector, and a bl
 
 Current user selection uses `Store.getCurrentUser()` and `Store.setCurrentUser(name)`. The avatar is the uppercase first character of the current user, or `?` when no user is selected. Changing user also reruns admin-gated visibility and shows a toast.
 
-Admin detection uses `Store.isAdministrator()`, which compares the lowercased current user with the in-memory administrator list loaded through `Store.setAdministrators(list)`. In `settings.js`, the Members, Attendance, and Logs sections are hidden for non-admin users. The GitHub Backend and Telegram Alerts sections are not hidden by this page-level admin gate.
+Admin detection uses `Store.isAdministrator()`, which compares the lowercased current user with the in-memory administrator list loaded through `Store.setAdministrators(list)`. In `settings.js`, the Members, Attendance, Logs, Custom Push, and Telegram Alerts sections are hidden for non-admin users. The GitHub Backend section is not hidden by this page-level admin gate.
 
 The Members section reads names through `getMembers()`, renders a collapsible list, and allows admins to remove local members after `confirm()`. Adding a member validates a trimmed name, enforces a 1–50 character length, checks case-insensitive duplicates, calls `addPlayerToPlayersJson(name)` to append to GitHub `players.json`, then calls `addMember(name)` to update local Store/Cache and emits member change state from the members service.
 
@@ -75,7 +75,7 @@ There are no sub-tabs; the page is a flat settings page with collapsible or stan
 - GitHub connection — fixed owner/repo/basePath, editable PAT, Save/Test/Clear, sync status icon.
 - Logs toggle — admin-only `isLogsEnabled` checkbox.
 - Attendance — admin-only manual attendance dialog launcher.
-- Telegram Alerts — test buttons for Doodle and tournament-group relay alerts.
+- Telegram Alerts — admin-only test buttons for Doodle and tournament-group relay alerts.
 - PWA install — no visible section in the current `settings.js`; install behavior is native browser UI only.
 - Version/about — represented by the header button showing `getVersionLabel()` and calling `refreshApp()`.
 

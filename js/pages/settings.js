@@ -104,8 +104,8 @@ export function renderSettings(container, params) {
         </div>
       </div>
 
-      <!-- Telegram Alerts -->
-      <div class="settings-section">
+      <!-- Telegram Alerts (admin only) -->
+      <div class="settings-section" id="telegram-section">
         <div class="settings-section-title">Telegram Alerts</div>
         <p class="text-sm text-secondary" style="margin-bottom:var(--space-sm);">
           Doodle updates and tournament confirmations are relayed to a
@@ -171,6 +171,7 @@ export function renderSettings(container, params) {
   const attendanceSection = container.querySelector('#attendance-section');
   const logsSection = container.querySelector('#logs-section');
   const customPushSection = container.querySelector('#custom-push-section');
+  const telegramSection = container.querySelector('#telegram-section');
 
   function refreshAdminVisibility() {
     const isAdmin = Store.isAdministrator();
@@ -178,6 +179,7 @@ export function renderSettings(container, params) {
     if (attendanceSection) attendanceSection.style.display = isAdmin ? '' : 'none';
     if (logsSection) logsSection.style.display = isAdmin ? '' : 'none';
     if (customPushSection) customPushSection.style.display = isAdmin ? '' : 'none';
+    if (telegramSection) telegramSection.style.display = isAdmin ? '' : 'none';
   }
   refreshAdminVisibility();
 
