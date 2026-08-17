@@ -34,14 +34,14 @@ export function openScoreInput(match, onConfirm) {
       </div>
     </div>
     <div class="score-presets">
-      <button class="score-preset" data-s1="13" data-s2="12">13 – 12</button>
-      <button class="score-preset" data-s1="15" data-s2="10">15 – 10</button>
-      <button class="score-preset" data-s1="17" data-s2="8">17 – 8</button>
-      <button class="score-preset" data-s1="20" data-s2="5">20 – 5</button>
-      <button class="score-preset" data-s1="12" data-s2="13">12 – 13</button>
-      <button class="score-preset" data-s1="10" data-s2="15">10 – 15</button>
+      <button class="score-preset" data-s1="7" data-s2="18">7 – 18</button>
       <button class="score-preset" data-s1="8" data-s2="17">8 – 17</button>
-      <button class="score-preset" data-s1="5" data-s2="20">5 – 20</button>
+      <button class="score-preset" data-s1="9" data-s2="16">9 – 16</button>
+      <button class="score-preset" data-s1="10" data-s2="15">10 – 15</button>
+      <button class="score-preset" data-s1="11" data-s2="14">11 – 14</button>
+      <button class="score-preset" data-s1="12" data-s2="13">12 – 13</button>
+      <button class="score-preset" data-s1="13" data-s2="12">13 – 12</button>
+      <button class="score-preset" data-s1="14" data-s2="11">14 – 11</button>
     </div>
     <div id="score-error" class="text-danger text-sm" style="min-height:20px;text-align:center"></div>
     <div class="score-actions">
