@@ -190,7 +190,14 @@ Example: 8 players in a 12-slot tournament. Select player 4, click ▼ — playe
 ### Edge Cases
 - **Incomplete final group**: Fewer than 4 players in last group → skipped (match not created).
 - **Tied scores**: Both teams score same cumulative points (e.g., 13-12) → valid, both get credited.
-- **Mid-tournament edit (< 24h)**: Editing previous round score cascades: delete later rounds, recalculate stats, auto-regenerate if round now complete.
+- **Mid-tournament edit (< 24h)**: Editing a previous round's score cascades: later rounds are
+  deleted, player stats are recalculated, and (since the edited round is complete again) the
+  next round is immediately regenerated from the updated standings. Example: on round 7, editing
+  round 6 overrides round 6 and recreates round 7 from the new results.
+  The cascade is pushed to GitHub straight away via `pushTournamentDayFile()` (verified write) —
+  unlike a normal current-round score entry, which is only pushed on round advance / end.
+  Without that immediate push the remote day file would keep the stale rounds and silently
+  overwrite the edit on the next load.
 - **Player removal**: Not explicitly handled; current schema assumes fixed player list per tournament.
 - **Stale date file vs definitive index**: If `tournaments.json` has `isComplete: true` with real match data (`completedCount === matchCount > 0`), the index wins over a stale date file that still contains `{ tournament: { isCompleted: false } }` (leftover intermediate push). The active tournament is cleared and stale matches are purged. Only when `matchCount === 0` (index may be stale after a data-restore) does the date file take precedence.
 

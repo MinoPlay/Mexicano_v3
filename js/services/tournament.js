@@ -197,6 +197,7 @@ export function setMatchScore(tournament, roundNumber, matchId, team1Score, team
 
   const roundIdx = tournament.rounds.findIndex(r => r.roundNumber === roundNumber);
   if (roundIdx === -1) throw new Error(`Round ${roundNumber} not found`);
+  const isPreviousRoundEdit = roundNumber < tournament.currentRoundNumber;
 
   const round = tournament.rounds[roundIdx];
   const match = round.matches.find(m => m.id === matchId);
@@ -206,7 +207,7 @@ export function setMatchScore(tournament, roundNumber, matchId, team1Score, team
   match.team2Score = team2Score;
   match.completedAt = Date.now();
 
-  if (roundNumber < tournament.currentRoundNumber) {
+  if (isPreviousRoundEdit) {
     // Editing a previous round — cascade: delete later rounds, recalculate, regenerate one round
     tournament.rounds = tournament.rounds.filter(r => r.roundNumber <= roundNumber);
     tournament.currentRoundNumber = roundNumber;
@@ -232,8 +233,17 @@ export function setMatchScore(tournament, roundNumber, matchId, team1Score, team
   }
 
   saveTournamentState(tournament);
-  // Suppress auto-push on individual score updates — only push on round advance / end tournament
-  import('./github.js').then(({ cancelPendingSync }) => cancelPendingSync()).catch(() => {});
+  cancelPendingSync();
+  if (isPreviousRoundEdit) {
+    // The cascade rewrote/removed rounds that were already pushed. Write the day
+    // file now (verified write), otherwise the remote copy keeps the stale rounds
+    // and silently overwrites this edit on the next load.
+    Promise.resolve(pushTournamentDayFile(tournament))
+      .then(() => console.log('[tournament] previous-round edit pushed:', tournament.tournamentDate))
+      .catch(e => console.warn('[tournament] previous-round edit push failed:', e));
+  }
+  // Otherwise suppress auto-push on individual score updates — only push on
+  // round advance / end tournament.
   return tournament;
 }
 
