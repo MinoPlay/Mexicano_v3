@@ -29,6 +29,8 @@ beforeEach(() => {
   localStorageStub.clear();
   Store.setAdministrators([]);
   Store.setCurrentUser('');
+  // Logs default to disabled; these tests cover the admin gate, so opt in.
+  Store.setLogsEnabled(true);
 });
 
 const hasLogs = (nav) => !!nav.querySelector('.nav-item[data-path="/logs"]');
@@ -65,6 +67,16 @@ describe('Bottom nav — Logs tab visibility', () => {
     expect(hasLogs(nav)).toBe(true);
 
     Store.setCurrentUser('SomeGuest');
+    expect(hasLogs(nav)).toBe(false);
+  });
+
+  it('hides Logs for an admin when the logs toggle is disabled', () => {
+    Store.setAdministrators(ADMINISTRATORS);
+    Store.setCurrentUser('Mino');
+    const nav = renderNav();
+    expect(hasLogs(nav)).toBe(true);
+
+    Store.setLogsEnabled(false);
     expect(hasLogs(nav)).toBe(false);
   });
 });
