@@ -8,12 +8,12 @@ description: >
 # Settings tab
 
 ## Purpose
-The Settings tab is the operational/admin page for local user identity, member management, GitHub backend configuration, diagnostics toggles, manual attendance entry, Telegram alert testing, and app refresh/version display.
+The Settings tab is the operational/admin page for local user identity, member management, GitHub backend configuration, diagnostics toggles, manual attendance entry, and Telegram alert testing.
 
 It is rendered by `renderSettings(container, params)` in `js/pages/settings.js` and is mounted at route `/settings` from `js/app.js`.
 
 ## Rules / Logic
-The page header shows `Settings`, the current-user avatar and selector, and a blue refresh/version button. The button label comes from `getVersionLabel()` and its click handler disables the button, shows a toast, then calls `refreshApp()`.
+The page header shows `Settings`, the current-user avatar and selector. The version/refresh button no longer lives here — it moved to the Home page header title (`#home-title` → `#app-refresh-btn`).
 
 Current user selection uses `Store.getCurrentUser()` and `Store.setCurrentUser(name)`. The avatar is the uppercase first character of the current user, or `?` when no user is selected. Changing user also reruns admin-gated visibility and shows a toast.
 
@@ -52,7 +52,7 @@ PAT-in-URL bootstrap and onboarding are adjacent flows, not settings-page code. 
 - `js/services/pat-url.js` — `parsePatFromUrl(href)` and `buildPatUrl(baseUrl, pat)` for shareable PAT bootstrap links.
 - `js/components/onboarding-dialog.js` — `showOnboardingDialog()` handles first-run PAT entry and player selection with the same fixed GitHub defaults.
 - `js/components/install-prompt.js` — `isInstalled()` detects `display-mode: standalone`; currently unused by Settings rendering.
-- `js/version.js` — `APP_VERSION`, `getVersionLabel()`, and `refreshApp()`.
+- `js/version.js` — `APP_VERSION`, `getVersionLabel()`, and `refreshApp()`; used by the Home header, not by Settings.
 - `js/app.js` — route table maps `/settings` to `renderSettings`.
 
 ## Data

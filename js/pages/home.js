@@ -4,6 +4,7 @@ import { calculateAllEloRankings, getEloSnapshots, getEloForDate } from '../serv
 import { getLatestCompleteTournamentDate, getActiveTournament, confirmAttendanceAndPush } from '../services/tournament.js';
 import { getMembers } from '../services/members.js';
 import { calculatePlayerStatistics } from '../services/statistics.js';
+import { APP_VERSION, refreshApp } from '../version.js';
 
 export function shouldShowConfirmationPopup(activeTournament, currentUser, alreadyConfirmed) {
   if (!activeTournament || activeTournament.isCompleted) return false;
@@ -460,7 +461,7 @@ export function renderHome(container, params) {
 
   container.innerHTML = `
     <header class="page-header">
-      <h1 id="home-title" style="cursor:pointer;user-select:none;" title="Tap to clear cached data">🎾 Mexicano</h1>
+      <h1 id="home-title" style="cursor:pointer;user-select:none;display:flex;align-items:center;gap:var(--space-xs);" title="Tap to clear cached data">🎾 Mexicano v${APP_VERSION}<button id="app-refresh-btn" type="button" title="Refresh to latest version" style="background:none;border:none;padding:0;color:inherit;font:inherit;cursor:pointer;line-height:1;">↻</button></h1>
       <div class="flex items-center gap-sm" id="home-header-right"></div>
     </header>
     <div class="page-content" style="padding-left:0;padding-right:0;">
@@ -567,6 +568,16 @@ export function renderHome(container, params) {
       if (nd && nd.isConnected && currentMonthStats.length === 0) {
         nd.textContent = 'No data for this month';
       }
+    });
+  }
+
+  // Refresh icon = clear all caches and reload to latest version
+  const refreshBtn = container.querySelector('#app-refresh-btn');
+  if (refreshBtn) {
+    refreshBtn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      refreshBtn.disabled = true;
+      await refreshApp();
     });
   }
 

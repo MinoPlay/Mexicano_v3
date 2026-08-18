@@ -6,7 +6,6 @@ import { isInstalled } from '../components/install-prompt.js';
 import { sendTelegramTestAlert, sendTournamentTestAlert } from '../services/telegram.js';
 import { isPushSupported, subscribeToPush, sendPushNotification } from '../services/push.js';
 import { showManualAttendanceDialog } from '../components/manual-attendance-dialog.js';
-import { getVersionLabel, refreshApp } from '../version.js';
 
 function renderMembersList(listEl) {
   const members = getMembers();
@@ -39,7 +38,6 @@ export function renderSettings(container, params) {
           ${members.map(m => `<option value="${m}" ${m === currentUser ? 'selected' : ''}>${m}</option>`).join('')}
         </select>
       </div>
-      <button id="app-refresh-btn" class="btn btn-primary btn-sm" title="Refresh to latest version">${getVersionLabel()}</button>
     </header>
     <div class="page-content">
 
@@ -323,16 +321,6 @@ export function renderSettings(container, params) {
     setGhStatusMsg('Configuration cleared.');
     updateSyncIcon('idle');
     showToast('GitHub config cleared');
-  });
-
-  // ─── App Version ───────────────────────────────────────────────────────────
-
-  container.querySelector('#app-refresh-btn').addEventListener('click', async (e) => {
-    const btn = e.currentTarget;
-    btn.disabled = true;
-    btn.textContent = 'Refreshing…';
-    showToast('Refreshing to latest version…');
-    await refreshApp();
   });
 
   // ─── Telegram Alerts ───────────────────────────────────────────────────────

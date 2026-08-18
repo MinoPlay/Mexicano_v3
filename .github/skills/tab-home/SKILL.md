@@ -26,7 +26,8 @@ The Home tab is the landing page for route `/`. It is available to all users and
 - Sortable columns are `name`, `wl`, `pts`, `avg`, `win`, `elo`, and `change`. Clicking the active sort column toggles direction; clicking a new column sorts names ascending and other columns descending.
 - Current-month sorting has an additional tie-breaker: wins descending, then name ascending.
 - With a configured GitHub PAT (`Store.getGitHubConfig()?.pat`), the page lazy-loads missing latest-day matches through `ensureDayMatchesLoaded(latestDate)` and always refreshes current plus previous monthly overviews with `pullMonthlyOverview()`.
-- The title `#home-title` is clickable. After confirmation, it removes `matches`, `matches_fully_loaded`, `active_tournament`, and `completion_marker`, then reloads the page.
+- The title `#home-title` renders `🎾 Mexicano v<APP_VERSION>` and is clickable. After confirmation, it removes `matches`, `matches_fully_loaded`, `active_tournament`, and `completion_marker`, then reloads the page.
+- The title also contains `#app-refresh-btn` (refresh icon `↻`). Its click stops propagation (so the clear-cache handler does not fire) and calls `refreshApp()` from `js/version.js`, which clears all caches and reloads.
 - Tournament attendance confirmation is shown only when `shouldShowConfirmationPopup(activeTournament, currentUser, alreadyConfirmed)` returns true and no `#tournament-confirm-overlay` exists. Confirmation stores `confirmed_tournament_<date>`, calls `confirmAttendance(currentUser)`, removes the overlay, and best-effort sends a Telegram alert.
 - `State`, `calculateAllEloRankings`, and `getMembers` are imported in `home.js` but are not used by the current implementation.
 
@@ -58,7 +59,7 @@ The Home tab is the landing page for route `/`. It is available to all users and
 ## Sub-tabs / Sections
 Home has no sub-tabs, but it has distinct sections:
 
-- **Page header** — shows the clickable `🎾 Mexicano` title and an empty `#home-header-right` container. Clicking the title is a manual cache reset flow.
+- **Page header** — shows the clickable `🎾 Mexicano v<APP_VERSION>` title with the `#app-refresh-btn` refresh icon, plus an empty `#home-header-right` container. Clicking the title is a manual cache reset flow; clicking the icon refreshes to the latest version.
 - **Active Tournament card** — renders only when there is a non-completed active tournament that is not marked complete in the tournaments index. It links to `#/tournament/<tournamentDate>` and shows formatted date plus player count.
 - **Latest Tournament table** — shows stats for the latest completed tournament. If local data is missing and GitHub is configured, it temporarily displays `⏳ Loading…`, fetches the date's matches, then replaces the no-data element with the rendered table. If no data exists, it shows `No tournament data available`.
 - **Current Month table** — shows current calendar month aggregate stats. It uses cached monthly overview data first, local match calculation second, then refreshes current and previous monthly overviews from GitHub when possible. It shows `No data for this month` when no rows are available.

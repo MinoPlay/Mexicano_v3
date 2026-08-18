@@ -1,8 +1,8 @@
 /**
- * Settings — App Version section + Refresh button.
- * Settings page must render:
- *   - #app-version showing the version label "mexicano-v3"
- *   - #app-refresh-btn button to pull the latest version
+ * Settings — App Version.
+ * Version label + refresh action now live in the Home page header
+ * (see tests/pages/home-version-refresh.test.js); Settings must not render
+ * #app-refresh-btn anymore.
  */
 import { vi, describe, it, expect, beforeEach } from 'vitest';
 
@@ -70,13 +70,11 @@ describe('Settings — App Version', () => {
     expect(getVersionLabel()).toBe(`mexicano-v${APP_VERSION}`);
   });
 
-  it('renders the version label as the refresh button #app-refresh-btn', () => {
+  it('no longer renders the refresh button in Settings', () => {
     const container = document.createElement('div');
     renderSettings(container, {});
 
-    const btn = container.querySelector('#app-refresh-btn');
-    expect(btn).not.toBeNull();
-    expect(btn.textContent).toContain(getVersionLabel());
+    expect(container.querySelector('#app-refresh-btn')).toBeNull();
   });
 
   it('sw.js declares APP_VERSION and version.js imports it (single source of truth)', async () => {
