@@ -1,6 +1,7 @@
 import { Store } from '../store.js';
 import { rankPlayers } from './ranking.js';
 import { calculateAllEloRankings } from './elo.js';
+import { fetchWithRetry, FAST_TIMEOUTS } from './http.js';
 
 const INITIAL_ELO = 1000;
 
@@ -85,11 +86,13 @@ async function dispatch(payload, kind) {
 
   const url = `${GH_API}/repos/${encodeURIComponent(gh.owner)}/${encodeURIComponent(gh.repo)}/dispatches`;
   log('info', 'Relaying push via GitHub dispatch.', { kind });
-  const res = await fetch(url, {
+  // Bounded + retrying: see telegram.js — a stalled relay POST must not hang
+  // the tournament-completion dialog.
+  const res = await fetchWithRetry(url, {
     method: 'POST',
     headers: getHeaders(gh.pat),
     body: JSON.stringify(payload),
-  });
+  }, { timeouts: FAST_TIMEOUTS });
 
   // repository_dispatch returns 204 No Content on success.
   if (res.status !== 204) {

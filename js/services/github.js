@@ -14,35 +14,25 @@
 
 import { Store } from '../store.js';
 import { Cache } from '../cache.js';
+import { fetchWithRetry, FAST_TIMEOUTS, BACKGROUND_TIMEOUTS } from './http.js';
 
 const API_BASE = 'https://api.github.com';
 
-// Maximum time to wait for any single GitHub request. Without this a stalled
-// connection (common on mobile) leaves fetch pending forever, which is exactly
-// what makes the tournament-completion progress dialog hang with nothing
-// happening. On timeout the request is aborted and rejects so callers (and the
-// progress dialog) can surface an error and retry instead of waiting forever.
-const REQUEST_TIMEOUT_MS = 20000;
-
 /**
- * fetch() with a hard timeout. Aborts the underlying request and rejects with a
- * clear "timed out" error once REQUEST_TIMEOUT_MS elapses, even if the network
- * never responds.
+ * Every GitHub request goes through a bounded, retrying fetch. Without a hard
+ * timeout a stalled connection (common on mobile, even when "online") leaves
+ * fetch pending forever — which is what made the End Tournament progress dialog
+ * hang with nothing happening.
+ *
+ * User-blocking flows (tournament completion) pass FAST_TIMEOUTS so a stalled
+ * attempt is abandoned after 2s and retried once, capping the whole request at
+ * 5s. Background work uses a single 5s attempt.
  */
-function fetchWithTimeout(url, options = {}, timeoutMs = REQUEST_TIMEOUT_MS) {
-  const controller = new AbortController();
-  let timer;
-  const timeout = new Promise((_, reject) => {
-    timer = setTimeout(() => {
-      controller.abort();
-      reject(new Error(`GitHub request timed out after ${timeoutMs}ms`));
-    }, timeoutMs);
-  });
-  return Promise.race([
-    fetch(url, { ...options, signal: controller.signal }),
-    timeout,
-  ]).finally(() => clearTimeout(timer));
+function fetchWithTimeout(url, options = {}, timeouts = BACKGROUND_TIMEOUTS) {
+  return fetchWithRetry(url, options, { timeouts });
 }
+
+export { FAST_TIMEOUTS };
 
 // ─── Path guard ──────────────────────────────────────────────────────────────
 
@@ -182,14 +172,14 @@ export function keyToPath(key) {
  * Fetch a single file from the repo.
  * Returns the parsed JSON content and the file's current SHA (needed for updates), or null if not found.
  */
-export async function readFile(path) {
+export async function readFile(path, { timeouts } = {}) {
   const cfg = getConfig();
   if (!cfg?.owner || !cfg?.repo || !cfg?.pat) return null;
 
   const safePath = guardPath(path);
 
   const url = `${API_BASE}/repos/${encodeURIComponent(cfg.owner)}/${encodeURIComponent(cfg.repo)}/contents/${safePath}`;
-  const res = await fetchWithTimeout(url, { headers: authHeaders(cfg.pat) });
+  const res = await fetchWithTimeout(url, { headers: authHeaders(cfg.pat) }, timeouts);
 
   if (res.status === 404) { return null; }
   if (!res.ok) throw new Error(`GitHub read failed (${res.status}): ${safePath}`);
@@ -254,7 +244,7 @@ export async function deleteFile(path, sha) {
  * @param {*}      data  - value to serialise as JSON
  * @param {string} [sha] - current file SHA (required when updating an existing file)
  */
-export async function writeFile(path, data, sha) {
+export async function writeFile(path, data, sha, { timeouts } = {}) {
   const cfg = getConfig();
   if (!cfg?.owner || !cfg?.repo || !cfg?.pat) throw new Error('GitHub not configured');
 
@@ -272,14 +262,14 @@ export async function writeFile(path, data, sha) {
       method: 'PUT',
       headers: authHeaders(cfg.pat),
       body: JSON.stringify(body),
-    });
+    }, timeouts);
   }
 
   let res = await attempt(sha);
 
   // Retry once on 409 Conflict — re-read the current SHA and try again
   if (res.status === 409) {
-    const fresh = await readFile(path);
+    const fresh = await readFile(path, { timeouts });
     res = await attempt(fresh?.sha);
   }
 
@@ -456,8 +446,72 @@ export async function pushTournamentDayFile(tournament, attempts = 3) {
   throw lastErr || new Error('pushTournamentDayFile failed');
 }
 
-// ─── tournaments.json index ───────────────────────────────────────────────────
+/**
+ * Write a completed tournament to GitHub: its day file, then tournaments.json.
+ *
+ * Deliberately bypasses the debounced pushAll() queue. That queue rewrites every
+ * synced file and makes the caller wait for any unrelated in-flight push, which
+ * is what made the End Tournament dialog hang. Only the two files that actually
+ * describe the completion are touched; everything else is left to background sync.
+ *
+ * Commits are serialised (day file first): concurrent writes to the same branch
+ * cause GitHub 409 fast-forward conflicts.
+ *
+ * @param {string} date         - YYYY-MM-DD
+ * @param {Array}  dayMatches   - this day's matches (camelCase app format)
+ * @param {object} indexEntry   - tournaments.json entry for this date
+ * @param {object} [opts]
+ * @param {number[]} [opts.timeouts] - per-attempt timeout ladder
+ * @param {function} [opts.onStep]   - (stepId, status, detail) progress reporter
+ */
+export async function pushCompletedTournament(date, dayMatches, indexEntry, { timeouts = FAST_TIMEOUTS, onStep } = {}) {
+  const report = (id, status, detail) => {
+    if (typeof onStep !== 'function') return;
+    try { onStep(id, status, detail); } catch { /* ignore reporter errors */ }
+  };
 
+  const cfg = getConfig();
+  if (!cfg?.owner || !cfg?.repo || !cfg?.pat) throw new Error('GitHub not configured');
+  if (!date) throw new Error('pushCompletedTournament: missing date');
+
+  // A debounced pushAll() firing mid-write would commit to the same branch and
+  // trigger 409 fast-forward conflicts (and re-add latency we just removed).
+  cancelPendingSync();
+
+  // 1. Day file — the completed tournament's matches, with embedded ELO.
+  report('push', 'running');
+  const path = datePath(date);
+  const backupData = {
+    backup_timestamp: new Date().toISOString(),
+    match_date: date,
+    match_count: (dayMatches || []).length,
+    matches: (dayMatches || []).map(toBackupMatch),
+  };
+  try {
+    let sha;
+    try { const existing = await readFile(path, { timeouts }); sha = existing?.sha; } catch { sha = undefined; }
+    await writeFile(path, backupData, sha, { timeouts });
+    _dirtyMatchDates.delete(date);
+    report('push', 'success');
+  } catch (e) {
+    report('push', 'error', e);
+    markMatchDateDirty(date);
+    throw e;
+  }
+
+  // 2. tournaments.json — index entry, so the app and the data pipeline see the
+  //    tournament as complete. This push is also what retriggers the pipeline.
+  report('index', 'running');
+  try {
+    await updateTournamentIndexEntry(indexEntry, { timeouts, rethrow: true });
+    report('index', 'success');
+  } catch (e) {
+    report('index', 'error', e);
+    throw e;
+  }
+}
+
+// ─── tournaments.json index ───────────────────────────────────────────────────
 /** Returns the path to tournaments.json (next to players.json). */
 function tournamentsIndexPath() {
   const base = matchesBase();
@@ -615,7 +669,7 @@ export async function fetchTournamentsIndex({ create = false } = {}) {
  *
  * @param {object} entry - { date, playerCount, roundCount, matchCount, completedCount, isComplete }
  */
-export async function updateTournamentIndexEntry(entry) {
+export async function updateTournamentIndexEntry(entry, { timeouts, rethrow = false } = {}) {
   const cfg = getConfig();
   if (!cfg?.owner || !cfg?.repo || !cfg?.pat) return;
   if (!entry?.date) return;
@@ -625,12 +679,15 @@ export async function updateTournamentIndexEntry(entry) {
   let entries = [];
   let sha = null;
   try {
-    const result = await readFile(path);
+    const result = await readFile(path, { timeouts });
     if (result !== null) {
       entries = Array.isArray(result.content) ? [...result.content] : [];
       sha = result.sha;
     }
-  } catch { /* file may not exist yet */ }
+  } catch (e) {
+    // A stalled read must not silently turn into a full-file overwrite.
+    if (rethrow) throw e;
+  }
 
   const idx = entries.findIndex(e => e.date === entry.date);
   if (idx >= 0) {
@@ -641,9 +698,10 @@ export async function updateTournamentIndexEntry(entry) {
   entries.sort((a, b) => a.date.localeCompare(b.date));
 
   try {
-    await writeFile(path, entries, sha);
+    await writeFile(path, entries, sha, { timeouts });
   } catch (e) {
     console.warn('[github] failed to update tournaments.json:', e);
+    if (rethrow) throw e;
     return;
   }
 
@@ -1657,9 +1715,9 @@ function _getRefreshSteps(path) {
  * @param {string} date - 'YYYY-MM-DD'
  * @returns {Promise<Array>} camelCase match objects
  */
-export async function readDayMatches(date) {
+export async function readDayMatches(date, { timeouts } = {}) {
   const path = datePath(date);
-  const result = await readFile(path);
+  const result = await readFile(path, { timeouts });
   if (!result?.content?.matches) return [];
   return result.content.matches.map(fromBackupMatch);
 }

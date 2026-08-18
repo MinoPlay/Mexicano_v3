@@ -86,11 +86,12 @@ End tournament and confirmation popup:
 
 - Admins on the latest incomplete round see "Next Round" when the round is complete, "End Tournament", and "Delete Tournament".
 - "End Tournament" computes unscored matches across all rounds. If any exist, the progress confirm message warns that they will be removed.
-- `showProgressConfirmDialog(title, message, steps, onConfirm)` renders a modal checklist. Step IDs are `finalize`, `push`, `index`, and `telegram`.
-- On confirm, unscored matches are removed, empty rounds are removed, then `completeTournament(tournament, (id, status, detail) => api.setStep(id, status, detail))` runs.
-- `completeTournament()` marks the tournament completed, logs the final round, replays ELO, writes completed match entities to `Store.getMatches()`, updates the tournaments index, writes local dev files, marks the day dirty, calls `flushPush()`, then calls `updateTournamentIndexEntry()`.
-- With a progress reporter, GitHub push/index failures reject so the dialog can display ❌ and error detail. Failures are also logged through `round-log.js`.
-- The page sends `sendTournamentCompletedAlert(tournament)` after completion and reports it as the `telegram` step.
+- `showProgressConfirmDialog(title, message, steps, onConfirm)` renders a modal checklist. The steps come from `COMPLETION_STEPS` (`js/services/tournament.js`): `finalize`, `push`, `index`, `telegram`, and `notify`.
+- On confirm, unscored matches are removed, empty rounds are removed, then `runTournamentCompletion(tournament, (id, status, detail) => api.setStep(id, status, detail))` runs. The page no longer orchestrates the alerts itself.
+- `runTournamentCompletion()` calls `completeTournament()`, then the Telegram alert, then the Web Push relay (`sendTournamentCompletedPush(tournament, Store.getMatches())`). It never rejects: each failure is reported on its own step, any step left `pending`/`running` when the sync fails is flipped to `error`, and failures are logged through `round-log.js`.
+- `completeTournament()` marks the tournament completed, logs the final round, resolves the pre-tournament ELO baseline with `resolveEloBaseline()` (no full-history pull), writes completed match entities to `Store.getMatches()`, updates the tournaments index, writes local dev files, snapshots post-tournament ELO to `mexicano_elo_baseline`, then calls `pushCompletedTournament(date, dayMatches, indexEntry)`.
+- `pushCompletedTournament()` writes only the day file and `tournaments.json`, bypassing the debounced `pushAll()` queue (it cancels any pending sync first), using the `FAST_TIMEOUTS` ladder `2s → 3s` (5s total per request) from `js/services/http.js`. Telegram and Web Push dispatches use the same timed fetch.
+- On sync failure the local copy is preserved (`mexicano_completion_marker`, date re-marked dirty) and `retryCompletedTournamentPush()` retries on reconnect.
 - The simpler `showConfirmDialog()` is used for delete confirmation. Delete calls `deleteTournament(date)`, then navigates to `#/tournaments`.
 
 Attendance confirmation:
@@ -109,11 +110,13 @@ Admin gating:
 
 - `js/pages/tournament.js` — exports `renderTournament(container, params)`; local helpers include `formatDate()`, `getStatusBadge()`, `renderMatchesTab()`, `renderLeaderboardTab()`, `openScoreSheet()`, `showConfirmDialog()`, `showProgressConfirmDialog()`, and `esc()`.
 - `js/app.js` — route table maps `'/tournament/:date'` to `renderTournament`.
-- `js/services/tournament.js` — lifecycle and persistence symbols: `getActiveTournament()`, `setMatchScore()`, `startNextRound()`, `completeTournament()`, `loadTournamentByDate()`, `saveTournamentState()`, `isMatchComplete()`, `isRoundComplete()`, `isTournamentEditable()`, `recalculateAllPlayerStats()`, `updateAccessCode()`, `deleteTournament()`, `confirmAttendance()`, `createRound1Matches()`, and `createMexicanoMatches()`.
+- `js/services/tournament.js` — lifecycle and persistence symbols: `getActiveTournament()`, `setMatchScore()`, `startNextRound()`, `completeTournament()`, `runTournamentCompletion()`, `COMPLETION_STEPS`, `resolveEloBaseline()`, `ELO_BASELINE_KEY`, `loadTournamentByDate()`, `saveTournamentState()`, `isMatchComplete()`, `isRoundComplete()`, `isTournamentEditable()`, `recalculateAllPlayerStats()`, `updateAccessCode()`, `deleteTournament()`, `confirmAttendance()`, `createRound1Matches()`, and `createMexicanoMatches()`.
 - `js/services/ranking.js` — `rankPlayers(players)` for player standings and next-round seeding.
-- `js/services/github.js` — imported lazily for `fetchActiveTournamentJson()`, `ensureDayMatchesLoaded()`, `readDayMatches()`, `markMatchDateDirty()`, `flushPush()`, `updateTournamentIndexEntry()`, `removeTournamentIndexEntry()`, and `deleteTournamentDayFile()`.
+- `js/services/github.js` — imported lazily for `fetchActiveTournamentJson()`, `ensureDayMatchesLoaded()`, `readDayMatches()`, `markMatchDateDirty()`, `flushPush()`, `pushCompletedTournament()`, `updateTournamentIndexEntry()`, `removeTournamentIndexEntry()`, and `deleteTournamentDayFile()`.
+- `js/services/http.js` — `fetchWithTimeout()`, `fetchWithRetry()`, and the `FAST_TIMEOUTS` (`2s → 3s`, 5s total) ladder used by every request in the completion flow.
 - `js/services/round-log.js` — `logRoundResult()` records completed rounds; `logError()` records sync/Telegram failures for the Logs tab.
 - `js/services/telegram.js` — `sendTournamentConfirmationAlert()` and `sendTournamentCompletedAlert()`.
+- `js/services/push.js` — `sendTournamentCompletedPush(tournament, allMatches)` for the `notify` step.
 - `js/pages/statistics.js` — `renderDayStatsInto()` renders the rich leaderboard; `showPlayerProfile()` opens player details.
 - `js/store.js` — `Store` localStorage/cache facade: `getActiveTournament()`, `setActiveTournament()`, `clearActiveTournament()`, `getMatches()`, `setMatches()`, `getTournamentsIndex()`, `setTournamentsIndex()`, `getCurrentUser()`, `isAdministrator()`, `getGitHubConfig()`, `set()`.
 - `js/state.js` — `State.on('tournament-changed', ...)` subscription and `State.emit('tournament-changed', tournament)` updates.
@@ -126,6 +129,7 @@ Store/localStorage keys:
 - `mexicano_active_tournament` via `Store.getActiveTournament()` and `Store.setActiveTournament()`.
 - `mexicano_matches` via `Store.getMatches()` and `Store.setMatches()`.
 - `mexicano_completion_marker`, set during completion until the completed tournament is successfully pushed.
+- `mexicano_elo_baseline`, `{ date, elo }` snapshot of post-tournament ELO written by each completion so the next one resolves its baseline with zero network reads.
 - `mexicano_confirmed_tournament_<date>`, local attendance-confirmation flag.
 - `mexicano_round_log`, maintained by the round-log service for admin-only logs.
 
@@ -195,7 +199,7 @@ GitHub data flow:
 - `saveTournamentState(tournament)` stores active tournament state, rewrites completed match entities for that date, emits `tournament-changed`, and calls `markMatchDateDirty(tournament.tournamentDate)`.
 - Individual score edits call `cancelPendingSync()` after saving, so partial score changes are not pushed one-by-one.
 - `startNextRound()` saves and then calls `flushPush()` to push the completed round.
-- `completeTournament()` writes all completed matches, updates the tournaments index, marks the date dirty, calls `flushPush()` for the day file, then `updateTournamentIndexEntry(indexEntry)`.
+- `completeTournament()` writes all completed matches, updates the tournaments index, and calls `pushCompletedTournament(date, dayMatches, indexEntry)` — day file first, then `tournaments.json`, bypassing the debounced `pushAll()` queue. It never pulls the full match history.
 - `deleteTournament(date)` removes local index/matches/active state and calls `removeTournamentIndexEntry(date)` plus `deleteTournamentDayFile(date)`.
 - On-demand page load uses `ensureDayMatchesLoaded(date)` and `readDayMatches(date)` when local data is missing or stale.
 

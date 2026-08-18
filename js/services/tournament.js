@@ -7,7 +7,98 @@ import { State } from '../state.js';
 import { rankPlayers } from './ranking.js';
 import { calculateAllEloRankings, processMatchElo } from './elo.js';
 import { logRoundResult } from './round-log.js';
-import { ensureAllMatchesLoaded, cancelPendingSync, pushTournamentDayFile } from './github.js';
+import { cancelPendingSync, pushTournamentDayFile, readDayMatches, pushCompletedTournament, markMatchDateDirty, FAST_TIMEOUTS } from './github.js';
+
+/** localStorage key holding the ELO map produced by the last completion. */
+export const ELO_BASELINE_KEY = 'mexicano_elo_baseline';
+
+/** Latest tournament date in the index strictly before `date`, or null. */
+function previousTournamentDate(date) {
+  const dates = (Store.getTournamentsIndex() || [])
+    .map(e => e?.date)
+    .filter(d => typeof d === 'string' && d < date)
+    .sort();
+  return dates.length ? dates[dates.length - 1] : null;
+}
+
+/**
+ * Post-match ELO embedded in a day's matches, as name→elo (last round wins).
+ * Returns null when the matches carry no embedded ELO.
+ */
+function eloFromDayMatches(dayMatches) {
+  const sorted = [...(dayMatches || [])].sort((a, b) => (a.roundNumber || 0) - (b.roundNumber || 0));
+  const out = {};
+  for (const m of sorted) {
+    if (m.team1Player1Elo != null) out[m.team1Player1Name] = m.team1Player1Elo;
+    if (m.team1Player2Elo != null) out[m.team1Player2Name] = m.team1Player2Elo;
+    if (m.team2Player1Elo != null) out[m.team2Player1Name] = m.team2Player1Elo;
+    if (m.team2Player2Elo != null) out[m.team2Player2Name] = m.team2Player2Elo;
+  }
+  return Object.keys(out).length > 0 ? out : null;
+}
+
+/**
+ * Pre-tournament ELO baseline WITHOUT pulling the full match history.
+ *
+ * Ending a tournament only needs "what was each player's ELO before today".
+ * That value is already persisted, so it is read rather than recomputed:
+ *   1. snapshot written by the previous completion (0 requests)
+ *   2. players_summary / players.json, normally already cached (0 requests)
+ *   3. the previous tournament's day file — authoritative embedded ELO for its
+ *      participants; covers a lagging data pipeline (≤1 request, and 0 when the
+ *      day is already in the local match cache)
+ *   4. replay of locally cached matches (0 requests)
+ *
+ * Never rejects: a stalled/failed read degrades to the next-best source.
+ *
+ * @param {string} date - the tournament being completed (YYYY-MM-DD)
+ * @returns {Promise<{elo: Record<string, number>, source: string}>}
+ */
+export async function resolveEloBaseline(date) {
+  const prevDate = previousTournamentDate(date);
+
+  // 1. Snapshot from the previous completion — exact, zero cost.
+  try {
+    const raw = localStorage.getItem(ELO_BASELINE_KEY);
+    const snapshot = raw ? JSON.parse(raw) : null;
+    if (snapshot?.date && prevDate && snapshot.date === prevDate && snapshot.elo) {
+      return { elo: { ...snapshot.elo }, source: 'snapshot' };
+    }
+  } catch { /* corrupt snapshot — ignore */ }
+
+  // 2. players.json summary.
+  const elo = {};
+  for (const p of Store.getPlayersSummary() || []) {
+    if (p?.name && p.elo != null) elo[p.name] = p.elo;
+  }
+  let source = Object.keys(elo).length > 0 ? 'summary' : null;
+
+  // 3. Overlay the previous tournament's post-match ELO. The summary may not
+  //    include it yet (the pipeline rebuilds players.json only after our push).
+  if (prevDate) {
+    let prevMatches = (Store.getMatches() || []).filter(m => m.date === prevDate);
+    let overlay = eloFromDayMatches(prevMatches);
+    if (!overlay) {
+      try {
+        prevMatches = await readDayMatches(prevDate, { timeouts: FAST_TIMEOUTS });
+        overlay = eloFromDayMatches(prevMatches);
+      } catch (e) {
+        console.warn('[tournament] previous day file read failed; using summary baseline:', e);
+      }
+    }
+    if (overlay) {
+      Object.assign(elo, overlay);
+      source = source ? `${source}+prev-day` : 'prev-day';
+    }
+  }
+
+  if (source) return { elo, source };
+
+  // 4. Last resort: replay whatever history is cached locally. Still no network.
+  const { players } = calculateAllEloRankings(Store.getMatches() || []);
+  for (const [name, p] of Object.entries(players)) elo[name] = p.elo;
+  return { elo, source: 'local-replay' };
+}
 
 // ─── Helpers ───
 
@@ -334,6 +425,78 @@ export function completeTournament(tournament, onProgress) {
 }
 
 /**
+ * Steps shown by the End Tournament progress dialog. Every awaited operation
+ * has one — an unlabelled await is how the dialog used to get stuck on
+ * "Working…" with all visible steps already green.
+ */
+export const COMPLETION_STEPS = [
+  { id: 'finalize', label: 'Finalizing results & ELO' },
+  { id: 'push', label: 'Saving matches to GitHub' },
+  { id: 'index', label: 'Updating tournaments index' },
+  { id: 'telegram', label: 'Sending Telegram alert' },
+  { id: 'notify', label: 'Sending push notifications' },
+];
+
+/**
+ * Run the full End Tournament flow, reporting COMPLETION_STEPS progress.
+ *
+ * The GitHub sync and the two relays are independent: a failed sync still
+ * sends the alerts, and a stalled relay never blocks the others. Never rejects
+ * — each failure is reported on its own step and logged for the Logs tab, so
+ * the dialog always reaches a terminal state.
+ *
+ * @param {object} tournament
+ * @param {function} report - (stepId, status, detail)
+ */
+export async function runTournamentCompletion(tournament, report = () => {}) {
+  const statuses = new Map();
+  const step = (id, status, detail) => {
+    statuses.set(id, status);
+    try { report(id, status, detail); } catch { /* ignore reporter errors */ }
+  };
+  const logFailure = (context, err) => {
+    console.warn(`[tournament] ${context} failed:`, err);
+    import('./round-log.js').then(({ logError }) => logError(context, err)).catch(() => {});
+  };
+
+  try {
+    await completeTournament(tournament, step);
+  } catch (err) {
+    // Any step left hanging (pending/running) becomes the visible failure, so
+    // the dialog can never show a spinner for an operation that already died.
+    for (const { id } of COMPLETION_STEPS) {
+      const status = statuses.get(id);
+      if (status !== undefined && status !== 'success' && status !== 'error') {
+        step(id, 'error', err);
+      }
+    }
+    logFailure('end tournament', err);
+  }
+
+  step('telegram', 'running');
+  try {
+    const { sendTournamentCompletedAlert } = await import('./telegram.js');
+    await sendTournamentCompletedAlert(tournament);
+    step('telegram', 'success');
+  } catch (err) {
+    step('telegram', 'error', err);
+    logFailure('telegram tournament-completed', err);
+  }
+
+  step('notify', 'running');
+  try {
+    const { sendTournamentCompletedPush } = await import('./push.js');
+    // Reuse the match cache updated by the completion instead of letting the
+    // relay re-derive it — that path replays the whole ELO history twice.
+    await sendTournamentCompletedPush(tournament, Store.getMatches() || []);
+    step('notify', 'success');
+  } catch (err) {
+    step('notify', 'error', err);
+    logFailure('push tournament-completed', err);
+  }
+}
+
+/**
  * Merge post-tournament ELO values into a players summary array.
  * Participants get elo (post) + previousElo (pre-tournament); everyone else is
  * untouched. Players missing from the summary are appended.
@@ -364,26 +527,21 @@ async function finalizeCompletedTournament(tournament, onProgress) {
   };
 
   report('finalize', 'running');
-  // The pre-tournament ELO baseline is derived by replaying the ENTIRE match
-  // history from scratch (calculateAllEloRankings starts every player at 1000).
-  // If the local cache is only partially loaded (lazy loading), that baseline
-  // — and therefore every embedded Team*Elo value — would be wrong. Ensure the
-  // full history is loaded first. Falls back to the local cache when offline.
-  let allMatches;
-  try {
-    const loaded = await ensureAllMatchesLoaded();
-    if (Array.isArray(loaded)) allMatches = loaded;
-  } catch (e) {
-    console.warn('[tournament] ensureAllMatchesLoaded failed; using local cache:', e);
+  // Pre-tournament ELO baseline is READ, never recomputed from the full match
+  // history: replaying everything forced a sequential GitHub fetch of every
+  // tournament day file, which is what made this dialog hang. See
+  // resolveEloBaseline() — at most one extra read, usually zero.
+  const { elo: eloBefore, source: baselineSource } = await resolveEloBaseline(tournament.tournamentDate);
+  console.log('[tournament] ELO baseline source:', baselineSource);
+
+  // Only the local cache is touched; today's matches are merged into it below.
+  const allMatches = Store.getMatches() || [];
+
+  // Seed ELO state from the baseline so chaining below starts at the right values.
+  const playerStates = {};
+  for (const [name, elo] of Object.entries(eloBefore)) {
+    playerStates[name] = { name, elo, history: [] };
   }
-  if (!allMatches) allMatches = Store.getMatches();
-
-  // Compute starting player ELO states from all matches BEFORE this tournament
-  const { players: playerStates } = calculateAllEloRankings(allMatches);
-
-  // Snapshot pre-tournament ELO so the refreshed summary reports a correct ±ELO
-  const eloBefore = {};
-  for (const [name, p] of Object.entries(playerStates)) eloBefore[name] = p.elo;
 
   // Process rounds in order to chain ELO correctly
   const sortedRounds = [...tournament.rounds].sort((a, b) => a.roundNumber - b.roundNumber);
@@ -463,6 +621,15 @@ async function finalizeCompletedTournament(tournament, onProgress) {
     eloAfter,
   ));
 
+  // Snapshot the post-tournament ELO so the NEXT completion resolves its
+  // baseline with zero network reads.
+  try {
+    localStorage.setItem(ELO_BASELINE_KEY, JSON.stringify({
+      date: tournament.tournamentDate,
+      elo: eloAfter,
+    }));
+  } catch { /* storage full — baseline falls back to players.json */ }
+
   localStorage.setItem('mexicano_completion_marker', tournament.tournamentDate);
   // Keep active_tournament in localStorage until GitHub push succeeds.
   // Mark completed so UI shows correct state, but don't remove yet.
@@ -528,41 +695,26 @@ async function finalizeCompletedTournament(tournament, onProgress) {
       .catch(e => console.warn('[local] tournaments index write failed:', e));
   }).catch(() => {});
 
-  // Immediately sync completed tournament to GitHub. When a progress reporter is
-  // supplied (finish-tournament dialog), the caller awaits this promise so the
-  // dialog can show live per-step status; otherwise it stays fire-and-forget.
+  // Immediately sync completed tournament to GitHub. Only two files are needed:
+  // this tournament's day file and tournaments.json. Deliberately bypasses the
+  // debounced pushAll() queue — waiting for that queue (and for every other
+  // synced file it rewrites) is one of the reasons this used to hang.
   report('push', 'pending');
   report('index', 'pending');
-  const syncPromise = import('./github.js').then(async ({ flushPush, markMatchDateDirty, updateTournamentIndexEntry }) => {
-    markMatchDateDirty(tournament.tournamentDate);
-
-    // Serialize commits: day file first, then index — concurrent writes to the
-    // same branch cause GitHub 409 fast-forward conflicts.
-    report('push', 'running');
+  const dayMatches = allMatches.filter(m => m.date === tournament.tournamentDate);
+  const syncPromise = (async () => {
     try {
-      await flushPush();
-      report('push', 'success');
+      await pushCompletedTournament(tournament.tournamentDate, dayMatches, indexEntry, {
+        timeouts: FAST_TIMEOUTS,
+        onStep: report,
+      });
     } catch (e) {
-      report('push', 'error', e);
-      console.warn('[tournament] post-complete push failed:', e);
-      // Surface in the Logs tab: this is the silent, mobile-only failure mode
-      // where the tournament looks finished locally but never reached GitHub.
+      console.warn('[tournament] post-complete sync failed:', e);
+      // Keep the date dirty and the local copy intact so the reconnect retry
+      // (and the next background push) can still deliver it.
+      markMatchDateDirty(tournament.tournamentDate);
       import('./round-log.js')
-        .then(({ logError }) => logError('post-complete GitHub push', e))
-        .catch(() => {});
-      // Push failed — local data preserved. Will retry on reconnect.
-      throw e;
-    }
-
-    report('index', 'running');
-    try {
-      await updateTournamentIndexEntry(indexEntry);
-      report('index', 'success');
-    } catch (e) {
-      report('index', 'error', e);
-      console.warn('[tournament] post-complete index update failed:', e);
-      import('./round-log.js')
-        .then(({ logError }) => logError('post-complete tournaments index update', e))
+        .then(({ logError }) => logError('post-complete GitHub sync', e))
         .catch(() => {});
       throw e;
     }
@@ -570,19 +722,14 @@ async function finalizeCompletedTournament(tournament, onProgress) {
     // Push succeeded — safe to clear local tournament data
     Store.clearActiveTournament();
     localStorage.removeItem('mexicano_completion_marker');
-  }).catch((e) => {
-    // Module-load or push/index failure already reported above; report here only
-    // for the module-load case where no step-level report fired.
-    report('push', 'error', e);
-    import('./round-log.js')
-      .then(({ logError }) => logError('post-complete GitHub push (module load)', e))
-      .catch(() => {});
-  });
+  })();
 
   // Only make callers wait for the sync when they asked for progress. Existing
   // callers keep the original fire-and-forget timing.
   if (typeof onProgress === 'function') {
     await syncPromise;
+  } else {
+    syncPromise.catch(() => {});
   }
 
   return tournament;

@@ -1,5 +1,6 @@
 import { Store } from '../store.js';
 import { rankPlayers } from './ranking.js';
+import { fetchWithRetry, FAST_TIMEOUTS } from './http.js';
 
 // Telegram alerts are relayed through GitHub Actions instead of being sent
 // directly from the browser: many networks block api.telegram.org, but
@@ -78,11 +79,13 @@ async function dispatchTelegramAlert(text, meta, target) {
   const payload = { event_type: DISPATCH_EVENT, client_payload };
 
   log('info', 'Relaying Telegram alert via GitHub dispatch.', { kind: meta.kind });
-  const res = await fetch(url, {
+  // Bounded + retrying: a stalled dispatch used to leave the End Tournament
+  // dialog waiting forever on a fetch that never settles.
+  const res = await fetchWithRetry(url, {
     method: 'POST',
     headers: getHeaders(gh.pat),
     body: JSON.stringify(payload),
-  });
+  }, { timeouts: FAST_TIMEOUTS });
 
   // repository_dispatch returns 204 No Content on success.
   if (res.status !== 204) {

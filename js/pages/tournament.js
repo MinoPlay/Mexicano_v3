@@ -2,7 +2,8 @@ import {
   getActiveTournament,
   setMatchScore,
   startNextRound,
-  completeTournament,
+  runTournamentCompletion,
+  COMPLETION_STEPS,
   loadTournamentByDate,
   getLatestCompleteTournamentDate,
   saveTournamentState,
@@ -452,12 +453,7 @@ export function renderTournament(container, params) {
         ? `Ending the tournament will remove ${unscoredCount} match${unscoredCount > 1 ? 'es' : ''} that ${unscoredCount > 1 ? 'have' : 'has'} no score. This cannot be undone.`
         : 'This will finalize the tournament. Match history will be saved.';
 
-      showProgressConfirmDialog(title, message, [
-        { id: 'finalize', label: 'Finalizing results & ELO' },
-        { id: 'push', label: 'Saving matches to GitHub' },
-        { id: 'index', label: 'Updating tournaments index' },
-        { id: 'telegram', label: 'Sending Telegram alert' },
-      ], async (api) => {
+      showProgressConfirmDialog(title, message, COMPLETION_STEPS, async (api) => {
         if (unscoredCount > 0) {
           for (const round of tournament.rounds) {
             round.matches = round.matches.filter(m => isMatchComplete(m));
@@ -465,37 +461,10 @@ export function renderTournament(container, params) {
           tournament.rounds = tournament.rounds.filter(r => r.matches.length > 0);
         }
 
-        // completeTournament reports finalize/push/index progress. When any
-        // GitHub step fails it rejects — the step status already shows the error,
-        // so swallow here and still attempt the (independent) Telegram alert.
-        try {
-          await completeTournament(tournament, (id, status, detail) => api.setStep(id, status, detail));
-        } catch (err) {
-          console.warn('[tournament] completion sync failed:', err);
-          import('../services/round-log.js')
-            .then(({ logError }) => logError('end tournament', err))
-            .catch(() => {});
-        }
-
-        api.setStep('telegram', 'running');
-        try {
-          const { sendTournamentCompletedAlert } = await import('../services/telegram.js');
-          await sendTournamentCompletedAlert(tournament);
-          api.setStep('telegram', 'success');
-        } catch (err) {
-          console.warn('[telegram] tournament-completed alert failed:', err);
-          api.setStep('telegram', 'error', err);
-          import('../services/round-log.js')
-            .then(({ logError }) => logError('telegram tournament-completed', err))
-            .catch(() => {});
-        }
-
-        try {
-          const { sendTournamentCompletedPush } = await import('../services/push.js');
-          await sendTournamentCompletedPush(tournament);
-        } catch (err) {
-          console.warn('[push] tournament-completed push failed:', err);
-        }
+        // Orchestrated in the service layer: finalize → day-file push → index
+        // → Telegram → Web Push, each with its own visible, timed step. Never
+        // rejects, so the dialog always reaches a terminal state.
+        await runTournamentCompletion(tournament, (id, status, detail) => api.setStep(id, status, detail));
 
         render();
       });

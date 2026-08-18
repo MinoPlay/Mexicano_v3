@@ -132,20 +132,61 @@ Admin names are loaded from `data/administrators.json` (not hardcoded) at app in
 
 ### End Tournament — progress dialog
 The "End Tournament" confirm popup shows live per-operation status once confirmed.
-`completeTournament(tournament, onProgress)` accepts an optional progress reporter
-called as `onProgress(id, status, detail)` with `status` ∈ `pending | running | success | error`.
+The flow is orchestrated by `runTournamentCompletion(tournament, report)` (service layer);
+the page only renders `COMPLETION_STEPS` and forwards `report(id, status, detail)` with
+`status` ∈ `pending | running | success | error`.
 Reported steps:
 | id | Step |
 |----|------|
-| `finalize` | Local finalize (ELO replay + Store writes) |
-| `push` | GitHub day-file push (`flushPush`) |
+| `finalize` | Local finalize (ELO baseline read + Store writes) |
+| `push` | GitHub day-file write (`pushCompletedTournament`) |
 | `index` | GitHub tournaments index update (`updateTournamentIndexEntry`) |
-| `telegram` | Telegram tournament-completed alert (reported by the page, not the service) |
+| `telegram` | Telegram tournament-completed alert |
+| `notify` | Web Push tournament-completed relay |
 
-When a reporter is supplied, `completeTournament` **awaits** the GitHub sync (instead of
-the default fire-and-forget) and rejects if `push`/`index` fail, so the dialog can render
-✅ / ❌ and keep the popup open with the error message. Failures are also written to the
-Logs tab via `logError`. Without a reporter, behavior is unchanged (fire-and-forget sync).
+`runTournamentCompletion` never rejects: each failure is reported on its own step and
+written to the Logs tab via `logError`, and any step still `pending`/`running` when the
+sync fails is flipped to `error` — so the dialog always reaches a terminal state.
+The Telegram and Web Push relays are independent of the GitHub sync and of each other.
+
+#### Fast, bounded completion (why it no longer hangs)
+Ending a tournament used to pull the **entire** match history — one sequential GitHub read
+per tournament date — because the pre-tournament ELO baseline was recomputed from scratch
+via `calculateAllEloRankings()`. On a slow or stalled connection this took minutes; when the
+`mexicano_matches_fully_loaded` flag happened to be set it returned instantly, which is why
+it felt random.
+
+The baseline is now **read, not recomputed** — `resolveEloBaseline(date)` in
+`js/services/tournament.js`, first hit wins:
+1. `mexicano_elo_baseline` snapshot written by the previous completion — 0 requests
+2. `players_summary` (`players.json`, normally already cached) — 0–1 request
+3. the previous tournament's day file, whose embedded `Team*Elo` are authoritative for its
+   participants (covers a lagging data pipeline) — ≤1 request, 0 if already cached locally
+4. replay of locally cached matches — 0 requests
+
+Files touched when ending a tournament:
+| File | Purpose |
+|------|---------|
+| `YYYY/YYYY-MM/<date>.json` | the completed day file (read sha + write) |
+| `tournaments.json` | index entry upsert (read sha + write) |
+| `players.json` / previous day file | ELO baseline, only if not already cached |
+| `POST /dispatches` ×2 | Telegram alert + Web Push relay |
+
+`players.json` and the month's `players_overview.json` are **not** written by the app — the
+data pipeline regenerates them from our `tournaments.json` push.
+
+The completion push (`pushCompletedTournament` in `js/services/github.js`) deliberately
+bypasses the debounced `pushAll()` queue (it cancels any pending sync first): waiting for
+that queue — which rewrites every synced file and any unrelated in-flight push — was a
+second source of the hang. Everything else keeps syncing in the background.
+
+All requests in this flow use the shared timed fetch (`js/services/http.js`) with the
+`FAST_TIMEOUTS` ladder `2s → 3s` (5s total per request, hard cap), so a stalled connection
+fails fast and retries once instead of hanging forever. Telegram and Web Push relay
+dispatches use the same helper; background reads use a single 5s attempt.
+
+On failure the local copy is preserved: `mexicano_completion_marker` stays set, the date is
+re-marked dirty, and `retryCompletedTournamentPush()` runs on reconnect.
 
 **Non-Admins**:
 - Cannot perform ANY mutations on tournaments (all write endpoints guarded in service layer)

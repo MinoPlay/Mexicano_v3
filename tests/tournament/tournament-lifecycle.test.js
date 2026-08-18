@@ -20,6 +20,10 @@ vi.mock('../../js/services/github.js', () => ({
   keyToPath: vi.fn().mockReturnValue(null),
   readFile: vi.fn().mockResolvedValue(null),
   deleteFile: vi.fn().mockResolvedValue(undefined),
+  pushTournamentDayFile: vi.fn().mockResolvedValue(true),
+  pushCompletedTournament: vi.fn().mockResolvedValue(undefined),
+  readDayMatches: vi.fn(async (date) => eloFixture.full.filter(m => m.date === date).map(m => ({ ...m }))),
+  FAST_TIMEOUTS: [2000, 3000],
   // Return a fresh copy each call so completeTournament appending entities
   // never mutates the shared fixture between runs.
   ensureAllMatchesLoaded: vi.fn(async () => eloFixture.full.map(m => ({ ...m }))),
@@ -80,6 +84,10 @@ beforeEach(() => {
   localStorageStub.clear();
   State._listeners = {};
   eloFixture.full = [];
+  // ELO baseline sources are read, not recomputed — start every test from a
+  // clean players_summary so one test's completion cannot seed the next.
+  Store.setPlayersSummaryCache([]);
+  Store.setTournamentsIndex([]);
 });
 
 // ─── Tests ───
@@ -320,9 +328,13 @@ describe('completeTournament', () => {
   });
 
   it('keeps active tournament in Store until push succeeds (offline-safe)', async () => {
+    const { pushCompletedTournament } = await import('../../js/services/github.js');
+    pushCompletedTournament.mockRejectedValueOnce(new Error('Request timed out after 2000ms'));
+
     const t = makeCompletedTournament();
 
     await completeTournament(t);
+    await Promise.resolve();
 
     // Tournament stays in localStorage marked completed — cleared only after push succeeds
     const stored = Store.getActiveTournament();
@@ -393,39 +405,38 @@ describe('completeTournament', () => {
     }
   });
 
-  it('embeds ELO from full history even when local match cache is partial', async () => {
-    // Prior tournament history = the complete truth. Alice/Bob beat Carol/Dave,
-    // so the pre-tournament baseline is NOT a flat 1000 for anyone.
-    const prior = [{
+  it('embeds ELO from the persisted baseline, without pulling the full history', async () => {
+    const { ensureAllMatchesLoaded } = await import('../../js/services/github.js');
+    ensureAllMatchesLoaded.mockClear();
+
+    // Previous tournament day file carries authoritative post-match ELO.
+    // The local match cache is EMPTY: the baseline must come from that file.
+    eloFixture.full = [{
       date: '2025-05-01', roundNumber: 1, _key: '2025-05-01_R1M1',
       team1Player1Name: 'Alice', team1Player2Name: 'Bob',
       team2Player1Name: 'Carol', team2Player2Name: 'Dave',
       scoreTeam1: 21, scoreTeam2: 3,
+      team1Player1Elo: 1016, team1Player2Elo: 1016,
+      team2Player1Elo: 984, team2Player2Elo: 984,
     }];
-
-    // ── Oracle: complete with the FULL history present in Store ──
-    eloFixture.full = prior;
-    Store.setMatches(prior.map(m => ({ ...m })));
-    Store.set('matches_fully_loaded', true);
-    const tFull = makeCompletedTournament();
-    await completeTournament(tFull);
-    const full = Store.getMatches().find(m => m.date === DATE && m.roundNumber === 1);
-
-    // ── Under test: local cache is PARTIAL (missing prior), but
-    //    ensureAllMatchesLoaded supplies the full history ──
-    localStorageStub.clear();
-    eloFixture.full = prior;
     Store.setMatches([]);
-    Store.set('matches_fully_loaded', false);
-    const tPartial = makeCompletedTournament();
-    await completeTournament(tPartial);
-    const partial = Store.getMatches().find(m => m.date === DATE && m.roundNumber === 1);
+    Store.setTournamentsIndex([{ date: '2025-05-01', isComplete: true }]);
 
-    // The embedded ELO must reflect the full-history baseline, not the partial cache.
-    expect(partial.team1Player1Elo).toBe(full.team1Player1Elo);
-    expect(partial.team1Player2Elo).toBe(full.team1Player2Elo);
-    expect(partial.team2Player1Elo).toBe(full.team2Player1Elo);
-    expect(partial.team2Player2Elo).toBe(full.team2Player2Elo);
+    const t = makeCompletedTournament();
+    await completeTournament(t);
+
+    const entity = Store.getMatches().find(m => m.date === DATE && m.roundNumber === 1);
+    const baseline = { Alice: 1016, Bob: 1016, Carol: 984, Dave: 984 };
+    const team1Won = entity.scoreTeam1 > entity.scoreTeam2;
+
+    // Every embedded ELO moves off its baseline in the right direction — proof
+    // the baseline was read from the previous day file, not restarted at 1000.
+    const delta = (name, elo) => elo - baseline[name];
+    expect(delta(entity.team1Player1Name, entity.team1Player1Elo)).toBeGreaterThan(team1Won ? 0 : -100);
+    expect(Math.sign(delta(entity.team1Player1Name, entity.team1Player1Elo))).toBe(team1Won ? 1 : -1);
+    expect(Math.sign(delta(entity.team2Player1Name, entity.team2Player1Elo))).toBe(team1Won ? -1 : 1);
+
+    expect(ensureAllMatchesLoaded).not.toHaveBeenCalled();
   });
 
   it('emits tournament-changed', async () => {
