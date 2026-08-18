@@ -323,6 +323,29 @@ export function completeTournament(tournament, onProgress) {
   return finalizeCompletedTournament(tournament, onProgress);
 }
 
+/**
+ * Merge post-tournament ELO values into a players summary array.
+ * Participants get elo (post) + previousElo (pre-tournament); everyone else is
+ * untouched. Players missing from the summary are appended.
+ */
+export function applyTournamentEloToSummary(summary, playerNames, eloBefore, eloAfter) {
+  const result = (summary || []).map(p => ({ ...p }));
+  const byName = new Map(result.map(p => [p.name, p]));
+  for (const name of playerNames || []) {
+    const elo = eloAfter?.[name];
+    if (elo == null) continue;
+    const previousElo = eloBefore?.[name] ?? 1000;
+    const existing = byName.get(name);
+    if (existing) {
+      existing.elo = elo;
+      existing.previousElo = previousElo;
+    } else {
+      result.push({ id: null, name, elo, previousElo });
+    }
+  }
+  return result;
+}
+
 async function finalizeCompletedTournament(tournament, onProgress) {
   // Optional progress reporter. Never allowed to throw into the completion flow.
   const report = (id, status, detail) => {
@@ -347,6 +370,10 @@ async function finalizeCompletedTournament(tournament, onProgress) {
 
   // Compute starting player ELO states from all matches BEFORE this tournament
   const { players: playerStates } = calculateAllEloRankings(allMatches);
+
+  // Snapshot pre-tournament ELO so the refreshed summary reports a correct ±ELO
+  const eloBefore = {};
+  for (const [name, p] of Object.entries(playerStates)) eloBefore[name] = p.elo;
 
   // Process rounds in order to chain ELO correctly
   const sortedRounds = [...tournament.rounds].sort((a, b) => a.roundNumber - b.roundNumber);
@@ -413,6 +440,19 @@ async function finalizeCompletedTournament(tournament, onProgress) {
   }
 
   Store.setMatches(allMatches);
+
+  // Refresh the cached players summary with the ELOs just computed, so the
+  // Latest Tournament / Statistics tables show correct values immediately
+  // instead of the stale cache until a manual app refresh.
+  const eloAfter = {};
+  for (const [name, p] of Object.entries(playerStates)) eloAfter[name] = p.elo;
+  Store.setPlayersSummaryCache(applyTournamentEloToSummary(
+    Store.getPlayersSummary(),
+    tournament.players.map(p => p.name),
+    eloBefore,
+    eloAfter,
+  ));
+
   localStorage.setItem('mexicano_completion_marker', tournament.tournamentDate);
   // Keep active_tournament in localStorage until GitHub push succeeds.
   // Mark completed so UI shows correct state, but don't remove yet.

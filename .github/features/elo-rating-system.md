@@ -83,6 +83,7 @@ ELO fields represent each player's ELO **after** this match, embedded at tournam
 - **Same-team ELO**: Team1P1 and Team1P2 finish equal (same opponents before processing)
 - **Sorting**: Matches sorted by `date.roundNumber` (e.g., "2024-01-01.02")
 - **Rounding**: All ELO values to 2 decimals
+- **Post-completion cache refresh**: On tournament completion, `applyTournamentEloToSummary` writes the freshly computed ELOs back into the cached players summary (`Store.setPlayersSummaryCache`): participants get `elo` = post-tournament value and `previousElo` = pre-tournament value; non-participants are untouched, unknown players are appended. Without this the Home "Latest Tournament" / Statistics tables keep showing the stale cached `players.json` ELO until a manual app refresh (pulls skip re-fetch while `players_summary` is cached).
 - **Monthly seed — skipped months**: When generating a month's `players_overview.json`, player ELO seeds are read from each player's individual `elo_history/elo_history_{id}.json` file (via `players.json` for name→id lookup). The last entry strictly before the target month is used. This correctly handles players who skip months. Players with no prior history default to 1000.
 
 ## Constraints
@@ -110,6 +111,7 @@ ELO fields represent each player's ELO **after** this match, embedded at tournam
 | `getEloSnapshots(matches)` | Per-player end-of-date snapshots |
 | `getEloForDate(snapshots, date)` | ELO + delta at specific date |
 | `getEloForMonth(snapshots, yearMonth)` | ELO + delta at end of month |
+| `applyTournamentEloToSummary(summary, names, before, after)` | Refresh cached players summary after completion (`js/services/tournament.js`) |
 | `generateMonthlyOverviews(yearMonth)` | Generate `players_overview.json` with walk-back ELO seed backfill |
 
 ## File References
