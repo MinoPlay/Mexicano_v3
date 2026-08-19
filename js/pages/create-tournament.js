@@ -1,4 +1,4 @@
-import { createTournament, startTournament, triggerNewTournamentDayFile, triggerTournamentIndexEntry, getActiveTournament, loadTournamentByDate } from '../services/tournament.js';
+import { createTournament, startTournament, triggerNewTournamentDayFile, triggerTournamentIndexEntry, getActiveTournament, loadTournamentByDate, deleteTournament } from '../services/tournament.js';
 import { getRecentMembers } from '../services/members.js';
 import { showToast } from '../components/toast.js';
 
@@ -240,19 +240,34 @@ export function renderCreateTournament(container, params = {}) {
       return;
     }
 
-    // Check for existing tournament on this date
+    // Check for existing tournament on this date (completed matches or the
+    // in-memory active tournament) and offer to overwrite it instead of
+    // silently blocking creation.
     const existing = loadTournamentByDate(date);
-    if (existing) {
-      showToast('A tournament already exists for this date');
-      return;
-    }
-
     const active = getActiveTournament();
-    if (active && active.date === date) {
-      showToast('A tournament already exists for this date');
+    const hasExisting = !!existing || (active && active.tournamentDate === date);
+
+    if (hasExisting) {
+      showConfirmDialog(
+        'Tournament Already Exists',
+        `A tournament already exists for ${date}. Do you want to overwrite it?`,
+        async () => {
+          try {
+            await deleteTournament(date);
+          } catch (err) {
+            showToast(err.message || 'Failed to overwrite tournament');
+            return;
+          }
+          submitTournament(date);
+        }
+      );
       return;
     }
 
+    submitTournament(date);
+  });
+
+  async function submitTournament(date) {
     // Validate names
     const names = playerInputs.map(inp => inp.value.trim());
     const errors = [];
@@ -364,5 +379,47 @@ export function renderCreateTournament(container, params = {}) {
     } catch (err) {
       showToast(err.message || 'Failed to create tournament');
     }
+  }
+}
+
+// ─── Confirmation Dialog ───
+function showConfirmDialog(title, message, onConfirm) {
+  const overlay = document.createElement('div');
+  overlay.className = 'dialog-overlay';
+  overlay.innerHTML = `
+    <div class="dialog">
+      <div class="dialog-header">
+        <strong>${esc(title)}</strong>
+      </div>
+      <div class="dialog-body">
+        <p class="text-sm text-secondary mb-md">${esc(message)}</p>
+        <div class="flex gap-sm">
+          <button class="btn btn-secondary" style="flex:1" id="dialog-cancel">Cancel</button>
+          <button class="btn btn-danger" style="flex:1" id="dialog-confirm">Overwrite</button>
+        </div>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  requestAnimationFrame(() => overlay.classList.add('active'));
+
+  function close() {
+    overlay.classList.remove('active');
+    setTimeout(() => overlay.remove(), 300);
+  }
+
+  overlay.querySelector('#dialog-cancel').addEventListener('click', close);
+  overlay.querySelector('#dialog-confirm').addEventListener('click', () => {
+    close();
+    onConfirm();
   });
+  overlay.addEventListener('click', (e) => {
+    if (e.target === overlay) close();
+  });
+}
+
+function esc(str) {
+  const el = document.createElement('span');
+  el.textContent = str || '';
+  return el.innerHTML;
 }

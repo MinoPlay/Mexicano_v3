@@ -4,7 +4,7 @@
 
 **User creates tournament** → **System generates rounds 1-3** → **Players enter match scores** → **Round completes** → **Proceed to next round**
 
-1. **Create Phase**: User specifies date (yyyy-MM-dd) and player list (4, 8, 12, or 16 players). Players initialized with zero stats.
+1. **Create Phase**: User specifies date (yyyy-MM-dd) and player list (4, 8, 12, or 16 players). Players initialized with zero stats. If a tournament (active or completed) already exists for that date, the Create Tournament page asks the admin to confirm an overwrite; confirming deletes the existing tournament (`deleteTournament(date)`) before creating the new one. Completed tournaments cannot be overwritten (`deleteTournament` refuses to delete completed tournaments).
 2. **Round 1 Generation**: 4-player groups created sequentially. Each group becomes 2v2 match (player[0]+player[3] vs player[1]+player[2]).
 3. **Score Entry**: Players log cumulative team scores. Match complete when team1Score + team2Score = 25.
 4. **Round Completion**: All matches in round must hit 25-point threshold. System ranks players and generates next round seeding.

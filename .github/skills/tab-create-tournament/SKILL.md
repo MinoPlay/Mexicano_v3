@@ -20,7 +20,8 @@ It creates a new Mexicano tournament for one date, a fixed player count, optiona
 - `params.names` prepopulates player slots, mainly from Doodle. The page chooses the smallest valid count that fits the provided names, capped at 16, selects that count button, fills names in order, and keeps only names within the chosen count.
 - `params.date` prepopulates the date input. Without it, `todayStr()` sets the date to today in `yyyy-MM-dd` format.
 - Each player slot has ▲ and ▼ controls. `shiftDown(idx)` moves the selected player and the filled block below it one slot down if there is empty space after the block. `shiftUp(idx)` moves a player up only when the immediate slot above is empty. `refreshShiftButtons()` disables impossible moves.
-- Start validation requires a selected count, a date, no existing tournament for the date from `loadTournamentByDate(date)`, no active tournament with the same date from `getActiveTournament()`, every player name filled, each name at most 50 characters, and no duplicate names case-insensitively.
+- Start validation requires a selected count, a date, and every player name filled, each name at most 50 characters, and no duplicate names case-insensitively.
+- If a tournament already exists for the date (from `loadTournamentByDate(date)` or an active tournament with the same `tournamentDate`), a confirm dialog ("Tournament Already Exists") is shown instead of blocking creation. Confirming calls `deleteTournament(date)` (purges matches/index entry, clears active tournament, best-effort removes remote day file + index entry) then proceeds with creation; canceling does nothing. `deleteTournament` throws for a completed tournament, surfaced as a toast, so completed tournaments cannot be overwritten this way.
 - Court numbers are optional. If entered, `tournament-courts` is split on commas, every value must be numeric, and the count must equal `selectedCount / 4`. Values are stored as numbers.
 - `accessCodeInput.value.trim() || null` becomes the tournament `accessCode`. The Disable Telegram checkbox only skips the created alert; it does not affect tournament data.
 - Save flow calls `createTournament(date, names, accessCode, courts)` then `startTournament(tournament)`. After that, an async create pipeline runs: `triggerNewTournamentDayFile(tournament)` first, then navigate to `#/tournament/${date}`, then `triggerTournamentIndexEntry(tournament)`, then dynamic import of `sendTournamentCreatedAlert()` unless disabled, then dynamic import of `refreshApp()`.
@@ -28,7 +29,7 @@ It creates a new Mexicano tournament for one date, a fixed player count, optiona
 
 ## Key Files & Symbols
 - `js/pages/create-tournament.js` — exports `renderCreateTournament(container, params = {})`; local helpers include `todayStr()`, `renderPlayerSlots()`, `updateSuggestions()`, `shiftDown()`, `shiftUp()`, and `refreshShiftButtons()`.
-- `js/services/tournament.js` — `createTournament()`, `startTournament()`, `triggerNewTournamentDayFile()`, `triggerTournamentIndexEntry()`, `getActiveTournament()`, `loadTournamentByDate()`, `createRound1Matches()`.
+- `js/services/tournament.js` — `createTournament()`, `startTournament()`, `triggerNewTournamentDayFile()`, `triggerTournamentIndexEntry()`, `getActiveTournament()`, `loadTournamentByDate()`, `deleteTournament()`, `createRound1Matches()`.
 - `js/services/members.js` — `getRecentMembers()` supplies datalist suggestions from current/previous month match participants, falling back to `Store.getMembers()`.
 - `js/services/telegram.js` — `sendTournamentCreatedAlert()` is dynamically imported after GitHub day-file and index work unless Telegram alerts are disabled.
 - `js/version.js` — `refreshApp()` is dynamically imported at the end of the create pipeline.
