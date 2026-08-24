@@ -5,6 +5,7 @@ import { getLatestCompleteTournamentDate, getActiveTournament, confirmAttendance
 import { getMembers } from '../services/members.js';
 import { calculatePlayerStatistics } from '../services/statistics.js';
 import { APP_VERSION, refreshApp } from '../version.js';
+import { renderNotificationBell } from '../components/notification-bell.js';
 
 export function shouldShowConfirmationPopup(activeTournament, currentUser, alreadyConfirmed) {
   if (!activeTournament || activeTournament.isCompleted) return false;
@@ -568,6 +569,14 @@ export function renderHome(container, params) {
       if (nd && nd.isConnected && currentMonthStats.length === 0) {
         nd.textContent = 'No data for this month';
       }
+    });
+  }
+
+  // Notification bell — anchored right, same row as the title, home-only.
+  const bellSlot = container.querySelector('#home-header-right');
+  if (bellSlot) {
+    renderNotificationBell().then(bell => {
+      if (bellSlot.isConnected) bellSlot.appendChild(bell);
     });
   }
 

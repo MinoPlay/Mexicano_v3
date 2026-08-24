@@ -39,7 +39,8 @@ Client success = GitHub accepted the dispatch (HTTP 204); real delivery happens 
   - `VAPID_PUBLIC_KEY` — base64url app server key; **must match** the data-repo
     `VAPID_PUBLIC_KEY` secret. Currently `BNQYxg9X…Qc4_I`.
   - `isPushSupported()` — `serviceWorker` + `PushManager` + `Notification` all present.
-  - `isPushEnabled()` — `Notification.permission === 'granted'`; hides the notification bell once opted in.
+  - `isPushEnabled()` — `Notification.permission === 'granted'`; used internally by
+    `resyncPushSubscription()`. No longer used by the notification bell (it always renders).
   - `urlBase64ToUint8Array(base64)` — VAPID key → `Uint8Array` for `applicationServerKey`.
   - `buildSubscribePayload(subscription, user)` / `buildPushAlertPayload(title, body, url='./', users=null)`
     — pure `repository_dispatch` payload builders. `buildPushAlertPayload` adds a `users`
@@ -73,14 +74,29 @@ Client success = GitHub accepted the dispatch (HTTP 204); real delivery happens 
     re-dispatches it via `dispatchSubscription` so the data repo refreshes the record's `user`
     from `mexicano_current_user`. Never prompts; returns `true`/`false`, swallows errors.
     Called fire-and-forget from `js/app.js` `init()` to back-fill legacy subs.
-- `js/components/notification-bell.js` — top-right bell prompting users to enable push from
-  Settings; `renderNotificationBell()` returns `null` (renders nothing) when `isPushEnabled()`,
-  so it disappears once opted in. Mounted in `js/app.js` (appended only when non-null).
+- `js/components/notification-bell.js` — `renderNotificationBell()` (async) is mounted
+  **inline in the Home page header** (`#home-header-right` in `js/pages/home.js`), not a
+  global fixed overlay. **Always renders** (dropped the old `isPushEnabled()`
+  hide-once-enabled behavior) and now shows **notification history**: an unread-count
+  badge (`.notif-bell-badge`, from `getUnreadCount()`), and a popup (on click) listing
+  stored history (title/body/date, newest first) with a "Clear all" button and an empty
+  state. Opening the popup calls `markAllRead()`, clearing the badge. Listens for the SW
+  `message` event (`{type:'mexicano-notification-added'}`) to live-refresh while mounted.
+- `js/services/notification-store.js` — IndexedDB-backed history store shared by
+  `sw.js` (writer) and the bell (reader), so notifications survive the app being fully
+  closed. Exports `addNotification({title,body,url})` (prunes to newest `MAX_HISTORY`=30),
+  `getNotifications()` (newest-first), `getUnreadCount()`, `markAllRead()`, `clearAll()`.
+  All degrade to no-op/empty (never throw) when `indexedDB` is unavailable.
 - `sw.js` — module service worker.
-  - Listeners `push` (parses `event.data.json()` → `showNotification(title, { body, icon,
-    badge, data:{ url } })`) and `notificationclick` (focus existing client or
-    `clients.openWindow(url)`).
-  - `js/services/push.js` is listed in `ASSETS` for offline caching.
+  - Listeners `push` (parses `event.data.json()` → **keeps** the native OS popup via
+    `showNotification(title, { body, icon, badge, data:{ url } })` **and** persists the
+    notification to history via `addNotification()` from
+    `js/services/notification-store.js`, then `postMessage`s open clients
+    `{type:'mexicano-notification-added'}` so an open Home tab live-refreshes its bell
+    badge; history writing is best-effort and never blocks the native popup) and
+    `notificationclick` (focus existing client or `clients.openWindow(url)`).
+  - `js/services/push.js` and `js/services/notification-store.js` are listed in `ASSETS`
+    for offline caching.
 - `js/pages/settings.js` — "Push Notifications" section (`#push-enable-btn`,
   `subscribeToPush()`, disabled when unsupported) and admin-only "Send Custom Push" section
   (`#custom-push-section`, gated in `refreshAdminVisibility()` by `Store.isAdministrator()`;
@@ -124,6 +140,10 @@ existing subscriptions.
 - `tests/services/push.test.js` — pure builders + dispatch/send via mocked `fetch` (204/403)
   and mocked `../../js/store.js`. Add hardcoded `input => expected` cases here (RED) before
   changing `push.js` (GREEN). Run `npx vitest run tests/services/push.test.js`.
+- `tests/services/notification-store.test.js` — history CRUD via `fake-indexeddb/auto`
+  (dev dependency), including the indexedDB-unavailable fallback.
+- `tests/components/notification-bell.test.js` — badge/popup/history rendering with
+  `js/services/notification-store.js` mocked (same style as the old push.js mock).
 - Service worker handlers, the workflow, and the settings UI wiring are not unit-tested
   (browser/CI glue); validate them with the manual E2E below.
 
@@ -159,7 +179,8 @@ existing subscriptions.
 ## Update protocol
 When you change push behavior, update **both** `.github/features/push-notifications.md`
 (truth) and this skill in the same task. Keep in sync: `push.js` exports, `sw.js`
-push/notificationclick handlers + `ASSETS`, settings UI ids/gating, trigger points, the
-data-repo workflow/script, the subscriptions file path/shape, and VAPID key handling.
-Follow the mexicano-tdd pipeline (RED test in `tests/services/push.test.js` → GREEN in
-`js/**` → full `npx vitest run` → bump `APP_VERSION` in `sw.js`).
+push/notificationclick handlers + `ASSETS`, `notification-store.js` shape, the bell's
+mount point/behavior, settings UI ids/gating, trigger points, the data-repo
+workflow/script, the subscriptions file path/shape, and VAPID key handling. Follow the
+mexicano-tdd pipeline (RED test → GREEN in `js/**` → full `npx vitest run` → bump
+`APP_VERSION` in `sw.js`).

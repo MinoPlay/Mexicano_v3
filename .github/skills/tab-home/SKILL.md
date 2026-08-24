@@ -59,7 +59,7 @@ The Home tab is the landing page for route `/`. It is available to all users and
 ## Sub-tabs / Sections
 Home has no sub-tabs, but it has distinct sections:
 
-- **Page header** — shows the clickable `🎾 Mexicano v<APP_VERSION>` title with the `#app-refresh-btn` refresh icon, plus an empty `#home-header-right` container. Clicking the title is a manual cache reset flow; clicking the icon refreshes to the latest version.
+- **Page header** — shows the clickable `🎾 Mexicano v<APP_VERSION>` title with the `#app-refresh-btn` refresh icon, plus the `#home-header-right` container holding the notification bell (`renderNotificationBell()`, mounted async into that slot after render — see `push-notifications` skill). Clicking the title is a manual cache reset flow; clicking the icon refreshes to the latest version.
 - **Active Tournament card** — renders only when there is a non-completed active tournament that is not marked complete in the tournaments index. It links to `#/tournament/<tournamentDate>` and shows formatted date plus player count.
 - **Latest Tournament table** — shows stats for the latest completed tournament. If local data is missing and GitHub is configured, it temporarily displays `⏳ Loading…`, fetches the date's matches, then replaces the no-data element with the rendered table. If no data exists, it shows `No tournament data available`.
 - **Current Month table** — shows current calendar month aggregate stats. It uses cached monthly overview data first, local match calculation second, then refreshes current and previous monthly overviews from GitHub when possible. It shows `No data for this month` when no rows are available.

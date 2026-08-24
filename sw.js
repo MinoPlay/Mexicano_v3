@@ -1,8 +1,9 @@
 // Single source of truth for the app version / cache name.
 // Bump APP_VERSION by +1 each release. js/version.js imports it.
 import { networkFirst, shouldHandleRequest } from './js/sw-fetch.js';
+import { addNotification } from './js/services/notification-store.js';
 
-export const APP_VERSION = 73;
+export const APP_VERSION = 74;
 
 const CACHE_NAME = `mexicano-v${APP_VERSION}`;
 const ASSETS = [
@@ -26,6 +27,7 @@ const ASSETS = [
   './js/services/doodle.js',
   './js/services/members.js',
   './js/services/push.js',
+  './js/services/notification-store.js',
   './js/sw-fetch.js',
   './js/components/nav.js',
   './js/components/match-card.js',
@@ -90,7 +92,16 @@ if (isServiceWorker) {
       badge: './assets/icons/icon-192.png',
       data: { url: data.url || './' },
     };
-    event.waitUntil(self.registration.showNotification(title, options));
+    // Keep the native OS popup, and also save to history so the in-app bell
+    // shows past notifications even after they've disappeared from the tray.
+    event.waitUntil(Promise.all([
+      self.registration.showNotification(title, options),
+      addNotification({ title, body: options.body, url: options.data.url }).then(() =>
+        self.clients.matchAll({ type: 'window', includeUncontrolled: true })
+      ).then(clientList => {
+        clientList.forEach(client => client.postMessage({ type: 'mexicano-notification-added' }));
+      }).catch(() => { /* history is best-effort; native popup already fired */ }),
+    ]));
   });
 
   self.addEventListener('notificationclick', (event) => {

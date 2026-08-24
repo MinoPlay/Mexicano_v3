@@ -52,7 +52,9 @@ Exported symbols (pure/testable unless noted):
 - `isPushSupported()` — `true` when `serviceWorker`, `PushManager`, and `Notification`
   are all available in the current environment.
 - `isPushEnabled()` — `true` when `Notification.permission === 'granted'` (push already
-  opted in on this device). Used to hide the notification bell once enabled.
+  opted in on this device). Used internally by `resyncPushSubscription()` to decide
+  whether to silently re-tag; no longer used by the notification bell (the bell now
+  always renders — see below).
 - `urlBase64ToUint8Array(base64String)` — converts a base64url VAPID key to a `Uint8Array`
   for `applicationServerKey`. Pads to a multiple of 4, maps `-`→`+`, `_`→`/`.
 - `buildSubscribePayload(subscriptionJson, user)` →
@@ -104,15 +106,45 @@ All dispatches require a configured GitHub backend (`owner`/`repo`/`pat`); missi
 throws `GitHub backend not configured — cannot relay push`.
 
 ## Notification bell — `js/components/notification-bell.js`
-A top-right bell (`renderNotificationBell()`, mounted in `js/app.js`) that opens a popup
-prompting the user to enable push from Settings. Returns `null` (renders nothing) when
-`isPushEnabled()` is true, so the hint disappears once the user has opted in. `app.js`
-only appends it when non-null.
+`renderNotificationBell()` (async) is mounted **inline in the Home page header**
+(`js/pages/home.js`, appended into the `#home-header-right` slot), anchored to the right
+of the `🎾 Mexicano v<ver>` title — same as before, but no longer a fixed top-right
+overlay and no longer home-page-hidden logic tied to push state. It **always renders**
+(no more `isPushEnabled()` gating/disappearing act) and now doubles as a **notification
+history** bell:
+- Shows an unread-count badge (`.notif-bell-badge`) from
+  `getUnreadCount()` (`js/services/notification-store.js`).
+- Clicking opens a popup listing stored history (`getNotifications()`): title, body,
+  and a formatted date per entry, newest first, plus a **"Clear all"** button
+  (`clearAll()`) and an empty state ("No notifications yet.") when there's none.
+- Opening the popup calls `markAllRead()`, clearing the badge.
+- Listens for a `message` event from the service worker
+  (`{ type: 'mexicano-notification-added' }`) to live-refresh the badge while mounted.
+
+## Notification history store — `js/services/notification-store.js`
+IndexedDB-backed history (`mexicano-notifications` DB, `notifications` object store,
+keyPath `id`), shared by `sw.js` (writer) and the bell (reader), so notifications
+received while the app is fully closed are still visible next time it opens.
+- `addNotification({ title, body, url })` — stores `{ id, title, body, url, receivedAt,
+  seq, read:false }` and prunes down to the newest `MAX_HISTORY` (30) entries.
+- `getNotifications()` — all entries, newest-first (`receivedAt` desc, `seq` desc
+  tie-break for same-millisecond writes).
+- `getUnreadCount()` — count of entries with `read: false`.
+- `markAllRead()` — sets `read: true` on every entry.
+- `clearAll()` — empties the store.
+- All functions **degrade gracefully to a no-op / empty result** (never throw) when
+  `indexedDB` is unavailable in the current context (e.g. private browsing).
 
 ## Service worker — `sw.js`
-- `push` listener: parses `event.data.json()` → `showNotification(title, { body, icon, data:{ url } })`.
+- `push` listener: parses `event.data.json()` → **keeps** the native OS popup
+  (`showNotification(title, { body, icon, data:{ url } })`) **and** calls
+  `addNotification({ title, body, url })` from `notification-store.js` to persist it to
+  history, then `postMessage`s all open clients (`{ type: 'mexicano-notification-added' }`)
+  so an open Home tab can live-refresh its bell badge. History writing is best-effort —
+  failures there never block the native popup.
 - `notificationclick` listener: closes the notification, focuses an existing client or
   opens `event.notification.data.url` (default `'./'`).
+- `notification-store.js` is listed in `ASSETS` for offline caching, alongside `push.js`.
 
 ## Settings page — `js/pages/settings.js`
 A "Push Notifications" section with an **Enable push notifications** button that calls

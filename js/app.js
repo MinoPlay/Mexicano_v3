@@ -2,7 +2,6 @@ import { Router } from './router.js';
 import { Store } from './store.js';
 import { State } from './state.js';
 import { renderNav } from './components/nav.js';
-import { renderNotificationBell } from './components/notification-bell.js';
 import { resyncPushSubscription } from './services/push.js';
 import { showToast } from './components/toast.js';
 import { showRefreshDialog } from './components/refresh-dialog.js';
@@ -131,10 +130,6 @@ async function loadFromGitHub() {
 // Mount bottom nav
 const app = document.getElementById('app');
 app.appendChild(renderNav());
-
-// Mount top-right notification bell (hidden when push is already enabled)
-const notificationBell = renderNotificationBell();
-if (notificationBell) app.appendChild(notificationBell);
 
 // Page container
 const pageContainer = document.getElementById('page-container');
