@@ -3,7 +3,7 @@
 import { networkFirst, shouldHandleRequest } from './js/sw-fetch.js';
 import { addNotification } from './js/services/notification-store.js';
 
-export const APP_VERSION = 76;
+export const APP_VERSION = 84;
 
 const CACHE_NAME = `mexicano-v${APP_VERSION}`;
 const ASSETS = [
@@ -28,6 +28,7 @@ const ASSETS = [
   './js/services/members.js',
   './js/services/push.js',
   './js/services/notification-store.js',
+  './js/services/pinned-announcements.js',
   './js/sw-fetch.js',
   './js/components/nav.js',
   './js/components/match-card.js',

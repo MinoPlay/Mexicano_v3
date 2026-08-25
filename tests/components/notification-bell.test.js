@@ -118,6 +118,125 @@ describe('Notification bell', () => {
     expect(document.querySelector('.notif-popup').textContent.toLowerCase()).toContain('no notifications');
   });
 
+  it('always shows a pinned "The fine jar is open!" announcement, even with no history', async () => {
+    const bell = await renderNotificationBell();
+    document.body.appendChild(bell);
+    bell.click();
+    await flush();
+
+    const pinned = document.querySelector('.notif-item-pinned');
+    expect(pinned).not.toBeNull();
+    expect(pinned.textContent).toContain('The fine jar is open!');
+    // Only the title shows in the list, not the extended body.
+    expect(pinned.textContent).not.toContain('MobilePay');
+  });
+
+  it('opens a detail popup with the full fine jar info when the pinned item is clicked', async () => {
+    const bell = await renderNotificationBell();
+    document.body.appendChild(bell);
+    bell.click();
+    await flush();
+
+    document.querySelector('.notif-item-pinned').click();
+    await flush();
+
+    const detail = document.querySelector('.notif-detail-popup');
+    expect(detail).not.toBeNull();
+    expect(detail.textContent).toContain('75 kr');
+    expect(detail.textContent).toContain('MobilePay');
+    expect(detail.textContent).toContain('6:00 SHARP');
+  });
+
+  it('"Clear all" removes history but never removes the pinned announcement', async () => {
+    mockNotifications = [{ id: '1', title: 'Hi', body: '', url: './', receivedAt: Date.now(), read: false }];
+    mockUnread = 1;
+    const bell = await renderNotificationBell();
+    document.body.appendChild(bell);
+
+    bell.click();
+    await flush();
+    document.querySelector('.notif-clear-all').click();
+    await flush();
+
+    expect(clearAll).toHaveBeenCalled();
+    expect(document.querySelector('.notif-item-pinned')).not.toBeNull();
+  });
+
+  it('closing the detail popup via its "×" leaves the notifications list open', async () => {
+    const bell = await renderNotificationBell();
+    document.body.appendChild(bell);
+
+    bell.click();
+    await flush();
+    document.querySelector('.notif-item-pinned').click();
+    await flush();
+    expect(document.querySelector('.notif-detail-popup')).not.toBeNull();
+
+    document.querySelectorAll('.notif-detail-popup .notif-popup-close')[0].click();
+    expect(document.querySelector('.notif-detail-popup')).toBeNull();
+    expect(document.querySelector('.notif-popup')).not.toBeNull();
+  });
+
+  it('closing the notifications list via its "×" leaves an open detail popup untouched', async () => {
+    const bell = await renderNotificationBell();
+    document.body.appendChild(bell);
+
+    bell.click();
+    await flush();
+    document.querySelector('.notif-item-pinned').click();
+    await flush();
+    expect(document.querySelector('.notif-detail-popup')).not.toBeNull();
+
+    document.querySelector('.notif-popup .notif-popup-close').click();
+    expect(document.querySelector('.notif-popup')).toBeNull();
+    expect(document.querySelector('.notif-detail-popup')).not.toBeNull();
+  });
+
+  it('closes one layer at a time on outside click: detail first, then the list', async () => {
+    const bell = await renderNotificationBell();
+    document.body.appendChild(bell);
+
+    bell.click();
+    await flush();
+    document.querySelector('.notif-item-pinned').click();
+    await flush();
+    expect(document.querySelector('.notif-detail-popup')).not.toBeNull();
+    expect(document.querySelector('.notif-popup')).not.toBeNull();
+
+    document.body.click();
+    await flush();
+    expect(document.querySelector('.notif-detail-popup')).toBeNull();
+    expect(document.querySelector('.notif-popup')).not.toBeNull();
+
+    document.body.click();
+    await flush();
+    expect(document.querySelector('.notif-popup')).toBeNull();
+  });
+
+  it('an outside click closes the list when no detail popup is open', async () => {
+    const bell = await renderNotificationBell();
+    document.body.appendChild(bell);
+
+    bell.click();
+    await flush();
+    expect(document.querySelector('.notif-popup')).not.toBeNull();
+
+    document.body.click();
+    await flush();
+    expect(document.querySelector('.notif-popup')).toBeNull();
+  });
+
+  it('a click inside the popup does not close it', async () => {
+    const bell = await renderNotificationBell();
+    document.body.appendChild(bell);
+
+    bell.click();
+    await flush();
+    document.querySelector('.notif-popup-title').click();
+    await flush();
+    expect(document.querySelector('.notif-popup')).not.toBeNull();
+  });
+
   it('closes the popup when the close button is clicked', async () => {
     const bell = await renderNotificationBell();
     document.body.appendChild(bell);

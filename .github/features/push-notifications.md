@@ -126,6 +126,28 @@ history** bell:
 - Opening the popup calls `markAllRead()`, clearing the badge.
 - Listens for a `message` event from the service worker
   (`{ type: 'mexicano-notification-added' }`) to live-refresh the badge while mounted.
+- **Pinned announcements** (`js/services/pinned-announcements.js`,
+  `PINNED_ANNOUNCEMENTS`) render above the history list, title-only (`.notif-item-pinned`,
+  📌 icon), and are **never removed by "Clear all"** — they aren't part of the IndexedDB
+  history at all, just a static in-code list rendered every time the popup opens.
+  Clicking a pinned entry opens a second, centered detail popup (`.notif-detail-popup`)
+  with the announcement's full body (`white-space: pre-line`, mobile-width capped). Each
+  popup closes via its own `×` button **or** a click outside it; the outside-click
+  listener is a single module-level handler (registered once, no-op while nothing is
+  open) that dismisses one layer at a time — the detail popup first (if open), then the
+  notifications list on a following outside click — so closing one never cascades into
+  the other. Use this list for durable, must-see rules announcements (e.g. the fine-jar
+  policy) that shouldn't be dismissible like normal push history.
+
+## Pinned announcements — `js/services/pinned-announcements.js`
+Exports `PINNED_ANNOUNCEMENTS`, an array of `{ id, title, body }`. `title` is the short
+line shown in the bell's list; `body` is the full text shown only in the detail popup.
+To add a new durable announcement, append an entry here — no store/IndexedDB involved,
+so it survives `clearAll()` and app restarts by definition (it's code, not data).
+Current entries:
+- `fine-jar-2026` — "🎾 The fine jar is open!" — cancellation/lateness fine rules for
+  Tuesday/Thursday morning mexicano.
+
 
 ## Notification history store — `js/services/notification-store.js`
 IndexedDB-backed history (`mexicano-notifications` DB, `notifications` object store,
