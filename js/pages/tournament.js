@@ -576,7 +576,7 @@ export function renderTournament(container, params) {
       </div>
 
       <div class="score-presets" id="score-presets">
-        ${[[13,12],[15,10],[17,8],[20,5],[12,13],[10,15],[8,17],[5,20]].map(
+        ${[[9,16],[10,15],[11,14],[12,13],[13,12],[14,11],[15,10],[16,9]].map(
           ([a,b]) => `<button class="score-preset" data-s1="${a}" data-s2="${b}">${a} – ${b}</button>`
         ).join('')}
       </div>

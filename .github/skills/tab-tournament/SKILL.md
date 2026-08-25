@@ -66,7 +66,7 @@ Score entry:
 
 - `openScoreSheet(roundIdx, matchIdx)` is an inline bottom sheet in `js/pages/tournament.js`; the page does not import `js/components/score-input.js`.
 - Existing completed scores prefill the inputs.
-- Score presets are `[13,12]`, `[15,10]`, `[17,8]`, `[20,5]`, `[12,13]`, `[10,15]`, `[8,17]`, `[5,20]`.
+- Score presets are `[9,16]`, `[10,15]`, `[11,14]`, `[12,13]`, `[13,12]`, `[14,11]`, `[15,10]`, `[16,9]`.
 - Typing either score auto-fills the complement to 25 when the value is between 0 and 25.
 - Confirm validation requires both scores to parse, both be non-negative, and `s1 + s2 === 25`.
 - On success, it calls `setMatchScore(tournament, round.roundNumber, match.id, s1, s2)`, closes the sheet, re-renders, and emits `State.emit('tournament-changed', tournament)`.
