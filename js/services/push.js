@@ -123,7 +123,7 @@ export function buildTournamentCreatedPush(date) {
   return {
     title: '🎾 New tournament',
     body: `Tournament on ${date}`,
-    url: `./tournament/${date}`,
+    url: `./#/tournament/${date}`,
   };
 }
 
@@ -132,7 +132,7 @@ export function buildTournamentCompletedPush(date, rankedPlayers = []) {
   return {
     title: '🏆 Tournament complete',
     body: winner ? `${date} — Winner: ${winner}` : `Tournament on ${date}`,
-    url: `./tournament/${date}`,
+    url: `./#/tournament/${date}`,
   };
 }
 
@@ -170,7 +170,7 @@ export function buildPlayerResultPush(date, player, totalPlayers) {
     users: [player.name],
     title: `🏆 Tournament complete — ${date}`,
     body: lines.join('\n'),
-    url: `./tournament/${date}`,
+    url: `./#/tournament/${date}`,
   };
 }
 

@@ -93,9 +93,9 @@ describe('buildSubscribePayload', () => {
 
 describe('buildPushAlertPayload', () => {
   it('builds a web_push dispatch payload', () => {
-    expect(buildPushAlertPayload('Title', 'Body', './tournament/2026-07-15')).toEqual({
+    expect(buildPushAlertPayload('Title', 'Body', './#/tournament/2026-07-15')).toEqual({
       event_type: 'web_push',
-      client_payload: { title: 'Title', body: 'Body', url: './tournament/2026-07-15' },
+      client_payload: { title: 'Title', body: 'Body', url: './#/tournament/2026-07-15' },
     });
   });
 
@@ -149,7 +149,7 @@ describe('sendPushNotification', () => {
     const fetchMock = vi.fn(async () => ({ status: 204, json: async () => ({}) }));
     global.fetch = fetchMock;
 
-    await sendPushNotification('New tournament', '2026-07-15', './tournament/2026-07-15');
+    await sendPushNotification('New tournament', '2026-07-15', './#/tournament/2026-07-15');
 
     const [url, opts] = fetchMock.mock.calls[0];
     expect(url).toBe('https://api.github.com/repos/MinoPlay/DataHub_Mexicano/dispatches');
@@ -158,7 +158,7 @@ describe('sendPushNotification', () => {
     expect(body.client_payload).toEqual({
       title: 'New tournament',
       body: '2026-07-15',
-      url: './tournament/2026-07-15',
+      url: './#/tournament/2026-07-15',
     });
   });
 
@@ -178,7 +178,7 @@ describe('buildTournamentCreatedPush', () => {
     expect(buildTournamentCreatedPush('2026-07-15')).toEqual({
       title: '🎾 New tournament',
       body: 'Tournament on 2026-07-15',
-      url: './tournament/2026-07-15',
+      url: './#/tournament/2026-07-15',
     });
   });
 });
@@ -192,7 +192,7 @@ describe('buildTournamentCompletedPush', () => {
     expect(buildTournamentCompletedPush('2026-07-15', ranked)).toEqual({
       title: '🏆 Tournament complete',
       body: '2026-07-15 — Winner: Alice',
-      url: './tournament/2026-07-15',
+      url: './#/tournament/2026-07-15',
     });
   });
 
@@ -200,7 +200,7 @@ describe('buildTournamentCompletedPush', () => {
     expect(buildTournamentCompletedPush('2026-07-15', [])).toEqual({
       title: '🏆 Tournament complete',
       body: 'Tournament on 2026-07-15',
-      url: './tournament/2026-07-15',
+      url: './#/tournament/2026-07-15',
     });
   });
 });
@@ -217,7 +217,7 @@ describe('sendTournamentCreatedPush', () => {
     expect(body.client_payload).toEqual({
       title: '🎾 New tournament',
       body: 'Tournament on 2026-07-15',
-      url: './tournament/2026-07-15',
+      url: './#/tournament/2026-07-15',
     });
   });
 
@@ -261,7 +261,7 @@ describe('buildPlayerResultPush', () => {
       users: ['Alice'],
       title: '🏆 Tournament complete — 2026-07-15',
       body: 'Rank 1/4 · 24 pts · 6.0 avg\nELO 1016 (+16)',
-      url: './tournament/2026-07-15',
+      url: './#/tournament/2026-07-15',
     });
   });
 
@@ -323,13 +323,13 @@ describe('buildTournamentCompletedMessages', () => {
         users: ['Alice'],
         title: '🏆 Tournament complete — 2026-07-15',
         body: 'Rank 1/2 · 24 pts · 6.0 avg\nELO 1016 (+16)',
-        url: './tournament/2026-07-15',
+        url: './#/tournament/2026-07-15',
       },
       {
         users: ['Bob'],
         title: '🏆 Tournament complete — 2026-07-15',
         body: 'Rank 2/2 · 18 pts · 4.5 avg\nELO 984 (-16)',
-        url: './tournament/2026-07-15',
+        url: './#/tournament/2026-07-15',
       },
     ]);
   });
@@ -372,13 +372,13 @@ describe('sendTournamentCompletedPush', () => {
           users: ['Alice'],
           title: '🏆 Tournament complete — 2026-07-15',
           body: 'Rank 1/2 · 24 pts · 6.0 avg\nELO 1016 (+16)',
-          url: './tournament/2026-07-15',
+          url: './#/tournament/2026-07-15',
         },
         {
           users: ['Bob'],
           title: '🏆 Tournament complete — 2026-07-15',
           body: 'Rank 2/2 · 18 pts · 4.5 avg\nELO 1016 (+16)',
-          url: './tournament/2026-07-15',
+          url: './#/tournament/2026-07-15',
         },
       ],
     });
@@ -394,7 +394,7 @@ describe('sendTournamentCompletedPush', () => {
     expect(body.client_payload).toEqual({
       title: '🏆 Tournament complete',
       body: 'Tournament on 2026-07-15',
-      url: './tournament/2026-07-15',
+      url: './#/tournament/2026-07-15',
     });
   });
 });

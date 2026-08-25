@@ -27,7 +27,8 @@ Web Push needs a signed sender, so the client never sends pushes directly. Flow:
 3. **Send** — client fires `repository_dispatch` (`event_type: web_push`,
    `client_payload: { title, body, url }`). Same workflow reads the subscriptions file and
    sends signed Web Push via the `web-push` npm lib + VAPID secrets. 404/410 endpoints are
-   pruned and the file re-committed.
+   **not** pruned (by design — see script comment); a dead endpoint just fails silently
+   (`failed=N` in the log) until that user re-subscribes via Settings.
 4. **Receive** — `sw.js` `push` listener → `showNotification`; `notificationclick` focuses
    an open client or opens `data.url`.
 
@@ -53,9 +54,11 @@ Client success = GitHub accepted the dispatch (HTTP 204); real delivery happens 
     `{users:[name], title:'🏆 Tournament complete — <date>', body:'Rank r/n · p pts · a avg\nELO e (±c)', url}`.
     ELO line omitted when unknown.
   - `buildTournamentCompletedMessages(date, rankedPlayers, eloByPlayer)` → one message per participant.
-  - `buildTournamentCreatedPush(date)` → `{title:'🎾 New tournament', body:'Tournament on <date>', url:'./tournament/<date>'}`.
+  - `buildTournamentCreatedPush(date)` → `{title:'🎾 New tournament', body:'Tournament on <date>', url:'./#/tournament/<date>'}`.
+    URLs must be `./#/...` (hash-based router, see `js/router.js`) — a bare `./tournament/<date>`
+    path 404s because it's requested as a real static file, not routed by the SPA.
   - `buildTournamentCompletedPush(date, rankedPlayers)` → `{title:'🏆 Tournament complete',
-    body:'<date> — Winner: <name>' | 'Tournament on <date>', url:'./tournament/<date>'}`.
+    body:'<date> — Winner: <name>' | 'Tournament on <date>', url:'./#/tournament/<date>'}`.
   - `dispatchSubscription(subscription)` / `sendPushNotification(title, body, url='./', users=null)` —
     async; POST to `…/repos/<owner>/<repo>/dispatches`; resolve on 204, reject with the
     GitHub error message otherwise. Require configured backend or throw
@@ -117,7 +120,9 @@ Client success = GitHub accepted the dispatch (HTTP 204); real delivery happens 
 - `.github/scripts/web-push-relay.mjs` — subscribe (store+dedupe, attaches `user` to the sub
   and refreshes it on re-subscribe) / send (single `{title,body,url,users?}` or a
   `messages[]` list; optional `users` filter → only matching subs are contacted, else
-  broadcast; one notification max per subscription; prune 404/410). State file:
+  broadcast; one notification max per subscription; **404/410 failures are logged but the
+  subscription is never deleted** — see the "Never delete subscriptions" comment in the
+  script). State file:
   `mexicano_v3/push-subscriptions.json` (array of `PushSubscription` JSON, each with an added `user` field).
 
 ## Data shapes
@@ -157,16 +162,21 @@ existing subscriptions.
   gh run watch --repo MinoPlay/DataHub_Mexicano \
     "$(gh run list --repo MinoPlay/DataHub_Mexicano --workflow 'Web Push Relay' -L1 --json databaseId -q '.[0].databaseId')" --exit-status
   ```
-  Success log line: `Push complete. sent=<n> pruned=<n> remaining=<n>`.
+  Success log line: `Push complete. sent=<n> failed=<n> total=<n>`.
 - `sent=N` means the push service accepted it; if a device shows nothing it is client-side
   (DND/muted, or iOS PWA not installed to home screen) — not the relay.
+- `failed=N` with `HTTP 410`/`404` in the `::warning::` log = a dead endpoint for that
+  subscription (uninstalled PWA, revoked permission, endpoint rotated). The subscription
+  is **not** auto-removed; that user must re-enable push in Settings to refresh it.
 - Keys mismatch (client `VAPID_PUBLIC_KEY` ≠ data-repo secret) → subscribe fails with
   `InvalidAccessError`/403.
 
 ## Constraints
 - **iOS 16.4+**: only works when the PWA is installed to the home screen, not a Safari tab.
 - HTTPS required (GitHub Pages OK); permission required (no silent enable).
-- Subscription rot: endpoints expire; the workflow prunes 404/410.
+- Subscription rot: endpoints expire and are **not** auto-pruned (intentional, see
+  `web-push-relay.mjs`) — a dead endpoint keeps failing with 404/410 until the user
+  re-subscribes.
 - New client code needs one cold start per device to activate the new service worker before
   it ships (see `app-version.md` / `sw-fetch.js` network-first cache bypass).
 

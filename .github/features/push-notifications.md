@@ -33,8 +33,12 @@ relayed exactly like `telegram-alerts.md`:
    `user` are skipped. When `users` is absent/empty the send **broadcasts** to everyone
    (legacy behavior). With `messages`, each entry is resolved in order and a subscription
    receives at most the first message it matches (never two notifications for one dispatch).
-   Subscriptions that return HTTP 404/410 are pruned as expired and the
-   file is committed back.
+   Subscriptions that return HTTP 404/410 are **not** pruned — a stored subscription is only
+   ever added or updated (re-subscribe of an existing endpoint), never deleted on send
+   failure, since silently pruning "expired" endpoints previously removed entries that later
+   turned out to still be valid (transient failures / endpoint rotation), making push look
+   like it kept "resetting". A 404/410 means that device's subscription is dead and the user
+   must re-enable push in Settings to re-subscribe.
 4. **Receive (service worker).** `sw.js` handles the `push` event →
    `self.registration.showNotification(...)`, and `notificationclick` → focus/open the app.
 
@@ -62,9 +66,11 @@ Exported symbols (pure/testable unless noted):
 - `buildPushAlertPayload(title, body, url, users)` →
   `{ event_type: 'web_push', client_payload: { title, body, url[, users] } }`. `url` defaults
   to `'./'`; `users` (recipient names) is only included when a non-empty array is passed.
-- `buildTournamentCreatedPush(date)` → `{ title:'🎾 New tournament', body:'Tournament on <date>', url:'./tournament/<date>' }`.
+- `buildTournamentCreatedPush(date)` → `{ title:'🎾 New tournament', body:'Tournament on <date>', url:'./#/tournament/<date>' }`.
+  The `#` is required: the app is a hash-based SPA (`router.js`), so a bare path (no `#`)
+  is requested as a real static file and 404s when the SW/browser navigates to it.
 - `buildTournamentCompletedPush(date, rankedPlayers)` → `{ title:'🏆 Tournament complete',
-  body:'<date> — Winner: <name>' (or 'Tournament on <date>' when empty), url:'./tournament/<date>' }`.
+  body:'<date> — Winner: <name>' (or 'Tournament on <date>' when empty), url:'./#/tournament/<date>' }`.
   Legacy broadcast summary, now only used as a no-players fallback.
 - `buildPushMessagesPayload(messages)` → `{ event_type:'web_push', client_payload:{ messages } }`
   where each message is `{ users, title, body, url }` — one dispatch, a different
@@ -75,7 +81,7 @@ Exported symbols (pure/testable unless noted):
   whole numbers). Returns `{}` when there are no matches.
 - `buildPlayerResultPush(date, player, totalPlayers)` → `{ users:[name],
   title:'🏆 Tournament complete — <date>', body:'Rank <r>/<n> · <pts> pts · <avg> avg\nELO <elo> (<±change>)',
-  url:'./tournament/<date>' }`. The ELO line is omitted when the player has no ELO.
+  url:'./#/tournament/<date>' }`. The ELO line is omitted when the player has no ELO.
 - `buildTournamentCompletedMessages(date, rankedPlayers, eloByPlayer)` → one
   `buildPlayerResultPush` message per ranked participant (players without a name are skipped).
 - `dispatchSubscription(subscriptionJson)` (async) — POSTs a `web_push_subscribe`
@@ -171,4 +177,5 @@ send button that calls `sendPushNotification(title, body, './', users)` — `use
   (see `pwa-installation.md`), not in a Safari tab.
 - **HTTPS required** — satisfied by GitHub Pages.
 - **Permission required** — no silent enable; user must grant.
-- **Subscription rot** — endpoints expire; the relay workflow prunes 404/410 responses.
+- **Subscription rot** — endpoints expire; the relay workflow does **not** auto-prune 404/410
+  responses (by design), so a user with a dead endpoint must re-enable push in Settings.
