@@ -274,6 +274,8 @@
 .match-team-name {
   font-size: var(--font-size-sm);
   font-weight: var(--font-weight-medium);
+  white-space: nowrap;
+  display: inline-block;
 }
 
 .match-vs {

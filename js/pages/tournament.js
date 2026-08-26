@@ -21,6 +21,31 @@ import { Store } from '../store.js';
 import { showToast } from '../components/toast.js';
 import { renderDayStatsInto, showPlayerProfile } from './statistics.js';
 
+// Shrinks matched elements' font-size so a name plus its confirmation checkmark
+// never exceeds the on-screen width of our longest real player name — keeps
+// every player name on a single line instead of wrapping.
+const MAX_NAME_WIDTH_REFERENCE = 'Christian Wennergren';
+let _fitCanvas = null;
+function fitNamesToMaxWidth(container, selector) {
+  if (typeof document === 'undefined' || typeof window === 'undefined') return;
+  const els = container.querySelectorAll(selector);
+  if (!els.length) return;
+  _fitCanvas = _fitCanvas || document.createElement('canvas');
+  const ctx = _fitCanvas.getContext('2d');
+  if (!ctx) return;
+  els.forEach(el => {
+    el.style.fontSize = '';
+    const computed = window.getComputedStyle(el);
+    const baseSizePx = parseFloat(computed.fontSize) || 14;
+    ctx.font = `${computed.fontWeight} ${baseSizePx}px ${computed.fontFamily}`;
+    const maxWidth = ctx.measureText(MAX_NAME_WIDTH_REFERENCE).width;
+    const actualWidth = el.scrollWidth;
+    if (maxWidth > 0 && actualWidth > maxWidth) {
+      el.style.fontSize = `${baseSizePx * (maxWidth / actualWidth)}px`;
+    }
+  });
+}
+
 function formatDate(dateStr) {
   try {
     const d = new Date(dateStr + 'T00:00:00');
@@ -373,6 +398,7 @@ export function renderTournament(container, params) {
     }
 
     content.innerHTML = html;
+    fitNamesToMaxWidth(content, '.match-team-name');
 
     // Event: round navigation
     content.querySelector('#prev-round')?.addEventListener('click', () => {
@@ -544,6 +570,7 @@ export function renderTournament(container, params) {
 
     html += '</tbody></table></div>';
     content.innerHTML = html;
+    fitNamesToMaxWidth(content, '.name-cell');
   }
 
   // ─── Score Input Bottom Sheet ───
