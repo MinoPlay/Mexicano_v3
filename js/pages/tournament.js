@@ -224,7 +224,7 @@ export function renderTournament(container, params) {
         <button class="tab ${currentTab === 'matches' ? 'active' : ''}" data-tab="matches">Matches</button>
         <button class="tab ${currentTab === 'leaderboard' ? 'active' : ''}" data-tab="leaderboard">Leaderboard</button>
         <div style="display:flex;align-items:center;gap:var(--space-xs);margin-left:auto" id="access-code-area">
-          ${tournament.accessCode ? `<span class="text-sm text-secondary"><strong>Code: ${tournament.accessCode}</strong></span>` : ''}
+          ${tournament.accessCode ? `<span class="text-sm" style="color:var(--color-primary)"><strong>Code: ${tournament.accessCode}</strong></span>` : ''}
           ${isAdmin ? `<button class="btn btn-ghost btn-xs" id="edit-access-code" title="Edit access code">✎</button>` : ''}
         </div>
       </div>
@@ -307,10 +307,12 @@ export function renderTournament(container, params) {
         .filter(p => p.confirmed)
         .map(p => String(p.name || '').toLowerCase())
     );
-    const nameWithCheck = (name) =>
-      `${esc(name)}${confirmedNames.has(String(name || '').toLowerCase())
-        ? ' <span class="confirm-check" title="Confirmed attendance" style="color:var(--color-success)">✅</span>'
-        : ''}`;
+    const nameWithCheck = (name, side = 'right') => {
+      const isConfirmed = confirmedNames.has(String(name || '').toLowerCase());
+      const check = '<span class="confirm-check" title="Confirmed attendance" style="color:var(--color-success)">✅</span>';
+      if (!isConfirmed) return esc(name);
+      return side === 'left' ? `${check} ${esc(name)}` : `${esc(name)} ${check}`;
+    };
 
     let html = '';
 
@@ -353,8 +355,8 @@ export function renderTournament(container, params) {
           <div class="match-court">Court ${tournament.courts?.[idx] ?? idx + 1}</div>
           <div class="match-teams">
             <div class="match-team">
-              <span class="match-team-name">${nameWithCheck(team1Name1)}</span>
-              <span class="match-team-name">${nameWithCheck(team1Name2)}</span>
+              <span class="match-team-name">${nameWithCheck(team1Name1, 'left')}</span>
+              <span class="match-team-name">${nameWithCheck(team1Name2, 'left')}</span>
             </div>
             <span class="match-vs">vs</span>
             <div class="match-team" style="text-align:right">

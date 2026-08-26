@@ -305,8 +305,10 @@
 }
 
 .match-court {
-  font-size: var(--font-size-xs);
-  color: var(--text-tertiary);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-primary);
+  text-align: center;
   margin-top: var(--space-xs);
 }
 
