@@ -26,4 +26,16 @@ export const PINNED_ANNOUNCEMENTS = [
 🍻 AND THE BEST PART:
 Every krone goes straight to our outings. So when you oversleep, you're basically buying the team a round – cheers for that! 🙌`,
   },
+  {
+    id: 'practical-info-2026',
+    title: 'ℹ️ Practical info',
+    body: `📅 Tuesday + Thursday, 06:00–08:00
+📍 Match Padel Ballerup, Telegrafvej 6, 2750 Ballerup
+💡 Lights on from 05:30 – time to warm up
+⏱️ 06:00 sharp – mexicano, first to 25 points
+📧 Courts + access code sent by mail 1–2 days before (also here)
+💰 90 kr/person for 2 hours (non-members)
+📲 Monthly MobilePay request based on attendance – send your number
+🔢 1–4 courts booked depending on turnout`,
+  },
 ];

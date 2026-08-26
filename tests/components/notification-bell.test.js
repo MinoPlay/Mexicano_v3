@@ -147,6 +147,37 @@ describe('Notification bell', () => {
     expect(detail.textContent).toContain('6:00 SHARP');
   });
 
+  it('always shows a pinned "Practical info" announcement, even with no history', async () => {
+    const bell = await renderNotificationBell();
+    document.body.appendChild(bell);
+    bell.click();
+    await flush();
+
+    const pinned = document.querySelectorAll('.notif-item-pinned');
+    const titles = Array.from(pinned).map(el => el.textContent);
+    expect(titles.some(t => t.includes('Practical info'))).toBe(true);
+    // Only the title shows in the list, not the extended body.
+    expect(titles.join('')).not.toContain('MobilePay');
+  });
+
+  it('opens a detail popup with the full practical info when that pinned item is clicked', async () => {
+    const bell = await renderNotificationBell();
+    document.body.appendChild(bell);
+    bell.click();
+    await flush();
+
+    const pinned = Array.from(document.querySelectorAll('.notif-item-pinned'))
+      .find(el => el.textContent.includes('Practical info'));
+    pinned.click();
+    await flush();
+
+    const detail = document.querySelector('.notif-detail-popup');
+    expect(detail).not.toBeNull();
+    expect(detail.textContent).toContain('Match Padel Ballerup');
+    expect(detail.textContent).toContain('MobilePay');
+    expect(detail.textContent).toContain('06:00 sharp');
+  });
+
   it('"Clear all" removes history but never removes the pinned announcement', async () => {
     mockNotifications = [{ id: '1', title: 'Hi', body: '', url: './', receivedAt: Date.now(), read: false }];
     mockUnread = 1;
