@@ -88,6 +88,8 @@ async function init() {
   // One-time migration: remove stale Azure connection string from localStorage
   localStorage.removeItem('mexicano_azure_conn_str');
 
+  Store.applyDeviceType();
+
   await loadAdministrators();
   loadPatFromUrl();
   await loadDevSecrets();

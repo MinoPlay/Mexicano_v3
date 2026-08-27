@@ -22,6 +22,11 @@ body {
   transition: background-color var(--transition-normal), color var(--transition-normal);
 }
 
+/* iPhone device-type setting: extra top padding to clear the iOS status bar/notch */
+body.device-iphone {
+  padding-top: env(safe-area-inset-top, 20px);
+}
+
 a {
   color: var(--color-primary);
   text-decoration: none;

@@ -33,6 +33,8 @@ Only the PAT input is editable. Saved PAT is prefilled from `Store.getGitHubConf
 
 Sync status uses `getSyncStatus()` for initial state and `onSyncStatus(updateSyncIcon)` for live updates. Icons are: `idle` → `⬜`, `syncing` → `🔄`, `success` → `✅`, `error` → `❌`. The listener is unsubscribed once on `hashchange`.
 
+The Device section (not admin-gated) has a `#device-type-toggle` checkbox switch (same `.switch` style as Logs), labeled "iPhone Device". It reads `Store.getDeviceType() === 'iphone'` for the initial checked state and calls `Store.setDeviceType('iphone'|'android')` on change, which persists it and toggles a `device-iphone` class on `document.body` (adds `padding-top: env(safe-area-inset-top, 20px)` via `css/base.css`, for the iOS status bar/notch). Default is `'android'` (no extra padding). `Store.applyDeviceType()` is also called once at app init (`js/app.js`) to apply the stored value on load.
+
 The logs toggle uses `Store.isLogsEnabled()` for initial checkbox state and `Store.setLogsEnabled(logsToggle.checked)` on change. Logs default to disabled when no value is stored. The toggle shows either `Logs enabled` or `Logs disabled`.
 
 Manual attendance is admin-gated. Clicking `#attendance-add-btn` opens `showManualAttendanceDialog()`.
@@ -45,7 +47,7 @@ PAT-in-URL bootstrap and onboarding are adjacent flows, not settings-page code. 
 
 ## Key Files & Symbols
 - `js/pages/settings.js` — exports `renderSettings(container, params)` plus local helpers `renderMembersList(listEl)`, `updateAvatar(avatarEl)`, `refreshAdminVisibility()`, `refreshUserSelect()`, `setGhStatusMsg()`, `updateSyncIcon()`, `setTgStatus()`, and `refreshTgTestBtn()`.
-- `js/store.js` — `Store.getGitHubConfig`, `Store.setGitHubConfig`, `Store.clearGitHubConfig`, `Store.getCurrentUser`, `Store.setCurrentUser`, `Store.isAdministrator`, `Store.isLogsEnabled`, `Store.setLogsEnabled`, `Store.setMembers`.
+- `js/store.js` — `Store.getGitHubConfig`, `Store.setGitHubConfig`, `Store.clearGitHubConfig`, `Store.getCurrentUser`, `Store.setCurrentUser`, `Store.isAdministrator`, `Store.isLogsEnabled`, `Store.setLogsEnabled`, `Store.setMembers`, `Store.getDeviceType`, `Store.setDeviceType`, `Store.applyDeviceType`.
 - `js/services/github.js` — `testConnection`, `onSyncStatus`, `getSyncStatus`, `addPlayerToPlayersJson`; `pushDoodleNow` is imported by `settings.js` but not used there.
 - `js/services/members.js` — `getMembers`, `addMember`, `removeMember`; updates Store/Cache and emits `members-changed` via `State`.
 - `js/state.js` — simple pub/sub used by member services; not imported directly by `settings.js`.
@@ -61,6 +63,7 @@ All persistent browser keys use the `mexicano_` localStorage prefix through `Sto
 - `mexicano_github_config` — JSON object `{ owner: 'MinoPlay', repo: 'DataHub_Mexicano', pat: '<PAT>', basePath: 'mexicano_v3/backup-data' }`. Stored as-is; the PAT is sensitive.
 - `mexicano_current_user` — JSON string with the selected player name, or absent/empty for no selection.
 - `mexicano_logs_enabled` — JSON boolean. Missing/null means disabled.
+- `mexicano_device_type` — JSON string `'android'` | `'iphone'`. Missing means `'android'` (no extra padding).
 - `mexicano_members` — JSON array of player names, maintained by `Store.setMembers(members)` as a local fallback/warm copy; current reads prefer Cache where available.
 - `players.json` in GitHub — array of player objects. Adding a member appends a default object with fields such as `Name`, `ELO`, `PreviousELO`, `Wins`, `Losses`, `TotalPoints`, `Average`, `Tournaments`, `Id`, and `MatchPadelId`.
 - `attendance_manual` — managed by the manual attendance dialog, with shape documented in `Store`: `[{ date: 'YYYY-MM-DD', players: ['Name'], note: '' }]`.
@@ -74,6 +77,7 @@ There are no sub-tabs; the page is a flat settings page with collapsible or stan
 - Members — admin-only member list and add/remove controls.
 - GitHub connection — fixed owner/repo/basePath, editable PAT, Save/Test/Clear, sync status icon.
 - Logs toggle — admin-only `isLogsEnabled` checkbox.
+- Device type — Android/iPhone select, applies iOS status-bar/notch top padding.
 - Attendance — admin-only manual attendance dialog launcher.
 - Telegram Alerts — admin-only test buttons for Doodle and tournament-group relay alerts.
 - PWA install — no visible section in the current `settings.js`; install behavior is native browser UI only.

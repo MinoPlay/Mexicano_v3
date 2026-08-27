@@ -80,6 +80,20 @@ export function renderSettings(container, params) {
         </details>
       </div>
 
+      <!-- Device Type -->
+      <div class="settings-section" id="device-type-section">
+        <label class="settings-toggle-row" style="cursor:pointer;">
+          <span class="settings-section-title" style="margin:0;">iPhone Device</span>
+          <span class="switch">
+            <input type="checkbox" id="device-type-toggle" />
+            <span class="switch-slider"></span>
+          </span>
+        </label>
+        <p class="text-sm text-secondary" style="margin-top:var(--space-sm);">
+          On iPhone, adds extra top padding to clear the status bar/notch.
+        </p>
+      </div>
+
       <!-- Logs -->
       <div class="settings-section" id="logs-section">
         <label class="settings-toggle-row" style="cursor:pointer;">
@@ -187,6 +201,15 @@ export function renderSettings(container, params) {
   logsToggle.addEventListener('change', () => {
     Store.setLogsEnabled(logsToggle.checked);
     showToast(logsToggle.checked ? 'Logs enabled' : 'Logs disabled');
+  });
+
+  // Device type (Android/iPhone) toggle
+  const deviceTypeToggle = container.querySelector('#device-type-toggle');
+  deviceTypeToggle.checked = Store.getDeviceType() === 'iphone';
+  deviceTypeToggle.addEventListener('change', () => {
+    const type = deviceTypeToggle.checked ? 'iphone' : 'android';
+    Store.setDeviceType(type);
+    showToast(type === 'iphone' ? 'iPhone padding enabled' : 'iPhone padding disabled');
   });
 
   // Current user select

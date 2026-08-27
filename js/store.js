@@ -167,6 +167,26 @@ export const Store = {
     notifyUserChanged();
   },
 
+  // ─── Device type (Android/iPhone) — iPhone gets extra top padding ───
+  // Default 'android' when nothing stored (no extra padding, prior behavior).
+
+  getDeviceType() {
+    const v = this.get('device_type');
+    return v === 'iphone' ? 'iphone' : 'android';
+  },
+
+  setDeviceType(type) {
+    this.set('device_type', type === 'iphone' ? 'iphone' : 'android');
+    this.applyDeviceType();
+  },
+
+  /** Toggle `device-iphone` body class from the currently stored device type. */
+  applyDeviceType() {
+    try {
+      document.body.classList.toggle('device-iphone', this.getDeviceType() === 'iphone');
+    } catch { /* no document (SSR/test without DOM) */ }
+  },
+
   // ─── GitHub Backend config ───
 
   getGitHubConfig() {
