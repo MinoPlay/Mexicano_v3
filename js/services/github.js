@@ -446,6 +446,50 @@ export async function pushTournamentDayFile(tournament, attempts = 3) {
   throw lastErr || new Error('pushTournamentDayFile failed');
 }
 
+const CONFIRM_ATTENDANCE_EVENT = 'confirm_attendance';
+
+/**
+ * Ask the data-repo's `confirm-attendance.yml` workflow to mark `playerName`
+ * as confirmed for the tournament on `date`, by firing a `repository_dispatch`
+ * event (event_type: confirm_attendance). Mirrors the Telegram relay pattern
+ * (js/services/telegram.js): the workflow performs the actual day-file update
+ * and commit server-side, so this call only needs GitHub to accept the event
+ * (HTTP 204) — it does not wait for the commit itself.
+ *
+ * @param {string} date - tournament date (YYYY-MM-DD)
+ * @param {string} playerName
+ * @returns {Promise<boolean>} true once the dispatch is accepted (204)
+ */
+export async function dispatchConfirmAttendance(date, playerName) {
+  const cfg = getConfig();
+  if (!cfg?.owner || !cfg?.repo || !cfg?.pat) {
+    throw new Error('GitHub backend not configured — cannot dispatch attendance confirmation');
+  }
+
+  const url = `${API_BASE}/repos/${encodeURIComponent(cfg.owner)}/${encodeURIComponent(cfg.repo)}/dispatches`;
+  const payload = {
+    event_type: CONFIRM_ATTENDANCE_EVENT,
+    client_payload: { date, name: playerName },
+  };
+
+  const res = await fetchWithTimeout(url, {
+    method: 'POST',
+    headers: authHeaders(cfg.pat),
+    body: JSON.stringify(payload),
+  }, FAST_TIMEOUTS);
+
+  // repository_dispatch returns 204 No Content on success.
+  if (res.status !== 204) {
+    let detail = `HTTP ${res.status}`;
+    try {
+      const body = await res.json();
+      if (body?.message) detail = body.message;
+    } catch { /* non-JSON error body */ }
+    throw new Error(`Attendance confirmation dispatch failed: ${detail}`);
+  }
+  return true;
+}
+
 /**
  * Write a completed tournament to GitHub: its day file, then tournaments.json.
  *

@@ -6,6 +6,7 @@ import { getMembers } from '../services/members.js';
 import { calculatePlayerStatistics } from '../services/statistics.js';
 import { APP_VERSION, refreshApp } from '../version.js';
 import { renderNotificationBell } from '../components/notification-bell.js';
+import { showErrorDialog } from '../components/error-dialog.js';
 
 export function shouldShowConfirmationPopup(activeTournament, currentUser, alreadyConfirmed) {
   if (!activeTournament || activeTournament.isCompleted) return false;
@@ -631,17 +632,19 @@ export function renderHome(container, params) {
       btn.style.cssText = 'width:100%;font-size:var(--font-size-md);';
       btn.addEventListener('click', async () => {
         btn.disabled = true;
-        btn.textContent = 'CONFIRMING… KEEP OPEN';
-        body.textContent = 'Saving your confirmation — please keep this page open for a moment.';
+        btn.textContent = 'CONFIRMING…';
+        body.textContent = 'Sending your confirmation…';
         let result;
         try {
-          // Persist to GitHub (immediate + verified) BEFORE alerting.
+          // Dispatches to the data-repo confirm-attendance workflow, which
+          // performs the actual day-file update BEFORE we alert.
           result = await confirmAttendanceAndPush(currentUser);
         } catch (err) {
-          console.warn('[attendance] confirm push failed:', err);
+          console.warn('[attendance] confirm dispatch failed:', err);
           btn.disabled = false;
           btn.textContent = 'CONFIRM';
-          body.textContent = 'Save failed — check your connection and tap CONFIRM to retry.';
+          body.textContent = `You are registered for the tournament on ${activeTournament.tournamentDate}. Please confirm your attendance.`;
+          showErrorDialog('Confirmation failed', err?.message || 'Could not send your confirmation — check your connection and tap CONFIRM to retry.');
           return;
         }
         if (!result.changed) { overlay.remove(); return; }

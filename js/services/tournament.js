@@ -7,7 +7,7 @@ import { State } from '../state.js';
 import { rankPlayers } from './ranking.js';
 import { calculateAllEloRankings, processMatchElo } from './elo.js';
 import { logRoundResult } from './round-log.js';
-import { cancelPendingSync, pushTournamentDayFile, readDayMatches, pushCompletedTournament, markMatchDateDirty, FAST_TIMEOUTS } from './github.js';
+import { cancelPendingSync, pushTournamentDayFile, readDayMatches, pushCompletedTournament, markMatchDateDirty, dispatchConfirmAttendance, FAST_TIMEOUTS } from './github.js';
 
 /** localStorage key holding the ELO map produced by the last completion. */
 export const ELO_BASELINE_KEY = 'mexicano_elo_baseline';
@@ -848,12 +848,17 @@ export function confirmAttendance(playerName) {
 }
 
 /**
- * Confirm attendance AND persist it immediately to GitHub (verified, retried)
- * instead of relying on the debounced auto-push, which can be lost if the app
- * is closed or the route changes within the debounce window. Resolves only
- * after the day file is verified on GitHub, so callers can fire the Telegram
- * alert strictly after the backend is actually updated. Rejects if the push
- * fails so the caller can withhold the alert.
+ * Confirm attendance AND persist it via a `repository_dispatch` to the data
+ * repo (event_type: confirm_attendance), instead of writing the day file
+ * directly from the browser. The `confirm-attendance.yml` workflow in the
+ * data repo performs the actual day-file update + commit server-side —
+ * mirrors how Telegram alerts are relayed (js/services/telegram.js).
+ *
+ * Resolves once GitHub has accepted the dispatch (not once the workflow has
+ * finished committing), so callers can fire the Telegram alert once the
+ * confirmation request has been handed off. Rejects if the dispatch itself
+ * fails (e.g. network error, misconfigured GitHub backend) so the caller can
+ * withhold the alert and show an error.
  *
  * @param {string} playerName
  * @returns {Promise<{changed: boolean, pushed: boolean}>}
@@ -863,7 +868,7 @@ export async function confirmAttendanceAndPush(playerName) {
   if (!changed) return { changed: false, pushed: false };
   const tournament = Store.getActiveTournament();
   cancelPendingSync();
-  await pushTournamentDayFile(tournament);
+  await dispatchConfirmAttendance(tournament.tournamentDate, playerName);
   return { changed: true, pushed: true };
 }
 

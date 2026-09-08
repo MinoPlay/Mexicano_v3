@@ -16,6 +16,7 @@ const githubMock = vi.hoisted(() => ({
   readFile: vi.fn().mockResolvedValue(null),
   ensureAllMatchesLoaded: vi.fn().mockResolvedValue([]),
   pushTournamentDayFile: vi.fn().mockResolvedValue(true),
+  dispatchConfirmAttendance: vi.fn().mockResolvedValue(true),
 }));
 
 vi.mock('../../js/services/github.js', () => githubMock);
@@ -64,6 +65,8 @@ beforeEach(() => {
   githubMock.cancelPendingSync.mockClear();
   githubMock.pushTournamentDayFile.mockClear();
   githubMock.pushTournamentDayFile.mockResolvedValue(true);
+  githubMock.dispatchConfirmAttendance.mockClear();
+  githubMock.dispatchConfirmAttendance.mockResolvedValue(true);
 });
 
 // ─── markPlayerConfirmed (pure) ───
@@ -144,33 +147,31 @@ describe('confirmAttendance', () => {
   });
 });
 
-// ─── confirmAttendanceAndPush (immediate, verified persistence) ───
-// Regression: the alert used to fire while GitHub relied on a debounced push
-// that could be lost (app close / route change). Confirmation must be persisted
-// via an immediate, verified day-file push BEFORE the caller fires the alert.
+// ─── confirmAttendanceAndPush (dispatch to confirm-attendance workflow) ───
+// Regression: confirmation used to push the day file directly from the
+// browser. It now fires a repository_dispatch(confirm_attendance) instead —
+// the data-repo workflow performs the actual day-file update + commit.
 
 describe('confirmAttendanceAndPush', () => {
-  it('persists the confirmation with an immediate verified day-file push', async () => {
+  it('dispatches a confirm_attendance event for the active tournament date', async () => {
     makeStarted();
     const result = await confirmAttendanceAndPush('Bob');
 
     expect(result.changed).toBe(true);
-    expect(githubMock.pushTournamentDayFile).toHaveBeenCalledTimes(1);
-    const pushedTournament = githubMock.pushTournamentDayFile.mock.calls[0][0];
-    expect(pushedTournament.tournamentDate).toBe(DATE);
-    expect(pushedTournament.players.find(p => p.name === 'Bob').confirmed).toBe(true);
+    expect(githubMock.dispatchConfirmAttendance).toHaveBeenCalledTimes(1);
+    expect(githubMock.dispatchConfirmAttendance).toHaveBeenCalledWith(DATE, 'Bob');
   });
 
-  it('does not push when nothing changed', async () => {
+  it('does not dispatch when nothing changed', async () => {
     makeStarted();
     const result = await confirmAttendanceAndPush('Zoe'); // not a player
     expect(result.changed).toBe(false);
-    expect(githubMock.pushTournamentDayFile).not.toHaveBeenCalled();
+    expect(githubMock.dispatchConfirmAttendance).not.toHaveBeenCalled();
   });
 
-  it('rejects when the day-file push fails so the caller can withhold the alert', async () => {
+  it('rejects when the dispatch fails so the caller can withhold the alert', async () => {
     makeStarted();
-    githubMock.pushTournamentDayFile.mockRejectedValueOnce(new Error('network down'));
+    githubMock.dispatchConfirmAttendance.mockRejectedValueOnce(new Error('network down'));
     await expect(confirmAttendanceAndPush('Carol')).rejects.toThrow('network down');
   });
 });

@@ -15,6 +15,7 @@ import {
   deleteTournament,
   confirmAttendanceAndPush
 } from '../services/tournament.js';
+import { showErrorDialog } from '../components/error-dialog.js';
 import { rankPlayers } from '../services/ranking.js';
 import { State } from '../state.js';
 import { Store } from '../store.js';
@@ -420,18 +421,18 @@ export function renderTournament(container, params) {
       if (btn) {
         btn.disabled = true;
         btnLabel = btn.textContent;
-        btn.textContent = 'Confirming… don\u2019t close';
+        btn.textContent = 'Confirming…';
       }
-      showToast('Saving confirmation… keep this page open');
+      showToast('Sending confirmation…');
       let result;
       try {
-        // Persist to GitHub (immediate + verified) BEFORE alerting, so the
-        // Telegram alert can never fire while the backend is left un-updated.
+        // Dispatches to the data-repo confirm-attendance workflow, which
+        // performs the actual day-file update BEFORE we alert.
         result = await confirmAttendanceAndPush(user);
       } catch (err) {
-        console.warn('[attendance] confirm push failed:', err);
-        showToast('Confirm failed — check your connection and retry');
+        console.warn('[attendance] confirm dispatch failed:', err);
         if (btn) { btn.disabled = false; btn.textContent = btnLabel; }
+        showErrorDialog('Confirmation failed', err?.message || 'Could not send your confirmation — check your connection and retry.');
         return;
       }
       if (result.changed) {
