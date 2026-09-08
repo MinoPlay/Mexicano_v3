@@ -621,12 +621,15 @@ async function finalizeCompletedTournament(tournament, onProgress) {
     eloAfter,
   ));
 
-  // Snapshot the post-tournament ELO so the NEXT completion resolves its
-  // baseline with zero network reads.
+  // Snapshot the post-tournament ELO (and its pre-tournament baseline) so the
+  // NEXT completion resolves its baseline with zero network reads, and so a
+  // GitHub pull can overlay this onto players.json while the data-repo
+  // pipeline is still catching up (see github.js applyEloBaselineOverlay()).
   try {
     localStorage.setItem(ELO_BASELINE_KEY, JSON.stringify({
       date: tournament.tournamentDate,
       elo: eloAfter,
+      previousElo: eloBefore,
     }));
   } catch { /* storage full — baseline falls back to players.json */ }
 

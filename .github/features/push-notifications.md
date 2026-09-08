@@ -78,7 +78,8 @@ Exported symbols (pure/testable unless noted):
 - `computeTournamentEloChanges(allMatches, date)` → `{ <name>: { elo, eloChange } }`. Replays
   the full ELO history with and without the tournament's own matches (`calculateAllEloRankings`)
   and returns each player's post-tournament ELO plus the delta it caused (both rounded to
-  whole numbers). Returns `{}` when there are no matches.
+  whole numbers). Returns `{}` when there are no matches. Used only as a **fallback** by
+  `sendTournamentCompletedPush` for a player missing from `Store.getPlayersSummary()`.
 - `buildPlayerResultPush(date, player, totalPlayers)` → `{ users:[name],
   title:'🏆 Tournament complete — <date>', body:'Rank <r>/<n> · <pts> pts · <avg> avg\nELO <elo> (<±change>)',
   url:'./#/tournament/<date>' }`. The ELO line is omitted when the player has no ELO.
@@ -94,12 +95,22 @@ Exported symbols (pure/testable unless noted):
   build from the tournament (`sendTournamentCompletedPush` ranks `tournament.players` via
   `rankPlayers`). `sendTournamentCreatedPush` **targets only the tournament's players**
   (passes their names as `users`). `sendTournamentCompletedPush` sends **one personalised
-  message per participant** via `sendPushMessages`; `allMatches` defaults to
-  `Store.getMatches()`. It falls back to the legacy broadcast
-  (`buildTournamentCompletedPush`) only when the tournament has no players.
+  message per participant** via `sendPushMessages`; each participant's ELO/ELO-change is read
+  from `Store.getPlayersSummary()` (elo/previousElo) — the authoritative source refreshed by
+  `finalizeCompletedTournament()` just before this fires — falling back to
+  `computeTournamentEloChanges(allMatches, date)` (`allMatches` defaults to
+  `Store.getMatches()`) only for a player missing from the summary. It falls back to the
+  legacy broadcast (`buildTournamentCompletedPush`) only when the tournament has no players.
 - `subscribeToPush()` (async, browser-only glue) — checks support, requests permission,
-  gets `navigator.serviceWorker.ready`, subscribes via `PushManager`, then calls
-  `dispatchSubscription(sub.toJSON())`. Throws if unsupported or permission denied.
+  gets `navigator.serviceWorker.ready`, **unsubscribes any existing subscription first**
+  (`reg.pushManager.getSubscription()` → `existing.unsubscribe()`, errors swallowed/logged),
+  then subscribes fresh via `PushManager.subscribe(...)` and calls
+  `dispatchSubscription(sub.toJSON())`. The unsubscribe-first step matters because browsers
+  hand back the SAME subscription object from `subscribe()` when one already exists
+  client-side, even after the push service has invalidated it server-side (HTTP 410 Gone) —
+  without unsubscribing first, re-clicking "Enable push notifications" in Settings silently
+  re-registers the same dead endpoint and the user never receives pushes again. Throws if
+  unsupported or permission denied.
 - `resyncPushSubscription()` (async, browser-only glue) — **silent** re-tag on startup:
   no-ops unless push is supported and already granted, reads the existing
   `pushManager.getSubscription()` and, if present, re-dispatches it via
@@ -201,3 +212,6 @@ send button that calls `sendPushNotification(title, body, './', users)` — `use
 - **Permission required** — no silent enable; user must grant.
 - **Subscription rot** — endpoints expire; the relay workflow does **not** auto-prune 404/410
   responses (by design), so a user with a dead endpoint must re-enable push in Settings.
+  Re-enabling works because `subscribeToPush()` unsubscribes the stale client-side
+  subscription before re-subscribing (see above) — without that step, browsers can hand
+  back the same dead endpoint and clicking "Enable" again would appear to do nothing.

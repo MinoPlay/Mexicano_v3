@@ -156,6 +156,28 @@ export function computeTournamentEloChanges(allMatches, date) {
   return out;
 }
 
+// Authoritative per-player ELO after the tournament, read from the cached
+// players_summary (populated by finalizeCompletedTournament() right before this
+// notification fires — see tournament.js). This is the same source Home/
+// Statistics/Leaderboard trust (attachEloFromSummary), so the notification
+// always matches what the app shows instead of a separate from-scratch replay.
+function buildEloByPlayerFromSummary(playerNames) {
+  const summary = Store.getPlayersSummary?.() || [];
+  const summaryMap = {};
+  for (const p of summary) summaryMap[p.name] = p;
+
+  const out = {};
+  for (const name of playerNames) {
+    const p = summaryMap[name];
+    if (!p || p.elo == null) continue;
+    out[name] = {
+      elo: Math.round(p.elo),
+      eloChange: Math.round((p.elo ?? INITIAL_ELO) - (p.previousElo ?? INITIAL_ELO)),
+    };
+  }
+  return out;
+}
+
 // Personal result notification for one participant.
 export function buildPlayerResultPush(date, player, totalPlayers) {
   const games = player.gamesPlayed || 0;
@@ -190,12 +212,20 @@ export async function sendTournamentCreatedPush(tournament) {
 export async function sendTournamentCompletedPush(tournament, allMatches) {
   const ranked = rankPlayers(tournament.players || []);
   const date = tournament.tournamentDate;
-  const matches = Array.isArray(allMatches) ? allMatches : (Store.getMatches?.() || []);
-  const messages = buildTournamentCompletedMessages(
-    date,
-    ranked,
-    computeTournamentEloChanges(matches, date),
-  );
+
+  // Prefer the authoritative players_summary ELO; only fall back to a
+  // from-scratch match replay for players missing from the summary (e.g. no
+  // GitHub backend configured, or a player not yet in players.json).
+  const fromSummary = buildEloByPlayerFromSummary(ranked.map(p => p.name).filter(Boolean));
+  const missing = ranked.map(p => p.name).filter(name => name && !fromSummary[name]);
+  let eloByPlayer = fromSummary;
+  if (missing.length > 0) {
+    const matches = Array.isArray(allMatches) ? allMatches : (Store.getMatches?.() || []);
+    const fromReplay = computeTournamentEloChanges(matches, date);
+    eloByPlayer = { ...fromReplay, ...fromSummary };
+  }
+
+  const messages = buildTournamentCompletedMessages(date, ranked, eloByPlayer);
 
   // No participants (e.g. an empty tournament): keep the legacy broadcast so the
   // completion is still announced.
@@ -233,6 +263,20 @@ export async function subscribeToPush() {
     throw new Error('Notification permission was not granted');
   }
   const reg = await navigator.serviceWorker.ready;
+  // Browsers hand back the SAME subscription from pushManager.subscribe() when
+  // one already exists client-side, even if the push service has invalidated
+  // it server-side (e.g. HTTP 410 Gone). Re-clicking "Enable push
+  // notifications" must therefore unsubscribe any existing subscription first
+  // so the browser is forced to negotiate a brand-new endpoint/keys, instead
+  // of silently re-registering the same dead one.
+  const existing = await reg.pushManager.getSubscription();
+  if (existing) {
+    try {
+      await existing.unsubscribe();
+    } catch (e) {
+      log('warn', 'Failed to unsubscribe existing push subscription.', { error: e?.message });
+    }
+  }
   const sub = await reg.pushManager.subscribe({
     userVisibleOnly: true,
     applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),

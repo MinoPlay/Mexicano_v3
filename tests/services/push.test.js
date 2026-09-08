@@ -4,6 +4,7 @@ vi.mock('../../js/store.js', () => ({
   Store: {
     getGitHubConfig: () => ({ owner: 'MinoPlay', repo: 'DataHub_Mexicano', pat: 'p' }),
     getCurrentUser: () => 'Tester',
+    getPlayersSummary: vi.fn(() => []),
   },
 }));
 
@@ -20,15 +21,18 @@ import {
   sendTournamentCreatedPush,
   sendTournamentCompletedPush,
   resyncPushSubscription,
+  subscribeToPush,
   buildPushMessagesPayload,
   buildPlayerResultPush,
   buildTournamentCompletedMessages,
   computeTournamentEloChanges,
 } from '../../js/services/push.js';
+import { Store } from '../../js/store.js';
 
 beforeEach(() => {
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
+  Store.getPlayersSummary.mockReturnValue([]);
 });
 
 describe('urlBase64ToUint8Array', () => {
@@ -384,6 +388,43 @@ describe('sendTournamentCompletedPush', () => {
     });
   });
 
+  it('uses the authoritative players_summary ELO instead of a from-scratch replay', async () => {
+    // Players already have real ELO history (e.g. from a prior tournament) that a
+    // from-scratch replay of just today's matches would not know about.
+    Store.getPlayersSummary.mockReturnValue([
+      { name: 'Alice', elo: 1050, previousElo: 1030 },
+      { name: 'Bob', elo: 980, previousElo: 1000 },
+    ]);
+
+    const fetchMock = vi.fn(async () => ({ status: 204, json: async () => ({}) }));
+    global.fetch = fetchMock;
+
+    const matches = [{
+      date: '2026-07-15',
+      roundNumber: 1,
+      team1Player1Name: 'Alice',
+      team1Player2Name: 'Bob',
+      team2Player1Name: 'Carl',
+      team2Player2Name: 'Dave',
+      scoreTeam1: 6,
+      scoreTeam2: 2,
+    }];
+
+    await sendTournamentCompletedPush({
+      tournamentDate: '2026-07-15',
+      players: [
+        { name: 'Alice', totalPoints: 24, wins: 3, gamesPlayed: 4 },
+        { name: 'Bob', totalPoints: 18, wins: 2, gamesPlayed: 4 },
+      ],
+    }, matches);
+
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+    const aliceMsg = body.client_payload.messages.find(m => m.users[0] === 'Alice');
+    const bobMsg = body.client_payload.messages.find(m => m.users[0] === 'Bob');
+    expect(aliceMsg.body).toBe('Rank 1/2 · 24 pts · 6.0 avg\nELO 1050 (+20)');
+    expect(bobMsg.body).toBe('Rank 2/2 · 18 pts · 4.5 avg\nELO 980 (-20)');
+  });
+
   it('falls back to a broadcast summary when the tournament has no players', async () => {
     const fetchMock = vi.fn(async () => ({ status: 204, json: async () => ({}) }));
     global.fetch = fetchMock;
@@ -444,5 +485,72 @@ describe('resyncPushSubscription', () => {
 
     expect(await resyncPushSubscription()).toBe(false);
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('subscribeToPush', () => {
+  // Regression: browsers hand back the SAME (possibly dead) subscription from
+  // pushManager.subscribe() when one already exists client-side, even if the
+  // push service has invalidated it server-side (410 Gone). Re-clicking
+  // "Enable push notifications" must first unsubscribe any existing
+  // subscription so the browser is forced to negotiate a brand-new endpoint.
+  it('unsubscribes any existing subscription before subscribing again', async () => {
+    const requestPermission = vi.fn(async () => 'granted');
+    vi.stubGlobal('Notification', { requestPermission });
+    vi.stubGlobal('PushManager', function PushManager() {});
+
+    const staleUnsubscribe = vi.fn(async () => true);
+    const staleSub = { endpoint: 'https://push.example/stale', unsubscribe: staleUnsubscribe };
+    const getSubscription = vi.fn(async () => staleSub);
+
+    const freshSub = {
+      endpoint: 'https://push.example/fresh',
+      toJSON: () => ({ endpoint: 'https://push.example/fresh', keys: { p256dh: 'k', auth: 'a' } }),
+    };
+    const subscribe = vi.fn(async () => freshSub);
+
+    vi.stubGlobal('navigator', {
+      serviceWorker: { ready: Promise.resolve({ pushManager: { getSubscription, subscribe } }) },
+    });
+
+    const fetchMock = vi.fn(async () => ({ status: 204, json: async () => ({}) }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await subscribeToPush();
+
+    expect(getSubscription).toHaveBeenCalledTimes(1);
+    expect(staleUnsubscribe).toHaveBeenCalledTimes(1);
+    expect(subscribe).toHaveBeenCalledTimes(1);
+    // unsubscribe must happen before the new subscribe() call.
+    expect(staleUnsubscribe.mock.invocationCallOrder[0])
+      .toBeLessThan(subscribe.mock.invocationCallOrder[0]);
+    expect(result).toBe(freshSub);
+
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(body.client_payload.subscription.endpoint).toBe('https://push.example/fresh');
+  });
+
+  it('subscribes directly when there is no existing subscription', async () => {
+    const requestPermission = vi.fn(async () => 'granted');
+    vi.stubGlobal('Notification', { requestPermission });
+    vi.stubGlobal('PushManager', function PushManager() {});
+
+    const getSubscription = vi.fn(async () => null);
+    const freshSub = {
+      endpoint: 'https://push.example/fresh',
+      toJSON: () => ({ endpoint: 'https://push.example/fresh', keys: { p256dh: 'k', auth: 'a' } }),
+    };
+    const subscribe = vi.fn(async () => freshSub);
+
+    vi.stubGlobal('navigator', {
+      serviceWorker: { ready: Promise.resolve({ pushManager: { getSubscription, subscribe } }) },
+    });
+
+    const fetchMock = vi.fn(async () => ({ status: 204, json: async () => ({}) }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await subscribeToPush();
+
+    expect(subscribe).toHaveBeenCalledTimes(1);
   });
 });

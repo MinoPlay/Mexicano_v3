@@ -49,7 +49,8 @@ Client success = GitHub accepted the dispatch (HTTP 204); real delivery happens 
   - `buildPushMessagesPayload(messages)` / `sendPushMessages(messages)` — one dispatch,
     `client_payload.messages = [{ users, title, body, url }]`, a different notification per recipient.
   - `computeTournamentEloChanges(allMatches, date)` → `{ name: { elo, eloChange } }`; replays
-    ELO with and without the tournament's matches via `calculateAllEloRankings`.
+    ELO with and without the tournament's matches via `calculateAllEloRankings`. Used only as a
+    **fallback** — see `sendTournamentCompletedPush` below.
   - `buildPlayerResultPush(date, player, totalPlayers)` → personal message
     `{users:[name], title:'🏆 Tournament complete — <date>', body:'Rank r/n · p pts · a avg\nELO e (±c)', url}`.
     ELO line omitted when unknown.
@@ -68,10 +69,19 @@ Client success = GitHub accepted the dispatch (HTTP 204); real delivery happens 
     dispatch. `Created` **targets only the tournament's players** (passes
     `tournament.players[].name` as `users`); `Completed` sends **one personalised message per
     participant** (rank/points/average/ELO/ELO change) through `sendPushMessages`, falling
-    back to the legacy broadcast only when there are no players. `allMatches` defaults to
-    `Store.getMatches()`.
+    back to the legacy broadcast only when there are no players. ELO/ELO-change per participant
+    is read from `Store.getPlayersSummary()` (`buildEloByPlayerFromSummary`) — the same
+    authoritative source `attachEloFromSummary` uses for Home/Statistics/Leaderboard, and
+    already refreshed by `finalizeCompletedTournament()` before this fires (see event-firings
+    ordering). `computeTournamentEloChanges(allMatches, date)` (a from-scratch match replay) is
+    only used as a fallback for any player missing from the summary. `allMatches` defaults to
+    `Store.getMatches()` and is only consulted for that fallback path.
   - `subscribeToPush()` — browser-only glue; checks support, requests permission, gets
-    `navigator.serviceWorker.ready`, subscribes, dispatches `sub.toJSON()`.
+    `navigator.serviceWorker.ready`, **unsubscribes any existing subscription first**
+    (browsers return the *same* subscription from `subscribe()` if one already exists
+    client-side, even when the push service has invalidated it server-side with a 410 —
+    without unsubscribing first, re-enabling push in Settings silently re-registers the
+    dead endpoint), then subscribes fresh and dispatches `sub.toJSON()`.
   - `resyncPushSubscription()` — browser-only glue; **silent** startup re-tag. No-ops unless
     push supported + already granted; reads the existing `pushManager.getSubscription()` and
     re-dispatches it via `dispatchSubscription` so the data repo refreshes the record's `user`
@@ -168,6 +178,10 @@ existing subscriptions.
 - `failed=N` with `HTTP 410`/`404` in the `::warning::` log = a dead endpoint for that
   subscription (uninstalled PWA, revoked permission, endpoint rotated). The subscription
   is **not** auto-removed; that user must re-enable push in Settings to refresh it.
+  Re-enabling only helps because `subscribeToPush()` unsubscribes the stale client-side
+  subscription before calling `PushManager.subscribe()` again — browsers otherwise hand
+  back the exact same (dead) subscription object when one already exists, so clicking
+  "Enable" without that unsubscribe step is a no-op and the same 410s keep recurring.
 - Keys mismatch (client `VAPID_PUBLIC_KEY` ≠ data-repo secret) → subscribe fails with
   `InvalidAccessError`/403.
 
@@ -179,6 +193,11 @@ existing subscriptions.
   re-subscribes.
 - New client code needs one cold start per device to activate the new service worker before
   it ships (see `app-version.md` / `sw-fetch.js` network-first cache bypass).
+- **Tournament-completed ELO must come from `Store.getPlayersSummary()`, not a fresh
+  `computeTournamentEloChanges` replay.** A from-scratch replay over `Store.getMatches()` can
+  diverge from the authoritative value `finalizeCompletedTournament()` computed (e.g. if the
+  local match cache is incomplete), which is exactly the ordering guarantee
+  `runTournamentCompletion()` relies on (finalize → summary cache refreshed → alerts fire).
 
 ## Related feature docs
 - `.github/features/push-notifications.md` — truth for this feature. Read first.

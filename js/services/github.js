@@ -948,6 +948,58 @@ export async function fetchActiveTournamentJson() {
  *
  * @param {function} [onProgress] - called with (label, total, index)
  */
+
+// Must match tournament.js's ELO_BASELINE_KEY — duplicated here to avoid a
+// circular import (tournament.js already imports from this module).
+const ELO_BASELINE_KEY = 'mexicano_elo_baseline';
+
+/**
+ * Bridge the eventual-consistency gap between finishing a tournament and the
+ * data-repo pipeline regenerating players.json. Ending a tournament pushes the
+ * day file + tournaments.json, and that push is what retriggers the pipeline
+ * (see pushCompletedTournament) — so a pull that happens before the pipeline
+ * finishes can still fetch pre-tournament ELO, regressing the value
+ * finalizeCompletedTournament() already computed locally and forcing a user
+ * to refresh repeatedly until the pipeline catches up.
+ *
+ * Overlays the local post-completion snapshot (`mexicano_elo_baseline`, set
+ * by finalizeCompletedTournament) onto the freshly pulled players_summary,
+ * but only when the snapshot belongs to the latest *complete* tournament date
+ * — never masks a genuine backend change for an older date.
+ */
+function applyEloBaselineOverlay() {
+  let snapshot;
+  try {
+    const raw = localStorage.getItem(ELO_BASELINE_KEY);
+    snapshot = raw ? JSON.parse(raw) : null;
+  } catch { snapshot = null; }
+  if (!snapshot?.date || !snapshot.elo) return;
+
+  const index = Store.getTournamentsIndex() || [];
+  const completeDates = index.filter(e => e?.isComplete).map(e => e.date).sort();
+  const latestDate = completeDates[completeDates.length - 1];
+  if (!latestDate || snapshot.date !== latestDate) return;
+
+  const summary = Store.getPlayersSummary();
+  if (!summary.length) return;
+
+  const overlaid = summary.map(p => ({ ...p }));
+  const byName = new Map(overlaid.map(p => [p.name, p]));
+  for (const [name, elo] of Object.entries(snapshot.elo)) {
+    const previousElo = snapshot.previousElo?.[name];
+    const existing = byName.get(name);
+    if (existing) {
+      existing.elo = elo;
+      if (previousElo != null) existing.previousElo = previousElo;
+    } else {
+      const entry = { id: null, name, elo, previousElo: previousElo ?? elo };
+      overlaid.push(entry);
+      byName.set(name, entry);
+    }
+  }
+  Store.setPlayersSummaryCache(overlaid);
+}
+
 export async function pullAll(onProgress) {
   const cfg = getConfig();
   if (!cfg?.owner || !cfg?.repo || !cfg?.pat) throw new Error('GitHub not configured');
@@ -961,6 +1013,7 @@ export async function pullAll(onProgress) {
     'mexicano_theme',
     'mexicano_current_user',
     'mexicano_local_data_loaded', // dev-server flag — must survive pull or loadLocalData loops
+    ELO_BASELINE_KEY, // must survive so applyEloBaselineOverlay() can still read it
   ]);
 
   // Snapshot all app data for failure recovery, then clear it so pull starts clean
@@ -1007,6 +1060,7 @@ export async function pullAll(onProgress) {
 
     // ── 2. tournaments.json → tournament dates ──────────────────────────────
     await fetchTournamentsIndex({ create: true });
+    applyEloBaselineOverlay();
     onProgress?.('tournaments.json', 0, 0);
 
     // ── 2b. Manual (no-tournament) attendance entries ───────────────────────
@@ -1180,6 +1234,7 @@ async function pullCoreData() {
 
   // ── 2. tournaments.json → tournament_dates (no dir-walk, no create) ────────
   await fetchTournamentsIndex({ create: false });
+  applyEloBaselineOverlay();
 
   // ── 3. Resolve active tournament from date file ────────────────────────────
   await pullActiveTournamentFromDateFile();
@@ -1234,6 +1289,7 @@ async function pullTournamentsPage() {
 
   // ── 2. tournaments.json — create if missing ────────────────────────────────
   await fetchTournamentsIndex({ create: true });
+  applyEloBaselineOverlay();
 
   // ── 3. Resolve active tournament from date file ────────────────────────────
   await pullActiveTournamentFromDateFile();
@@ -1496,6 +1552,7 @@ async function pullHomeData() {
 
   // ── 2. Tournament dates — read tournaments.json (no create, no dir-walk) ─────
   await fetchTournamentsIndex({ create: false });
+  applyEloBaselineOverlay();
 
   // ── 3. Resolve active tournament from date file ─────────────────────────────
   await pullActiveTournamentFromDateFile();
@@ -1561,6 +1618,7 @@ async function pullEloChartsData() {
   // ── 2. tournaments.json ──────────────────────────────────────────────────────
   try {
     await fetchTournamentsIndex({ create: false });
+    applyEloBaselineOverlay();
   } catch { /* tournaments.json may not exist */ }
 
   // ── 3. Latest tournament's matches (for Latest Tournament chart) ─────────────

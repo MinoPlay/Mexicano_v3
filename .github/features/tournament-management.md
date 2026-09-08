@@ -173,7 +173,12 @@ Files touched when ending a tournament:
 | `POST /dispatches` ×2 | Telegram alert + Web Push relay |
 
 `players.json` and the month's `players_overview.json` are **not** written by the app — the
-data pipeline regenerates them from our `tournaments.json` push.
+data pipeline regenerates them from our `tournaments.json` push. Until that pipeline run
+finishes, a GitHub pull can still fetch pre-tournament ELO. `js/services/github.js`
+`applyEloBaselineOverlay()` (called after every `fetchTournamentsIndex()` in the route pull
+functions) overlays the `mexicano_elo_baseline` snapshot onto the freshly pulled summary when
+the snapshot belongs to the latest complete tournament date, so refreshing right after ending
+a tournament doesn't briefly regress to stale ELO.
 
 The completion push (`pushCompletedTournament` in `js/services/github.js`) deliberately
 bypasses the debounced `pushAll()` queue (it cancels any pending sync first): waiting for
