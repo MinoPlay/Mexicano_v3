@@ -110,4 +110,35 @@ describe('pull overlays the local elo_baseline snapshot onto a stale players.jso
     const alice = summary.find(p => p.name === 'Alice');
     expect(alice.elo).toBe(1000); // untouched — GitHub value stands
   });
+
+  it('trusts the backend once its pipeline has recomputed a different final ELO for the same date', async () => {
+    // The data pipeline already ran and moved players.json's ELO away from the
+    // pre-tournament baseline (1000) — but to a value that differs from what
+    // finalizeCompletedTournament() computed locally (1016), e.g. because the
+    // backend recalculation used a corrected match or different rounding.
+    global.fetch = vi.fn(async (url) => {
+      if (url.includes('/players.json')) {
+        return ghOk([{ Id: 1, Name: 'Alice', ELO: 1005, PreviousELO: 1000, Wins: 0, Losses: 0 }]);
+      }
+      if (url.includes('/tournaments.json')) {
+        return ghOk([{ date: DATE, playerCount: 4, roundCount: 1, matchCount: 1, completedCount: 1, isComplete: true }]);
+      }
+      if (url.includes(`/${DATE}.json`)) return gh404();
+      if (url.includes('/active_tournament.json')) return gh404();
+      return gh404();
+    });
+
+    localStorage.setItem('mexicano_elo_baseline', JSON.stringify({
+      date: DATE,
+      elo: { Alice: 1016 },
+      previousElo: { Alice: 1000 },
+    }));
+
+    await pullForRoute('#/');
+
+    const summary = Store.getPlayersSummary();
+    const alice = summary.find(p => p.name === 'Alice');
+    // Backend has already moved on — its value must win, not the stale local snapshot.
+    expect(alice.elo).toBe(1005);
+  });
 });

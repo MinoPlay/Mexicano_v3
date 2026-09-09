@@ -1009,7 +1009,11 @@ const ELO_BASELINE_KEY = 'mexicano_elo_baseline';
  * Overlays the local post-completion snapshot (`mexicano_elo_baseline`, set
  * by finalizeCompletedTournament) onto the freshly pulled players_summary,
  * but only when the snapshot belongs to the latest *complete* tournament date
- * — never masks a genuine backend change for an older date.
+ * — never masks a genuine backend change for an older date. Per player, it
+ * only overlays while the backend is still stuck on the pre-tournament value
+ * (`existing.elo === previousElo`); once the pipeline has moved players.json
+ * on to its own recomputed final ELO — even if it differs from our local
+ * snapshot — that backend value wins instead of being clobbered forever.
  */
 function applyEloBaselineOverlay() {
   let snapshot;
@@ -1033,6 +1037,11 @@ function applyEloBaselineOverlay() {
     const previousElo = snapshot.previousElo?.[name];
     const existing = byName.get(name);
     if (existing) {
+      // Only overlay while the backend is still stuck on the pre-tournament
+      // value: once players.json moves away from it (pipeline caught up,
+      // possibly with a corrected/different final ELO), trust the backend
+      // instead of clobbering it forever with our local snapshot.
+      if (previousElo != null && existing.elo !== previousElo) continue;
       existing.elo = elo;
       if (previousElo != null) existing.previousElo = previousElo;
     } else {

@@ -178,7 +178,14 @@ finishes, a GitHub pull can still fetch pre-tournament ELO. `js/services/github.
 `applyEloBaselineOverlay()` (called after every `fetchTournamentsIndex()` in the route pull
 functions) overlays the `mexicano_elo_baseline` snapshot onto the freshly pulled summary when
 the snapshot belongs to the latest complete tournament date, so refreshing right after ending
-a tournament doesn't briefly regress to stale ELO.
+a tournament doesn't briefly regress to stale ELO. The overlay is per-player and staleness-gated:
+it only replaces a player's ELO while `players.json` still reports that player's *pre-tournament*
+value (`existing.elo === previousElo`). Once the pipeline has moved `players.json` on to its own
+recomputed final ELO — even if it differs slightly from the local snapshot — the backend value
+wins and is never clobbered again for that date. Without this gate, a local snapshot could
+permanently mask a legitimate backend recalculation (e.g. Statistics showing a different ELO
+change than the ELO History chart, which reads per-player history files unaffected by this
+overlay).
 
 The completion push (`pushCompletedTournament` in `js/services/github.js`) deliberately
 bypasses the debounced `pushAll()` queue (it cancels any pending sync first): waiting for
