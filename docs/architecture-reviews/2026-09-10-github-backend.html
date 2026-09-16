@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Architecture review — Mexicano_v3</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script type="module">
+      import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
+      mermaid.initialize({ startOnLoad: true, theme: "neutral", securityLevel: "loose" });
+    </script>
+    <style>
+      .seam { stroke-dasharray: 4 4; }
+      .leak { stroke: #dc2626; }
+      .deep { background: linear-gradient(135deg, #0f172a, #1e293b); }
+      body { font-family: ui-sans-serif, system-ui, sans-serif; }
+      .font-serif-head { font-family: Georgia, 'Times New Roman', serif; }
+      .badge-strong { background:#059669; color:white; }
+      .badge-explore { background:#d97706; color:white; }
+      .badge-spec { background:#64748b; color:white; }
+    </style>
+  </head>
+  <body class="bg-stone-50 text-slate-900">
+    <main class="max-w-5xl mx-auto px-6 py-12 space-y-16">
+
+      <header class="space-y-3 border-b border-slate-200 pb-6">
+        <h1 class="font-serif-head text-3xl">Architecture review — Mexicano_v3</h1>
+        <p class="text-sm text-slate-500">2026-09-10 · hotspot: <span class="font-mono">js/services/github.js</span> (2226 lines, touched in 27 of the last 100 commits)</p>
+        <div class="flex flex-wrap gap-4 text-xs text-slate-600 pt-2">
+          <span class="inline-flex items-center gap-1"><span class="inline-block w-4 h-4 border-2 border-slate-400"></span> module</span>
+          <span class="inline-flex items-center gap-1"><span class="inline-block w-4 h-4 border-2 border-slate-400 border-dashed"></span> seam</span>
+          <span class="inline-flex items-center gap-1"><span class="inline-block w-4 h-0.5 bg-red-600 translate-y-1"></span> leakage</span>
+          <span class="inline-flex items-center gap-1"><span class="inline-block w-4 h-4 deep"></span> deep module</span>
+        </div>
+      </header>
+
+      <section id="candidates" class="space-y-16">
+
+        <!-- Candidate 1 -->
+        <article class="space-y-4">
+          <div class="flex items-center gap-3">
+            <h2 class="font-serif-head text-2xl">1. Collapse the GitHub-backend god module</h2>
+            <span class="badge-strong text-xs px-2 py-1 rounded-full uppercase tracking-wide">Strong</span>
+            <span class="text-xs px-2 py-1 rounded-full bg-slate-200 text-slate-700">in-process</span>
+          </div>
+          <p class="font-mono text-sm text-slate-600">js/services/github.js (2226 lines, 60+ exports) · imported directly by store.js, app.js, and 8 of 10 pages</p>
+
+          <div class="rounded-lg border border-slate-200 bg-white p-4">
+            <pre class="mermaid">
+flowchart LR
+  subgraph before["BEFORE — everyone talks to one 2226-line module"]
+    direction LR
+    P1[home.js] --> G1[github.js]
+    P2[statistics.js] --> G1
+    P3[elo-charts.js] --> G1
+    P4[doodle.js] --> G1
+    P5[tournament.js] --> G1
+    P6[settings.js] --> G1
+    S1[store.js] --> G1
+    G1 -->|"REST client<br/>sync queue<br/>route table<br/>doodle merge<br/>elo cache<br/>player summary"| G1
+  end
+  classDef leak stroke:#dc2626,stroke-width:2px,color:#dc2626;
+  class G1 leak
+            </pre>
+          </div>
+          <div class="rounded-lg border border-slate-200 bg-white p-4">
+            <pre class="mermaid">
+flowchart LR
+  subgraph after["AFTER — one deep interface per concern"]
+    direction LR
+    P1b[pages/*] --> R[repo: tournaments / doodle / players]
+    P1b --> Q[sync queue]
+    R --> C[github-client<br/>readFile / writeFile]
+    Q --> C
+  end
+  classDef deep fill:#0f172a,color:#fff,stroke:#0f172a;
+  class C,R,Q deep
+            </pre>
+          </div>
+
+          <p><span class="font-semibold">Problem:</span> the module is shallow relative to its size — the interface (60+ exported functions covering REST calls, push/pull queue, per-route pull logic, doodle changelog merge, ELO history cache, player-summary reads) is nearly as wide as the implementation, so no caller can predict what a change touches.</p>
+          <p><span class="font-semibold">Solution:</span> split into a thin API client (readFile/writeFile/authHeaders — the only place that talks HTTP), a sync queue (schedulePush/executePush/flushPush), and per-domain repositories (tournaments, doodle, players/elo) that each expose one narrow interface over the client.</p>
+          <ul class="list-disc list-inside text-sm space-y-1">
+            <li><span class="font-semibold">leverage:</span> one client interface, N repositories behind it — a REST-shape change touches one file</li>
+            <li><span class="font-semibold">locality:</span> a doodle bug can only live in the doodle repository, not scattered across a 2226-line file</li>
+            <li><span class="font-semibold">interface shrinks:</span> pages import a 5-function repository, not a 60-function grab-bag</li>
+          </ul>
+        </article>
+
+        <!-- Candidate 2 -->
+        <article class="space-y-4">
+          <div class="flex items-center gap-3">
+            <h2 class="font-serif-head text-2xl">2. Stop the backend module from knowing about routes</h2>
+            <span class="badge-strong text-xs px-2 py-1 rounded-full uppercase tracking-wide">Strong</span>
+            <span class="text-xs px-2 py-1 rounded-full bg-slate-200 text-slate-700">ports & adapters</span>
+          </div>
+          <p class="font-mono text-sm text-slate-600">js/services/github.js: pullForRoute, refreshCurrentPage, _getRefreshSteps (lines 1710-1828)</p>
+
+          <div class="grid grid-cols-2 gap-6">
+            <div class="rounded-lg border border-slate-200 bg-white p-4 h-80 flex flex-col justify-center">
+              <p class="text-xs uppercase tracking-wider text-slate-500 mb-3">Before</p>
+              <div class="space-y-2 text-sm font-mono">
+                <div class="border-2 border-red-500 rounded p-2">github.js<br/><span class="text-xs text-red-600">if (path === '/elo-charts') …<br/>if (path === '/doodle') …<br/>if (path === '/statistics') …</span></div>
+                <p class="text-xs text-slate-500">↑ backend module hardcodes every page's route string</p>
+              </div>
+            </div>
+            <div class="rounded-lg border border-slate-200 bg-white p-4 h-80 flex flex-col justify-center">
+              <p class="text-xs uppercase tracking-wider text-slate-500 mb-3">After</p>
+              <div class="space-y-2 text-sm font-mono">
+                <div class="deep text-white rounded p-2">home.js<br/><span class="text-xs opacity-80">calls tournamentsRepo.pull(), playersRepo.pull()</span></div>
+                <div class="deep text-white rounded p-2">doodle.js<br/><span class="text-xs opacity-80">calls doodleRepo.pull(month)</span></div>
+                <p class="text-xs text-slate-500">↓ each page declares its own data needs against narrow repo interfaces</p>
+              </div>
+            </div>
+          </div>
+
+          <p><span class="font-semibold">Problem:</span> the seam is inverted — the low-level persistence module (github.js) knows the app's route strings (<span class="font-mono">'/elo-charts'</span>, <span class="font-mono">'/doodle'</span>...) and decides per-page what to fetch, instead of pages declaring their own data needs. Adding a page means editing github.js's route table, not just the page.</p>
+          <p><span class="font-semibold">Solution:</span> move the "what does this page need" decision into each page module, calling the domain repositories from candidate 1 directly. Delete pullForRoute/_getRefreshSteps.</p>
+          <ul class="list-disc list-inside text-sm space-y-1">
+            <li><span class="font-semibold">locality:</span> a new page's data needs live in the new page, not in a shared route table</li>
+            <li><span class="font-semibold">deletion test:</span> deleting _getRefreshSteps today would concentrate breakage in github.js; after the split it disappears entirely</li>
+            <li>directly answers "changing one page breaks another" — this file is the shared point of failure</li>
+          </ul>
+        </article>
+
+        <!-- Candidate 3 -->
+        <article class="space-y-4">
+          <div class="flex items-center gap-3">
+            <h2 class="font-serif-head text-2xl">3. Separate the tournament engine from its I/O</h2>
+            <span class="text-xs px-2 py-1 rounded-full uppercase tracking-wide" style="background:#d97706;color:white;">Worth exploring</span>
+            <span class="text-xs px-2 py-1 rounded-full bg-slate-200 text-slate-700">in-process</span>
+          </div>
+          <p class="font-mono text-sm text-slate-600">js/services/tournament.js (1066 lines)</p>
+
+          <div class="rounded-lg border border-slate-200 bg-white p-4">
+            <pre class="mermaid">
+flowchart TB
+  subgraph before[BEFORE]
+    direction TB
+    A["setMatchScore()"] --> B["recalculateAllPlayerStats()"]
+    B --> C["saveTournamentState()"]
+    C -.leak.-> D["Store.set() -&gt; schedulePush() -&gt; github.js"]
+  end
+  classDef leak stroke:#dc2626,stroke-width:2px;
+  class C,D leak
+            </pre>
+          </div>
+          <div class="rounded-lg border border-slate-200 bg-white p-4">
+            <pre class="mermaid">
+flowchart TB
+  subgraph after[AFTER]
+    direction TB
+    E["engine: setMatchScore / recalculateAllPlayerStats / createMexicanoMatches<br/>(pure, returns new state)"] -->|"seam"| F["persistence: saveTournamentState<br/>(only place that calls Store)"]
+  end
+  classDef deep fill:#0f172a,color:#fff;
+  class E deep
+            </pre>
+          </div>
+
+          <p><span class="font-semibold">Problem:</span> scoring/round/ELO decisions (createMexicanoMatches, setMatchScore, recalculateAllPlayerStats) and side-effecting persistence (saveTournamentState, triggerNewTournamentDayFile, runTournamentCompletion) live in the same module with no seam between them — testing a scoring rule means going through Store and, transitively, the push queue.</p>
+          <p><span class="font-semibold">Solution:</span> keep the engine functions pure (tournament in, tournament out) and move every Store/github.js call into a persistence-only layer that calls the engine, not the other way round.</p>
+          <ul class="list-disc list-inside text-sm space-y-1">
+            <li><span class="font-semibold">locality:</span> a scoring bug and a sync bug can no longer hide in the same function</li>
+            <li>tests hit the engine's interface directly, no Store/localStorage mock needed</li>
+          </ul>
+
+          <div class="rounded-md border border-amber-300 bg-amber-50 text-amber-900 text-sm p-3">
+            ⚠️ Overlaps candidate 1's push queue — sequence this after candidate 1 so persistence has one queue to call into, not two.
+          </div>
+        </article>
+
+      </section>
+
+      <section id="top-recommendation">
+        <div class="rounded-xl border-2 border-emerald-600 bg-emerald-50 p-6">
+          <h2 class="font-serif-head text-xl mb-2">Top recommendation</h2>
+          <p>Start with <a href="#candidates" class="underline font-semibold">#1, collapse the GitHub-backend god module</a>. It's the direct cause of "changing one page breaks another": every page imports the same 2226-line interface, so any deepening elsewhere is undermined until this seam exists. #2 falls out of #1 almost for free once repositories exist. #3 can wait.</p>
+        </div>
+      </section>
+
+    </main>
+  </body>
+</html>
