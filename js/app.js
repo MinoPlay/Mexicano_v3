@@ -1,3 +1,4 @@
+import './storage-ns-init.js'; // must stay first: namespaces storage for previews
 import { Router } from './router.js';
 import { Store } from './store.js';
 import { State } from './state.js';
@@ -7,6 +8,7 @@ import { showToast } from './components/toast.js';
 import { showRefreshDialog } from './components/refresh-dialog.js';
 import { pullForRoute } from './services/backend.js';
 import { showOnboardingDialog } from './components/onboarding-dialog.js';
+import { currentDeployId, nsPrefix } from './deploy-env.js';
 
 // Pages
 import { renderHome } from './pages/home.js';
@@ -97,7 +99,12 @@ init();
 
 // Cross-tab Supabase config/session sync.
 window.addEventListener('storage', (e) => {
-  if (!['mexicano_supabase_config', 'mexicano_supabase_session', 'mexicano_access_role'].includes(e.key)) return;
+  const keys = [
+    'mexicano_supabase_config',
+    'mexicano_supabase_session',
+    'mexicano_access_role',
+  ].map(key => nsPrefix(currentDeployId()) + key);
+  if (!keys.includes(e.key)) return;
   if (e.newValue) {
     loadFromBackend();
   } else {

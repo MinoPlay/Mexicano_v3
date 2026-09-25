@@ -6,6 +6,7 @@ import { getLatestCompleteTournamentDate, getActiveTournament, confirmAttendance
 import { getMembers } from '../services/members.js';
 import { calculatePlayerStatistics } from '../services/statistics.js';
 import { APP_VERSION, refreshApp } from '../version.js';
+import { currentDeployId } from '../deploy-env.js';
 import { renderNotificationBell } from '../components/notification-bell.js';
 import { showErrorDialog } from '../components/error-dialog.js';
 
@@ -467,7 +468,7 @@ export function renderHome(container, params) {
 
   container.innerHTML = `
     <header class="page-header">
-      <h1 id="home-title" style="cursor:pointer;user-select:none;display:flex;align-items:center;gap:var(--space-xs);" title="Tap to clear cached data">🎾 Mexicano v${APP_VERSION}<button id="app-refresh-btn" type="button" title="Refresh to latest version" style="background:none;border:none;padding:0;color:inherit;font:inherit;cursor:pointer;line-height:1;">↻</button></h1>
+      <h1 id="home-title" style="cursor:pointer;user-select:none;display:flex;align-items:center;gap:var(--space-xs);" title="Tap to clear cached data">🎾 Mexicano v${APP_VERSION}${currentDeployId() ? ` · preview:${currentDeployId()}` : ''}<button id="app-refresh-btn" type="button" title="Refresh to latest version" style="background:none;border:none;padding:0;color:inherit;font:inherit;cursor:pointer;line-height:1;">↻</button></h1>
       <div class="flex items-center gap-sm" id="home-header-right"></div>
     </header>
     <div class="page-content" style="padding-left:0;padding-right:0;">
