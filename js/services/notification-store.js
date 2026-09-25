@@ -5,7 +5,9 @@
  * worker context: both expose a global `indexedDB`.
  */
 
-const DB_NAME = 'mexicano-notifications';
+import { currentDeployId, nsPrefix } from '../deploy-env.js';
+
+const DB_NAME = nsPrefix(currentDeployId()) + 'mexicano-notifications';
 const DB_VERSION = 1;
 const STORE_NAME = 'notifications';
 export const MAX_HISTORY = 30;

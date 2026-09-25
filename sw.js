@@ -2,10 +2,13 @@
 // Bump APP_VERSION by +1 each release. js/version.js imports it.
 import { networkFirst, shouldHandleRequest } from './js/sw-fetch.js';
 import { addNotification } from './js/services/notification-store.js';
+import { currentDeployId, getCacheName, isOwnCache } from './js/deploy-env.js';
 
-export const APP_VERSION = 97;
+export const APP_VERSION = 98;
 
-const CACHE_NAME = `mexicano-v${APP_VERSION}`;
+// Main: mexicano-v<N>; preview: mexicano-<slug>-v<N> (see js/deploy-env.js).
+const DEPLOY_ID = currentDeployId();
+const CACHE_NAME = getCacheName(APP_VERSION, DEPLOY_ID);
 const ASSETS = [
   './',
   './index.html',
@@ -30,6 +33,8 @@ const ASSETS = [
   './js/services/notification-store.js',
   './js/services/pinned-announcements.js',
   './js/sw-fetch.js',
+  './js/deploy-env.js',
+  './js/storage-ns-init.js',
   './js/components/nav.js',
   './js/components/match-card.js',
   './js/components/score-input.js',
@@ -65,7 +70,7 @@ if (isServiceWorker) {
     event.waitUntil(
       caches.keys()
         .then(keys => Promise.all(
-          keys.filter(k => k !== CACHE_NAME).map(k => caches.delete(k))
+          keys.filter(k => k !== CACHE_NAME && isOwnCache(k, DEPLOY_ID)).map(k => caches.delete(k))
         ))
         .then(() => self.clients.claim())
     );
@@ -77,7 +82,8 @@ if (isServiceWorker) {
     // (GitHub API, Telegram, push) bypass the SW so their AbortController
     // timeouts work and auth'd responses are never cached — otherwise an
     // installed mobile PWA hangs on completion (End Tournament → finalize).
-    if (!shouldHandleRequest(req, self.location.origin)) return;
+    // Main SW scope also covers /preview/* — leave those to the preview's own SW.
+    if (!shouldHandleRequest(req, self.location.origin, self.location.pathname)) return;
     // Network-first with HTTP-cache bypass (see js/sw-fetch.js): always pull the
     // latest files so updates reach every device; cache is offline fallback only.
     event.respondWith(networkFirst(req, { fetch, caches, cacheName: CACHE_NAME }));

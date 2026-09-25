@@ -111,6 +111,8 @@ Keep this table in sync; it is the quickest way to see if a flow is missing a ch
 4. **Verify end-to-end** with the Settings test buttons before trusting a real flow.
 
 ## Common failure modes & corner cases
+
+- **Branch previews fire for real.** `/preview/<slug>/` deploys (see `.github/features/preview-deployments.md`) use whatever GitHub config is set in that preview's Settings — by default the prod data repo — so writes, Telegram alerts and push are real. Storage is namespaced per preview, so a preview needs its own PAT setup.
 Add newly discovered cases here — this list is the institutional memory for this bug class.
 
 - **Alert fired but backend not updated (the classic race).** Cause: the write was on the debounced

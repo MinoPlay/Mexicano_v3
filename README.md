@@ -57,6 +57,17 @@ The server exposes these via local API endpoints:
 
 On app load, if the local data API is available, matches and players are imported into `localStorage` automatically (once per session).
 
+### Branch previews (parallel versions on GitHub Pages)
+
+`.github/workflows/pages.yml` deploys `main` at `https://minoplay.github.io/Mexicano_v3/` and every other
+branch at `…/Mexicano_v3/preview/<slug>/` (slug = branch lowercased, `/` → `-`; index at `…/preview/`).
+Each preview has its own localStorage, IndexedDB and SW cache, so it never touches main's state — but it
+talks to whatever data repo its Settings point at (prod by default). Details: `.github/features/preview-deployments.md`.
+
+One-time setup:
+1. `gh api -X PUT repos/MinoPlay/Mexicano_v3/pages -f build_type=workflow` (Pages source → GitHub Actions).
+2. Repo Settings → Environments → `github-pages` → Deployment branches: allow all branches.
+
 ### Cloud / production — GitHub repository backend
 
 When deployed (e.g., on GitHub Pages), data is persisted to a **GitHub repository** via the GitHub Contents API. No server is needed — the app calls the API directly from the browser.
