@@ -50,6 +50,10 @@ The list is driven by the tournaments index, stored in the in-memory Store cache
 
 `fetchTournamentsIndexPublic()` reads or creates `tournaments.json` through the GitHub service. When creating the index, metadata is computed from tournament day files: player names, distinct round numbers, match count, completed match count, and `isComplete` when all matches are complete.
 
+For the Supabase migration, `tournaments.json` remains authoritative for historical membership
+and completion. Stale unfinished date-file snapshots absent from that index are excluded; only a
+newer unfinished snapshot may be treated as the single active tournament.
+
 `Store.getGitHubConfig()?.pat` is the only data gate in `renderTournaments`: when present and the local index is empty, the page attempts the lazy fetch. `State` is not used by `js/pages/tournaments.js`.
 
 ## Sub-tabs / Sections

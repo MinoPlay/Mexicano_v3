@@ -20,7 +20,7 @@ const gh = vi.hoisted(() => ({
   readDayMatches: vi.fn(async () => []),
 }));
 
-vi.mock('../../js/services/github.js', () => ({
+vi.mock('../../js/services/backend.js', () => ({
   schedulePush: vi.fn(),
   cancelPendingSync: gh.cancelPendingSync,
   flushPush: gh.flushPush,

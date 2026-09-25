@@ -32,6 +32,11 @@ They do NOT touch ELO, tournaments, Home, ELO charts, or the Statistics leaderbo
 - `getMonthlyAttendance(year, month, manualEntries?)` and
   `getAttendanceStatistics(matches, cutoffDate?, manualEntries?)` merge manual dates;
   a manual date counts as a **session** (increments the Attendance% denominator).
+- `/attendance` consumes `getMonthlyAttendance()` rows directly as
+  `{ date, players, playerCount }`; the calendar maps the ISO date to its day cell.
+- `/attendance` maps statistics service rows
+  `{ playerName, attendanceCount, attendancePercentage, totalTournaments }` to the visible
+  Player / Attended / Total / Attendance% columns.
 
 ## Stats page (`js/services/statistics.js`)
 - `computeAttendance(rawByMonth, filter, today, manualEntries?)` adds each manual date's

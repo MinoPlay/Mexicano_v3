@@ -1,4 +1,5 @@
 import { Store } from '../store.js';
+import { Cache } from '../cache.js';
 import { State } from '../state.js';
 import { calculateAllEloRankings, getEloSnapshots, getEloForDate } from '../services/elo.js';
 import { getLatestCompleteTournamentDate, getActiveTournament, confirmAttendanceAndPush } from '../services/tournament.js';
@@ -79,6 +80,9 @@ function formatDate(dateStr) {
 }
 
 export function renderHome(container, params) {
+  const getHomeMatches = () => Cache.get('home_matches') || Store.getMatches();
+  const getHomePlayersSummary = () =>
+    Cache.get('home_players_summary') || Store.getPlayersSummary();
   const _rawActive = getActiveTournament();
   // Guard: if the tournaments index already marks this date complete, don't show as active.
   // This prevents stale localStorage from showing a completed tournament before the pull clears it.
@@ -86,15 +90,15 @@ export function renderHome(container, params) {
   const activeTournament = (_rawActive && _index.some(e => e.date === _rawActive.tournamentDate && e.isComplete))
     ? null
     : _rawActive;
-  const allMatches = Store.getMatches();
+  const allMatches = getHomeMatches();
 
   // Get latest COMPLETE tournament date
   const latestDate = getLatestCompleteTournamentDate();
 
   // Helper: attach ELO ratings to a stats array for the latest date
   function attachEloToStats(stats) {
-    const summary = Store.getPlayersSummary();
-    const matches = Store.getMatches();
+    const summary = getHomePlayersSummary();
+    const matches = getHomeMatches();
     if (summary.length > 0) {
       const summaryMap = {};
       for (const p of summary) summaryMap[p.name] = p;
@@ -142,7 +146,7 @@ export function renderHome(container, params) {
     if (monthMatches.length > 0) {
       const stats = calculatePlayerStatistics(monthMatches);
       // Attach ELO from players.json summary
-      const summary = Store.getPlayersSummary();
+      const summary = getHomePlayersSummary();
       if (summary.length > 0) {
         const summaryMap = {};
         for (const p of summary) summaryMap[p.name] = p;
@@ -509,12 +513,12 @@ export function renderHome(container, params) {
   // Render table after DOM is ready
   if (latestTournamentStats.length > 0) {
     renderTable();
-  } else if (latestDate && Store.getGitHubConfig()?.pat) {
-    // Lazy-fetch latest date's matches from GitHub (same pattern as statistics.js)
+  } else if (latestDate && Store.getSupabaseConfig()) {
+    // Lazy-fetch the latest date if route hydration has not populated it yet.
     const noDataEl = container.querySelector('#latest-no-data');
     if (noDataEl) {
       noDataEl.textContent = '⏳ Loading…';
-      import('../services/github.js').then(({ ensureDayMatchesLoaded }) =>
+      import('../services/backend.js').then(({ ensureDayMatchesLoaded }) =>
         ensureDayMatchesLoaded(latestDate)
       ).then(fetched => {
         if (!noDataEl.isConnected) return;
@@ -543,15 +547,15 @@ export function renderHome(container, params) {
   // Always fetch monthly overview to get correct month-over-month ELO change.
   // The fallback from local matches uses players_summary.previousElo which is
   // per-tournament, not per-month — so we must replace it once overview arrives.
-  if (Store.getGitHubConfig()?.pat) {
+  if (Store.getSupabaseConfig()) {
     const noDataEl = container.querySelector('#current-month-no-data');
     if (currentMonthStats.length === 0 && noDataEl) {
       noDataEl.textContent = '⏳ Loading…';
     }
-    import('../services/github.js').then(({ pullMonthlyOverview }) =>
+    import('../services/backend.js').then(({ pullMonthlyOverview }) =>
       Promise.all([
-        pullMonthlyOverview(currentYearMonth),
-        pullMonthlyOverview(prevYearMonth),
+        pullMonthlyOverview(currentYearMonth, { route: '#/' }),
+        pullMonthlyOverview(prevYearMonth, { route: '#/' }),
       ])
     ).then(() => {
       const tableEl = container.querySelector('#current-month-table');

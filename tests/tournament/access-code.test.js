@@ -6,7 +6,7 @@ import { vi, describe, it, expect, beforeEach } from 'vitest';
 
 // ─── Mock dynamic imports used by store.js and tournament.js ───
 
-vi.mock('../../js/services/github.js', () => ({
+vi.mock('../../js/services/backend.js', () => ({
   schedulePush: vi.fn(),
   cancelPendingSync: vi.fn(),
   flushPush: vi.fn().mockResolvedValue(undefined),
@@ -109,7 +109,7 @@ describe('tournament accessCode', () => {
   });
 
   it('updateAccessCode triggers markMatchDateDirty and flushPush', async () => {
-    const github = await import('../../js/services/github.js');
+    const github = await import('../../js/services/backend.js');
     
     const t = createTournament(DATE, PLAYERS_4, 'ABC-123');
     

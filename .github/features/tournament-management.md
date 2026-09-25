@@ -53,6 +53,15 @@ tournament: {
 
 Match: Team1 = (player1 + player2). Team2 = (player3 + player4).
 
+## Supabase legacy import
+
+- `backup-data/tournaments.json` defines the historical tournament list and completion state.
+- Old unfinished date-file snapshots that are absent from the index and older than the latest
+  indexed completion are stale drafts and must not appear in `/tournaments`.
+- One newer unfinished date-file snapshot may represent the active tournament. Its nested
+  `tournament.rounds[].matches[]` are imported so the detail route can reconstruct it.
+- Completed flat day files use their top-level `matches[]`.
+
 ## Access Code Field
 
 ### Create Form

@@ -15,7 +15,7 @@ const github = vi.hoisted(() => ({
   pushTournamentDayFile: vi.fn().mockResolvedValue(true),
 }));
 
-vi.mock('../../js/services/github.js', () => ({
+vi.mock('../../js/services/backend.js', () => ({
   schedulePush: vi.fn(),
   cancelPendingSync: github.cancelPendingSync,
   flushPush: github.flushPush,
@@ -162,7 +162,7 @@ describe('editing the previous round', () => {
     expect(stored.rounds[1].matches[0].team1Score).toBe(5);
   });
 
-  it('pushes the cascade to GitHub so a reload cannot restore the stale rounds', async () => {
+  it('persists the cascade through the backend so a reload cannot restore stale rounds', async () => {
     const t = tournamentAtRound(3);
     const r2 = t.rounds.find(r => r.roundNumber === 2);
     github.pushTournamentDayFile.mockClear();

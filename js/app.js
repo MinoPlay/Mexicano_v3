@@ -5,9 +5,8 @@ import { renderNav } from './components/nav.js';
 import { resyncPushSubscription } from './services/push.js';
 import { showToast } from './components/toast.js';
 import { showRefreshDialog } from './components/refresh-dialog.js';
-import { pullForRoute } from './services/github.js';
+import { pullForRoute } from './services/backend.js';
 import { showOnboardingDialog } from './components/onboarding-dialog.js';
-import { parsePatFromUrl } from './services/pat-url.js';
 
 // Pages
 import { renderHome } from './pages/home.js';
@@ -29,32 +28,24 @@ async function loadAdministrators() {
   } catch { /* fall back to empty admin list */ }
 }
 
-// ─── PAT-in-URL bootstrap: read PAT from shareable link, then strip from URL ───
-function loadPatFromUrl() {
-  const { pat, cleanUrl } = parsePatFromUrl(window.location.href);
-  if (!pat) return;
-  Store.setGitHubConfig({ owner: 'MinoPlay', repo: 'DataHub_Mexicano', pat, basePath: 'mexicano_v3/backup-data' });
-  try { history.replaceState(null, '', cleanUrl); } catch { /* ignore */ }
-}
-
-// ─── Dev secrets: auto-inject GitHub config on localhost ───
+// ─── Dev config: auto-inject public Supabase config on localhost ───
 async function loadDevSecrets() {
   const isDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
   if (!isDev) return;
   try {
     const cfg = await fetch('/api/dev-config').then(r => r.ok ? r.json() : {});
-    if (cfg.pat) {
-      Store.setGitHubConfig({ owner: cfg.owner, repo: cfg.repo, pat: cfg.pat, basePath: cfg.basePath });
-      console.log('GitHub config loaded from local-secrets.json');
+    if (cfg.supabaseUrl && cfg.supabaseAnonKey) {
+      Store.setSupabaseConfig({ url: cfg.supabaseUrl, anonKey: cfg.supabaseAnonKey });
+      console.log('Supabase public config loaded from local dev config');
     }
   } catch { /* server not running or no secrets file */ }
 }
 
 // Load local test data if available (dev server with local-config.json)
 async function loadLocalData() {
-  // Skip local data loading on deployed version or if GitHub is already configured
+  // Skip local data loading on deployed version or if Supabase is configured
   const isDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-  if (!isDev || Store.getGitHubConfig()?.pat) return;
+  if (!isDev || Store.getSupabaseConfig()) return;
 
   try {
     const status = await fetch('/api/local-data/status').then(r => {
@@ -91,13 +82,12 @@ async function init() {
   Store.applyDeviceType();
 
   await loadAdministrators();
-  loadPatFromUrl();
   await loadDevSecrets();
 
   await showOnboardingDialog();
 
   await loadLocalData();
-  loadFromGitHub();
+  loadFromBackend();
 
   // Back-fill the `user` tag on an already-granted push subscription so targeted
   // sends can reach this device without the user re-enabling push. Fire-and-forget.
@@ -105,26 +95,25 @@ async function init() {
 }
 init();
 
-// Cross-tab PAT sync: when another tab saves/clears the GitHub config, reload data here too.
+// Cross-tab Supabase config/session sync.
 window.addEventListener('storage', (e) => {
-  if (e.key !== 'mexicano_github_config') return;
+  if (!['mexicano_supabase_config', 'mexicano_supabase_session', 'mexicano_access_role'].includes(e.key)) return;
   if (e.newValue) {
-    loadFromGitHub();
+    loadFromBackend();
   } else {
     location.reload();
   }
 });
 
-// Auto-pull from GitHub on every page open/refresh if configured.
+// Auto-pull from Supabase on every page open/refresh if configured.
 // In-memory Cache is empty on every page refresh, so pull always runs fresh.
-async function loadFromGitHub() {
-  if (!Store.getGitHubConfig()?.pat) return;
+async function loadFromBackend() {
+  if (!Store.getSupabaseConfig()) return;
   try {
-    await pullForRoute(window.location.hash);
-    // Re-render the current page with freshly pulled data
-    router.resolve();
+    const updated = await pullForRoute(window.location.hash);
+    if (updated) router.resolve();
   } catch (e) {
-    console.warn('GitHub auto-pull failed:', e);
+    console.warn('Supabase auto-pull failed:', e);
     showToast(`⚠️ Sync failed: ${e.message}`);
   }
 }

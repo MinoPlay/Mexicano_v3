@@ -62,7 +62,7 @@ export function renderTournaments(container, params) {
       <div id="tournament-list">
         ${index.length === 0 ? `
           <div id="tournaments-loading" class="text-sm text-secondary text-center" style="padding:var(--space-md);">
-            ${Store.getGitHubConfig()?.pat ? '⏳ Loading…' : `
+            ${Store.getSupabaseConfig() ? '⏳ Loading…' : `
               <div class="empty-state">
                 <div class="empty-state-icon">🏆</div>
                 <div class="empty-state-text">No tournaments yet</div>
@@ -82,10 +82,10 @@ export function renderTournaments(container, params) {
     return;
   }
 
-  // If index is empty and GitHub is configured, lazy-fetch tournaments.json
-  if (Store.getGitHubConfig()?.pat) {
+  // If index is empty and Supabase is configured, lazy-fetch tournaments.
+  if (Store.getSupabaseConfig()) {
     const loadingEl = container.querySelector('#tournaments-loading');
-    import('../services/github.js')
+    import('../services/backend.js')
       .then(({ fetchTournamentsIndexPublic }) => fetchTournamentsIndexPublic())
       .then(() => {
         if (!loadingEl?.isConnected) return;

@@ -20,7 +20,7 @@ The Statistics panel has a filter bar and a sortable table. Filter state is stor
 
 - `all` — all-time stats from `Store.getPlayersSummary()` / `players.json`; fallback computes from local matches.
 - `latest` — stats for `getLatestCompleteTournamentDate()`.
-- `YYYY-MM` — monthly overview from `Store.getMonthlyOverview(yearMonth)` / `players_overview.json`; fetched lazily with `pullMonthlyOverview` when GitHub is configured.
+- `YYYY-MM` — monthly overview from `Store.getMonthlyOverview(yearMonth)`, prebuilt during Supabase hydration from canonical matches and persisted ELO snapshots.
 - `YYYY-MM-DD` — one tournament day from cached matches or `ensureDayMatchesLoaded(date)`.
 
 The main table is rendered by `renderSortableTable(container, stats, onPlayerClick, columns = STAT_COLUMNS, defaultSort = 'average')`. `STAT_COLUMNS` defines `#`, `NAME`, `W/T`, `PTS`, `AVG`, `WIN`, `ELO`, and `WLO`. Default sort is `average` descending; `name` defaults to ascending when first selected. User header clicks use `getNextStatisticsSortState`, then `sortStatisticsRows`, which sorts by the selected column, then `wins` descending, then `name` ascending. `rank` is recalculated after sorting. The `rank` column is not clickable. Column resize handles support drag resize and double-click auto-fit.
@@ -50,7 +50,7 @@ All-time canonical data comes from `players.json`, exposed through `Store.getPla
 
 Monthly data comes from `YYYY/YYYY-MM/players_overview.json`, exposed through `Store.getMonthlyOverview(yearMonth)` with rows containing values such as `name`, `wins`, `losses`, `totalPoints`, `average`, and `elo`. `overviewToStats` calculates `points`, `wl`, `winRate`, and ELO change against the previous month.
 
-Attendance intentionally uses raw monthly overview arrays from `pullMonthlyOverviewRaw`, not `Store.getMonthlyOverview()`, because attendance needs each `ELO[].Date` entry. `computeAttendance(rawByMonth, filter, today, Store.getManualAttendance())` counts attendance by player, merges manual no-tournament attendance, excludes zero-count players, and sorts attendance descending then name ascending. `getPlayerAttendanceDates` returns unique matching dates sorted newest first for the attendance-date dialog.
+Attendance uses `monthly_raw_YYYY-MM` compatibility arrays built once during Supabase hydration from canonical match participation dates. `pullMonthlyOverviewRaw` reads this cache without another full network load. `computeAttendance(rawByMonth, filter, today, Store.getManualAttendance())` counts attendance by player, merges manual no-tournament attendance, excludes zero-count players, and sorts attendance descending then name ascending. `getPlayerAttendanceDates` returns unique matching dates sorted newest first for the attendance-date dialog.
 
 Player-profile summary data is not computed on the page. `showPlayerProfile` loads a pre-generated summary object from GitHub. The expected object includes aggregate fields such as `totalTournaments`, `totalWins`, `totalLosses`, `totalPoints`, `tightWins`, `solidWins`, `dominatingWins`, `firstPlaceFinishes`, `secondPlaceFinishes`, `thirdPlaceFinishes`, plus `opponents` and `partners` arrays for the profile tables.
 

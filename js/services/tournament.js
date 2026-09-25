@@ -7,7 +7,7 @@ import { State } from '../state.js';
 import { rankPlayers } from './ranking.js';
 import { calculateAllEloRankings, processMatchElo } from './elo.js';
 import { logRoundResult } from './round-log.js';
-import { cancelPendingSync, pushTournamentDayFile, readDayMatches, pushCompletedTournament, markMatchDateDirty, dispatchConfirmAttendance, FAST_TIMEOUTS } from './github.js';
+import { cancelPendingSync, pushTournamentDayFile, readDayMatches, pushCompletedTournament, markMatchDateDirty, dispatchConfirmAttendance, FAST_TIMEOUTS } from './backend.js';
 
 /** localStorage key holding the ELO map produced by the last completion. */
 export const ELO_BASELINE_KEY = 'mexicano_elo_baseline';
@@ -249,7 +249,7 @@ export function startTournament(tournament) {
 export function triggerNewTournamentDayFile(tournament) {
   const date = tournament.tournamentDate;
   console.log('[tournament] trigger day file:', date);
-  return import('./github.js').then(({ cancelPendingSync, pushTournamentDayFile }) => {
+  return import('./backend.js').then(({ cancelPendingSync, pushTournamentDayFile }) => {
     cancelPendingSync();
     return pushTournamentDayFile(tournament);
   })
@@ -264,7 +264,7 @@ export function triggerNewTournamentDayFile(tournament) {
 export function triggerTournamentIndexEntry(tournament) {
   const date = tournament.tournamentDate;
   console.log('[tournament] trigger tournaments.json:', date);
-  import('./github.js').then(({ updateTournamentIndexEntry }) =>
+  import('./backend.js').then(({ updateTournamentIndexEntry }) =>
     updateTournamentIndexEntry({
       date,
       playerCount: tournament.players.length,
@@ -400,7 +400,7 @@ export function startNextRound(tournament) {
 
   saveTournamentState(tournament);
   // Push all scores for this round in one commit
-  import('./github.js').then(({ cancelPendingSync, flushPush }) => {
+  import('./backend.js').then(({ cancelPendingSync, flushPush }) => {
     cancelPendingSync();
     flushPush();
   }).catch(() => {});
@@ -752,7 +752,7 @@ export function retryCompletedTournamentPush() {
 
   console.log('[tournament] retrying push for completed tournament:', marker);
 
-  import('./github.js').then(({ flushPush, markMatchDateDirty, updateTournamentIndexEntry }) => {
+  import('./backend.js').then(({ flushPush, markMatchDateDirty, updateTournamentIndexEntry }) => {
     markMatchDateDirty(tournament.tournamentDate);
 
     const indexPlayers = new Set();
@@ -848,7 +848,7 @@ export function confirmAttendance(playerName) {
 }
 
 /**
- * Confirm attendance AND persist it via a `repository_dispatch` to the data
+ * Confirm attendance AND persist it via the Supabase domain mutation
  * repo (event_type: confirm_attendance), instead of writing the day file
  * directly from the browser. The `confirm-attendance.yml` workflow in the
  * data repo performs the actual day-file update + commit server-side —
@@ -1006,7 +1006,7 @@ export function saveTournamentState(tournament) {
   State.emit('tournament-changed', tournament);
 
   // Mark this date dirty so only its match file is pushed
-  import('./github.js').then(({ markMatchDateDirty }) => {
+  import('./backend.js').then(({ markMatchDateDirty }) => {
     markMatchDateDirty(tournament.tournamentDate);
   }).catch(() => {});
 }
@@ -1035,7 +1035,7 @@ export async function deleteTournament(date) {
 
   // Remove remote copies: tournaments.json entry + the generated date file
   try {
-    const { removeTournamentIndexEntry, deleteTournamentDayFile, cancelPendingSync } = await import('./github.js');
+    const { removeTournamentIndexEntry, deleteTournamentDayFile, cancelPendingSync } = await import('./backend.js');
     cancelPendingSync();
     await removeTournamentIndexEntry(date);
     await deleteTournamentDayFile(date);
@@ -1058,9 +1058,8 @@ export function updateAccessCode(date, code) {
   State.emit('tournament-changed', tournament);
 
   // Push to GitHub with same pattern as other mutations
-  import('./github.js').then(({ markMatchDateDirty, flushPush }) => {
+  import('./backend.js').then(({ markMatchDateDirty, flushPush }) => {
     markMatchDateDirty(date);
     flushPush();
   }).catch(() => {});
 }
-

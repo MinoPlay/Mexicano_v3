@@ -1,7 +1,7 @@
 # Statistics Page — Data Sources
 
 The Statistics page (`/statistics`) shows player performance tables filtered by time period.
-Each filter uses a different pre-computed data source.
+Each filter uses a pre-computed or once-per-hydration projection.
 
 ---
 
@@ -10,7 +10,7 @@ Each filter uses a different pre-computed data source.
 | Filter | Source file | Store key | Notes |
 |--------|------------|-----------|-------|
 | **All Time** | `players.json` | `players_summary` | Authoritative all-time stats; generated after every tournament |
-| **Monthly** (pick month) | `YYYY/YYYY-MM/players_overview.json` | `monthly_YYYY-MM` | Stats for players active that month; lazy-fetched on demand |
+| **Monthly** (pick month) | Supabase hydration projection | `monthly_YYYY-MM` | Built once from canonical matches plus persisted ELO snapshots |
 | **Latest** / **per-date** | `YYYY/YYYY-MM/YYYY-MM-DD.json` | in-memory `allMatches` | Computed on the fly from raw match data for that day |
 
 ---
@@ -28,11 +28,13 @@ Each filter uses a different pre-computed data source.
 
 ---
 
-## Monthly — `players_overview.json`
+## Monthly — Supabase hydration projection
 
-Each monthly file contains stats only for players who were active during that month:
-- Contains: `[{ Name, Total_Points, Wins, Losses, Average, ELO }]`
-- Lazy-fetched from GitHub the first time a month is selected
+Each monthly projection contains stats only for players who were active during that month:
+- Contains: `[{ name, totalPoints, wins, losses, average, elo }]`
+- Built once when canonical Supabase rows hydrate the browser cache
+- Month selection reads the cache and never reloads the full dataset
+- ELO comes from persisted `elo_snapshots`; the browser does not replay all historical matches
 - ELO delta shown as change vs. the previous month's ELO
 
 ---
@@ -97,19 +99,12 @@ Active tab persisted at `localStorage` key `stats_active_tab` (falls back to `St
 Filter value persisted at `localStorage` key `stats_attendance_filter` (plain `localStorage.setItem/getItem`, same pattern as `stats_active_filter`).
 
 ### Data Source
-- **File**: `YYYY/YYYY-MM/players_overview.json`
-- **Fetch function**: `pullMonthlyOverview(yearMonth)` exported from `js/services/github.js`
-- **Cache key**: `monthly_YYYY-MM` (in-memory `Cache`)
-- **Feed `computeAttendance` the RAW overview arrays** (`[{Name, ELO:[{Date,ELO}], ...}]`), keyed by `YYYY-MM`.
-
-#### ⚠️ Do NOT use `Store.getMonthlyOverview()` as the attendance source
-`Store.getMonthlyOverview()` runs `fromOverview()` (github.js:905), which reduces `p.ELO`
-(array of `{Date,ELO}`) to a single final `elo` number — the per-date entries are gone.
-`computeAttendance` needs those `Date` strings.
-
-**Approach**: the UI must read the raw `players_overview.json` arrays (with full ELO arrays
-intact) and pass them straight to `computeAttendance`. No change to `fromOverview` / `Store` is
-required.
+- Canonical source: hydrated Supabase matches plus manual attendance.
+- Compatibility cache: `monthly_raw_YYYY-MM`, built once during hydration as
+  `[{Name, ELO:[{Date}]}]`.
+- `pullMonthlyOverviewRaw(yearMonth)` reads that cache and does not perform a network request
+  after hydration.
+- Attendance counts distinct participation dates and never depends on legacy GitHub files.
 
 ### Month Enumeration Logic (`getMonthsForAttendanceFilter`)
 ```

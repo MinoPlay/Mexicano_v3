@@ -18,7 +18,7 @@ const gh = vi.hoisted(() => ({
   ensureAllMatchesLoaded: vi.fn(async () => { throw new Error('must not pull full history'); }),
 }));
 
-vi.mock('../../js/services/github.js', () => ({
+vi.mock('../../js/services/backend.js', () => ({
   schedulePush: vi.fn(),
   cancelPendingSync: vi.fn(),
   flushPush: vi.fn().mockResolvedValue(undefined),

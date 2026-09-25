@@ -6,8 +6,8 @@
  * elo_history, tournaments_index) is stored in the ephemeral in-memory Cache
  * instead of localStorage so it is always pulled fresh on every page refresh.
  *
- * When a GitHub config is present, every set() call schedules a debounced
- * push via the GitHub service (imported lazily to avoid circular deps).
+ * Network persistence is explicit through the backend service. set() only
+ * updates the local cache; it never starts an implicit remote write.
  */
 
 import { Cache } from './cache.js';
@@ -38,8 +38,6 @@ export const Store = {
   set(key, value) {
     try {
       localStorage.setItem(PREFIX + key, JSON.stringify(value));
-      // Trigger debounced auto-push (lazy import to avoid circular deps)
-      import('./services/github.js').then(({ schedulePush }) => schedulePush(key)).catch(() => {});
     } catch (e) {
       console.error('Store.set error:', e);
     }
@@ -150,6 +148,9 @@ export const Store = {
   },
 
   isAdministrator() {
+    if (this.getSupabaseConfig()) {
+      return this.getAccessRole() === 'admin';
+    }
     const user = this.getCurrentUser().toLowerCase();
     return administrators.includes(user);
   },
@@ -200,6 +201,60 @@ export const Store = {
 
   clearGitHubConfig() {
     this.remove('github_config');
+  },
+
+  // ─── Supabase Backend config/session ───
+
+  getSupabaseConfig() {
+    return this.get('supabase_config') || null;
+  },
+
+  setSupabaseConfig(cfg) {
+    const url = String(cfg?.url || '').replace(/\/$/, '');
+    const anonKey = String(cfg?.anonKey || '');
+    if (!url || !anonKey) throw new Error('Supabase URL and public anon key are required');
+    this.set('supabase_config', { url, anonKey });
+  },
+
+  clearSupabaseConfig() {
+    this.remove('supabase_config');
+  },
+
+  getSupabaseSession() {
+    return this.get('supabase_session');
+  },
+
+  setSupabaseSession(session) {
+    this.set('supabase_session', session);
+  },
+
+  clearSupabaseSession() {
+    this.remove('supabase_session');
+    this.remove('access_role');
+    this.remove('access_expires_at');
+    this.remove('current_player_id');
+  },
+
+  getCurrentPlayerId() {
+    return this.get('current_player_id');
+  },
+
+  setCurrentPlayerId(playerId) {
+    this.set('current_player_id', playerId);
+  },
+
+  setAccessGrant({ role = 'member', expires_at: expiresAt = null } = {}) {
+    this.set('access_role', role);
+    this.set('access_expires_at', expiresAt);
+    notifyUserChanged();
+  },
+
+  getAccessRole() {
+    return this.get('access_role') || '';
+  },
+
+  getAccessExpiry() {
+    return this.get('access_expires_at');
   },
 
   // ─── Summary data (pre-computed from Python scripts, read-only) ───

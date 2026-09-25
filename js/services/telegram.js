@@ -1,26 +1,9 @@
 import { Store } from '../store.js';
 import { rankPlayers } from './ranking.js';
-import { fetchWithRetry, FAST_TIMEOUTS } from './http.js';
+import { enqueueNotification } from './backend.js';
 
-// Telegram alerts are relayed through GitHub Actions instead of being sent
-// directly from the browser: many networks block api.telegram.org, but
-// api.github.com stays reachable (the same endpoint used for all app data).
-//
-// The client fires a `repository_dispatch` event on the configured data repo;
-// a workflow in that repo (`.github/workflows/telegram-relay.yml`) sends the
-// actual Telegram message from a GitHub runner using repo secrets
-// (TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID).
-
-const GH_API = 'https://api.github.com';
-const GH_ACCEPT = 'application/vnd.github+json';
-const GH_API_VERSION = '2022-11-28';
 const DISPATCH_EVENT = 'telegram_alert';
 const LOG_PREFIX = '[telegram]';
-
-// Second Telegram group ("NotOfficialOfficialPadelClub") used only for
-// tournament created/completed alerts. The client only sends a target *name*;
-// both chat ids are hardcoded in the data-repo workflow, which maps the name
-// to a chat id. Absent target => default group.
 const TARGET_TOURNAMENTS = 'tournaments';
 
 function log(level, message, details) {
@@ -29,15 +12,6 @@ function log(level, message, details) {
     return;
   }
   console[level](`${LOG_PREFIX} ${message}`, details);
-}
-
-function getHeaders(pat) {
-  return {
-    Authorization: `Bearer ${pat}`,
-    Accept: GH_ACCEPT,
-    'X-GitHub-Api-Version': GH_API_VERSION,
-    'Content-Type': 'application/json',
-  };
 }
 
 export function buildDoodleAlertText(playerName, yearMonth, selectedAdded = [], selectedRemoved = []) {
@@ -55,48 +29,29 @@ export function buildTestAlertText(user, timestamp) {
 }
 
 export function buildTournamentCreatedText(date, code, brackets = []) {
-  const codeLine = code ? code : 'none';
-  const courts = brackets.map((b, i) =>
-    `Court ${i + 1}: ${b.team1.join(' & ')} vs ${b.team2.join(' & ')}`);
+  const codeLine = code || 'none';
+  const courts = brackets.map((bracket, index) =>
+    `Court ${index + 1}: ${bracket.team1.join(' & ')} vs ${bracket.team2.join(' & ')}`);
   return `🔑 Code: ${codeLine}\n\n🎾 New tournament — ${date}\n\n${courts.join('\n\n')}`;
 }
 
 export function buildTournamentCompletedText(date, rankedPlayers = []) {
-  const lines = rankedPlayers.map(p => `${p.rank}. ${p.name} — ${p.totalPoints} pts`);
+  const lines = rankedPlayers.map((player) => `${player.rank}. ${player.name} — ${player.totalPoints} pts`);
   return `🏆 Tournament complete — ${date}\nFinal ranking:\n${lines.join('\n')}`;
 }
 
 async function dispatchTelegramAlert(text, meta, target) {
-  const gh = Store.getGitHubConfig();
-  if (!gh?.owner || !gh?.repo || !gh?.pat) {
-    log('warn', 'GitHub backend not configured; alert not relayed.', meta);
-    throw new Error('GitHub backend not configured — cannot relay Telegram alert');
-  }
-
-  const url = `${GH_API}/repos/${encodeURIComponent(gh.owner)}/${encodeURIComponent(gh.repo)}/dispatches`;
-  const client_payload = { text, kind: meta.kind };
-  if (target) client_payload.target = target;
-  const payload = { event_type: DISPATCH_EVENT, client_payload };
-
-  log('info', 'Relaying Telegram alert via GitHub dispatch.', { kind: meta.kind });
-  // Bounded + retrying: a stalled dispatch used to leave the End Tournament
-  // dialog waiting forever on a fetch that never settles.
-  const res = await fetchWithRetry(url, {
-    method: 'POST',
-    headers: getHeaders(gh.pat),
-    body: JSON.stringify(payload),
-  }, { timeouts: FAST_TIMEOUTS });
-
-  // repository_dispatch returns 204 No Content on success.
-  if (res.status !== 204) {
-    let detail = `HTTP ${res.status}`;
-    try {
-      const body = await res.json();
-      if (body?.message) detail = body.message;
-    } catch { /* non-JSON error body */ }
-    throw new Error(`Telegram relay dispatch failed: ${detail}`);
-  }
-  log('info', 'Telegram alert relayed.', { kind: meta.kind });
+  const payload = { text, kind: meta.kind };
+  if (target) payload.target = target;
+  const idempotencyKey = [
+    'telegram',
+    meta.kind,
+    meta.tournamentDate || meta.date || meta.yearMonth || meta.timestamp || Date.now(),
+    meta.playerName || meta.user || '',
+  ].join(':');
+  log('info', 'Enqueuing Telegram alert.', { kind: meta.kind });
+  await enqueueNotification('telegram', DISPATCH_EVENT, payload, idempotencyKey);
+  log('info', 'Telegram alert enqueued.', { kind: meta.kind });
 }
 
 export async function sendDoodleAlert(playerName, yearMonth, selectedAdded = [], selectedRemoved = []) {
@@ -111,27 +66,33 @@ export async function sendDoodleAlert(playerName, yearMonth, selectedAdded = [],
     log('info', 'Skipping alert: no doodle changes detected.', meta);
     return;
   }
-  const text = buildDoodleAlertText(playerName, yearMonth, selectedAdded, selectedRemoved);
-  return dispatchTelegramAlert(text, meta);
+  return dispatchTelegramAlert(
+    buildDoodleAlertText(playerName, yearMonth, selectedAdded, selectedRemoved),
+    meta,
+  );
 }
 
 export async function sendTournamentConfirmationAlert(playerName, tournamentDate) {
-  const text = buildConfirmationText(playerName, tournamentDate);
-  return dispatchTelegramAlert(text, { kind: 'tournament-confirmation', playerName, tournamentDate });
+  return dispatchTelegramAlert(
+    buildConfirmationText(playerName, tournamentDate),
+    { kind: 'tournament-confirmation', playerName, tournamentDate },
+  );
 }
 
 export async function sendTelegramTestAlert() {
   const currentUser = Store.getCurrentUser() || 'unknown';
   const timestamp = new Date().toISOString();
-  const text = buildTestAlertText(currentUser, timestamp);
-  return dispatchTelegramAlert(text, { kind: 'test', user: currentUser, timestamp });
+  return dispatchTelegramAlert(
+    buildTestAlertText(currentUser, timestamp),
+    { kind: 'test', user: currentUser, timestamp },
+  );
 }
 
 export async function sendTournamentTestAlert() {
   const currentUser = Store.getCurrentUser() || 'unknown';
   const timestamp = new Date().toISOString();
-  const text = `🧪 Tournament group test — ${currentUser}\n${timestamp}\n\n` +
-    'This is a test of the tournament created/completed channel.';
+  const text = `🧪 Tournament group test — ${currentUser}\n${timestamp}\n\n`
+    + 'This is a test of the tournament created/completed channel.';
   return dispatchTelegramAlert(
     text,
     { kind: 'tournament-test', user: currentUser, timestamp },
@@ -140,17 +101,22 @@ export async function sendTournamentTestAlert() {
 }
 
 export async function sendTournamentCreatedAlert(tournament) {
-  const round1 = tournament.rounds?.find(r => r.roundNumber === 1);
-  const brackets = (round1?.matches || []).map(m => ({
-    team1: [m.player1.name, m.player2.name],
-    team2: [m.player3.name, m.player4.name],
+  const round1 = tournament.rounds?.find((round) => round.roundNumber === 1);
+  const brackets = (round1?.matches || []).map((match) => ({
+    team1: [match.player1.name, match.player2.name],
+    team2: [match.player3.name, match.player4.name],
   }));
-  const text = buildTournamentCreatedText(tournament.tournamentDate, tournament.accessCode, brackets);
-  return dispatchTelegramAlert(text, { kind: 'tournament-created', date: tournament.tournamentDate }, TARGET_TOURNAMENTS);
+  return dispatchTelegramAlert(
+    buildTournamentCreatedText(tournament.tournamentDate, tournament.accessCode, brackets),
+    { kind: 'tournament-created', date: tournament.tournamentDate },
+    TARGET_TOURNAMENTS,
+  );
 }
 
 export async function sendTournamentCompletedAlert(tournament) {
-  const ranked = rankPlayers(tournament.players || []);
-  const text = buildTournamentCompletedText(tournament.tournamentDate, ranked);
-  return dispatchTelegramAlert(text, { kind: 'tournament-completed', date: tournament.tournamentDate }, TARGET_TOURNAMENTS);
+  return dispatchTelegramAlert(
+    buildTournamentCompletedText(tournament.tournamentDate, rankPlayers(tournament.players || [])),
+    { kind: 'tournament-completed', date: tournament.tournamentDate },
+    TARGET_TOURNAMENTS,
+  );
 }

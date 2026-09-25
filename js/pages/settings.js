@@ -1,11 +1,12 @@
 import { Store } from '../store.js';
 import { getMembers, addMember, removeMember } from '../services/members.js';
 import { showToast } from '../components/toast.js';
-import { testConnection, onSyncStatus, getSyncStatus, pushDoodleNow, addPlayerToPlayersJson } from '../services/github.js';
+import { testConnection, onSyncStatus, getSyncStatus, pushDoodleNow, addPlayerToPlayersJson } from '../services/backend.js';
 import { isInstalled } from '../components/install-prompt.js';
 import { sendTelegramTestAlert, sendTournamentTestAlert } from '../services/telegram.js';
 import { isPushSupported, subscribeToPush, sendPushNotification } from '../services/push.js';
 import { showManualAttendanceDialog } from '../components/manual-attendance-dialog.js';
+import { elevateAdmin } from '../services/supabase.js';
 
 function renderMembersList(listEl) {
   const members = getMembers();
@@ -55,26 +56,25 @@ export function renderSettings(container, params) {
         </div>
       </div>
 
-      <!-- GitHub Backend -->
+      <!-- Supabase Backend -->
       <div class="settings-section">
         <details class="members-collapsible">
         <summary class="settings-section-title members-summary">
-          GitHub Backend
+          Supabase Backend
           <span id="github-sync-icon" class="github-sync-icon" title="Sync status">⬜</span>
         </summary>
         <p class="text-sm text-secondary" style="margin-bottom:var(--space-sm);">
-          Store app data in a GitHub repository. A Personal Access Token (PAT) with <strong>repo</strong> scope is required.
+          Supabase is the primary data source. Admin actions require a separate, temporary admin code.
         </p>
         <div class="flex flex-col gap-sm">
-          <input type="text"  id="github-owner"     value="MinoPlay"                   disabled style="opacity:0.6;cursor:not-allowed;" />
-          <input type="text"  id="github-repo"      value="DataHub_Mexicano"                    disabled style="opacity:0.6;cursor:not-allowed;" />
-          <input type="password" id="github-pat"    placeholder="Personal Access Token (PAT)" maxlength="255" autocomplete="off" />
-          <input type="text"  id="github-base-path" value="mexicano_v3/backup-data"    disabled style="opacity:0.6;cursor:not-allowed;" />
+          <input type="text" value="${Store.getSupabaseConfig()?.url || 'Not configured'}" disabled style="opacity:0.6;cursor:not-allowed;" />
+          <input type="text" value="Role: ${Store.getAccessRole() || 'none'}" disabled style="opacity:0.6;cursor:not-allowed;" />
+          <input type="password" id="supabase-admin-code" placeholder="Admin code" maxlength="255" autocomplete="off" />
         </div>
         <div class="flex gap-sm mt-sm">
-          <button id="github-save-btn"  class="btn btn-primary"    style="flex:1;">Save</button>
-          <button id="github-test-btn"  class="btn btn-secondary"  style="flex:1;">Test</button>
-          <button id="github-clear-btn" class="btn btn-ghost"      style="flex:1;">Clear</button>
+          <button id="supabase-admin-btn" class="btn btn-primary" style="flex:1;">Unlock admin</button>
+          <button id="github-test-btn" class="btn btn-secondary" style="flex:1;">Test</button>
+          <button id="github-clear-btn" class="btn btn-ghost" style="flex:1;">Sign out</button>
         </div>
         <div id="github-status-msg" class="text-sm mt-sm" style="min-height:1.25rem;"></div>
         </details>
@@ -281,17 +281,11 @@ export function renderSettings(container, params) {
     showManualAttendanceDialog();
   });
 
-  // ─── GitHub Backend ───────────────────────────────────────────────────────
+  // ─── Supabase Backend ─────────────────────────────────────────────────────
 
-  const ghPat      = container.querySelector('#github-pat');
+  const adminCode  = container.querySelector('#supabase-admin-code');
   const ghStatus   = container.querySelector('#github-status-msg');
   const ghSyncIcon = container.querySelector('#github-sync-icon');
-
-  // Pre-fill saved PAT (owner/repo/basePath are hardcoded)
-  const savedCfg = Store.getGitHubConfig();
-  if (savedCfg) {
-    ghPat.value = savedCfg.pat || '';
-  }
 
   // Live sync icon updates
   function updateSyncIcon(status) {
@@ -309,27 +303,26 @@ export function renderSettings(container, params) {
     ghStatus.style.color = isError ? 'var(--color-danger, #ef4444)' : 'var(--color-success, #22c55e)';
   }
 
-  // Save
-  container.querySelector('#github-save-btn').addEventListener('click', () => {
-    const pat = ghPat.value.trim();
-    if (!pat) {
-      setGhStatusMsg('Personal Access Token is required.', true);
+  container.querySelector('#supabase-admin-btn').addEventListener('click', async () => {
+    const code = adminCode.value.trim();
+    if (!code) {
+      setGhStatusMsg('Admin code is required.', true);
       return;
     }
-    Store.setGitHubConfig({ owner: 'MinoPlay', repo: 'DataHub_Mexicano', pat, basePath: 'mexicano_v3/backup-data' });
-    showToast('GitHub config saved — reloading…');
-    location.reload();
+    setGhStatusMsg('Verifying admin access…');
+    try {
+      await elevateAdmin(code);
+      adminCode.value = '';
+      setGhStatusMsg('Admin access granted.');
+      showToast('Admin access granted');
+      location.reload();
+    } catch (error) {
+      setGhStatusMsg(error.message, true);
+    }
   });
 
   // Test
   container.querySelector('#github-test-btn').addEventListener('click', async () => {
-    const pat = ghPat.value.trim();
-    if (!pat) {
-      setGhStatusMsg('Enter a Personal Access Token before testing.', true);
-      return;
-    }
-    // Temporarily save to let testConnection() read from Store
-    Store.setGitHubConfig({ owner: 'MinoPlay', repo: 'DataHub_Mexicano', pat, basePath: 'mexicano_v3/backup-data' });
     setGhStatusMsg('Testing connection…');
     updateSyncIcon('syncing');
     const result = await testConnection();
@@ -339,11 +332,13 @@ export function renderSettings(container, params) {
 
   // Clear
   container.querySelector('#github-clear-btn').addEventListener('click', () => {
-    Store.clearGitHubConfig();
-    ghPat.value = '';
-    setGhStatusMsg('Configuration cleared.');
+    Store.clearSupabaseSession();
+    Store.setCurrentPlayerId(null);
+    Store.setCurrentUser('');
+    setGhStatusMsg('Signed out.');
     updateSyncIcon('idle');
-    showToast('GitHub config cleared');
+    showToast('Signed out');
+    location.reload();
   });
 
   // ─── Telegram Alerts ───────────────────────────────────────────────────────

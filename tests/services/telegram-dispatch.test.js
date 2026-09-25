@@ -1,86 +1,67 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+const mocks = vi.hoisted(() => ({
+  enqueueNotification: vi.fn().mockResolvedValue({ id: 'outbox-1' }),
+}));
 
 vi.mock('../../js/store.js', () => ({
-  Store: {
-    getGitHubConfig: () => ({ owner: 'MinoPlay', repo: 'DataHub_Mexicano', pat: 'p' }),
-    getCurrentUser: () => 'Tester',
-  },
+  Store: { getCurrentUser: () => 'Tester' },
+}));
+vi.mock('../../js/services/backend.js', () => ({
+  enqueueNotification: mocks.enqueueNotification,
 }));
 
 import {
-  sendTelegramTestAlert,
-  sendTournamentTestAlert,
   sendDoodleAlert,
+  sendTelegramTestAlert,
+  sendTournamentCompletedAlert,
   sendTournamentConfirmationAlert,
   sendTournamentCreatedAlert,
-  sendTournamentCompletedAlert,
+  sendTournamentTestAlert,
 } from '../../js/services/telegram.js';
 
 beforeEach(() => {
-  vi.restoreAllMocks();
+  mocks.enqueueNotification.mockReset();
+  mocks.enqueueNotification.mockResolvedValue({ id: 'outbox-1' });
 });
 
-describe('telegram relay via GitHub repository_dispatch', () => {
-  it('POSTs a repository_dispatch to the configured data repo with the message text', async () => {
-    const fetchMock = vi.fn(async () => ({ status: 204, json: async () => ({}) }));
-    global.fetch = fetchMock;
+function payload() {
+  return mocks.enqueueNotification.mock.calls[0][2];
+}
 
+describe('Telegram Supabase outbox', () => {
+  it('enqueues a test alert with an idempotency key', async () => {
     await sendTelegramTestAlert();
-
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    const [url, opts] = fetchMock.mock.calls[0];
-    expect(url).toBe('https://api.github.com/repos/MinoPlay/DataHub_Mexicano/dispatches');
-    expect(opts.method).toBe('POST');
-    expect(opts.headers.Authorization).toBe('Bearer p');
-    const body = JSON.parse(opts.body);
-    expect(body.event_type).toBe('telegram_alert');
-    expect(body.client_payload.text).toContain('Mexicano test alert');
-    expect(body.client_payload.text).toContain('Tester');
+    expect(mocks.enqueueNotification).toHaveBeenCalledTimes(1);
+    expect(mocks.enqueueNotification.mock.calls[0][0]).toBe('telegram');
+    expect(mocks.enqueueNotification.mock.calls[0][1]).toBe('telegram_alert');
+    expect(payload().text).toContain('Mexicano test alert');
+    expect(payload().text).toContain('Tester');
+    expect(mocks.enqueueNotification.mock.calls[0][3]).toMatch(/^telegram:test:/);
   });
 
-  it('rejects with the GitHub error message when dispatch fails', async () => {
-    global.fetch = vi.fn(async () => ({
-      status: 403,
-      json: async () => ({ message: 'Resource not accessible by personal access token' }),
-    }));
-
-    await expect(sendTelegramTestAlert()).rejects.toThrow(/Resource not accessible/);
+  it('surfaces an outbox insertion failure', async () => {
+    mocks.enqueueNotification.mockRejectedValueOnce(new Error('outbox unavailable'));
+    await expect(sendTelegramTestAlert()).rejects.toThrow('outbox unavailable');
   });
 
-  it('dispatches doodle text built from added/removed dates', async () => {
-    const fetchMock = vi.fn(async () => ({ status: 204, json: async () => ({}) }));
-    global.fetch = fetchMock;
-
+  it('enqueues doodle text built from added and removed dates', async () => {
     await sendDoodleAlert('Alice', '2026-07', ['2026-07-01'], []);
-
-    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
-    expect(body.client_payload.text).toContain('Doodle update — Alice (2026-07)');
-    expect(body.client_payload.text).toContain('✅ Added: 2026-07-01');
+    expect(payload().text).toContain('Doodle update — Alice (2026-07)');
+    expect(payload().text).toContain('✅ Added: 2026-07-01');
   });
 
-  it('skips dispatch when a doodle change has no added/removed dates', async () => {
-    const fetchMock = vi.fn(async () => ({ status: 204, json: async () => ({}) }));
-    global.fetch = fetchMock;
-
+  it('skips empty doodle changes', async () => {
     await sendDoodleAlert('Alice', '2026-07', [], []);
-
-    expect(fetchMock).not.toHaveBeenCalled();
+    expect(mocks.enqueueNotification).not.toHaveBeenCalled();
   });
 
-  it('dispatches confirmation text', async () => {
-    const fetchMock = vi.fn(async () => ({ status: 204, json: async () => ({}) }));
-    global.fetch = fetchMock;
-
+  it('enqueues confirmation text', async () => {
     await sendTournamentConfirmationAlert('Alice', '2024-06-22');
-
-    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
-    expect(body.client_payload.text).toBe('🎾 Alice confirmed attendance for tournament on 2024-06-22');
+    expect(payload().text).toBe('🎾 Alice confirmed attendance for tournament on 2024-06-22');
   });
 
-  it('routes tournament created alerts to the tournament group chat', async () => {
-    const fetchMock = vi.fn(async () => ({ status: 204, json: async () => ({}) }));
-    global.fetch = fetchMock;
-
+  it('routes tournament created alerts to the tournament group', async () => {
     await sendTournamentCreatedAlert({
       tournamentDate: '2026-07-15',
       accessCode: 'PADEL',
@@ -88,41 +69,23 @@ describe('telegram relay via GitHub repository_dispatch', () => {
         { player1: { name: 'Alice' }, player2: { name: 'Bob' }, player3: { name: 'Carol' }, player4: { name: 'Dave' } },
       ] }],
     });
-
-    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
-    expect(body.client_payload.target).toBe('tournaments');
-    expect(body.client_payload.text).toContain('🔑 Code: PADEL');
+    expect(payload().target).toBe('tournaments');
+    expect(payload().text).toContain('🔑 Code: PADEL');
   });
 
-  it('routes tournament completed alerts to the tournament group chat', async () => {
-    const fetchMock = vi.fn(async () => ({ status: 204, json: async () => ({}) }));
-    global.fetch = fetchMock;
-
+  it('routes tournament completed alerts to the tournament group', async () => {
     await sendTournamentCompletedAlert({ tournamentDate: '2026-07-15', players: [] });
-
-    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
-    expect(body.client_payload.target).toBe('tournaments');
+    expect(payload().target).toBe('tournaments');
   });
 
-  it('does not set target for doodle alerts (uses default group)', async () => {
-    const fetchMock = vi.fn(async () => ({ status: 204, json: async () => ({}) }));
-    global.fetch = fetchMock;
-
+  it('uses the default group for doodle alerts', async () => {
     await sendDoodleAlert('Alice', '2026-07', ['2026-07-01'], []);
-
-    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
-    expect(body.client_payload.target).toBeUndefined();
+    expect(payload().target).toBeUndefined();
   });
 
-  it('routes the tournament test alert to the tournament group chat', async () => {
-    const fetchMock = vi.fn(async () => ({ status: 204, json: async () => ({}) }));
-    global.fetch = fetchMock;
-
+  it('routes the tournament test alert to the tournament group', async () => {
     await sendTournamentTestAlert();
-
-    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
-    expect(body.client_payload.target).toBe('tournaments');
-    expect(body.client_payload.kind).toBe('tournament-test');
-    expect(body.client_payload.text).toContain('test');
+    expect(payload().target).toBe('tournaments');
+    expect(payload().kind).toBe('tournament-test');
   });
 });

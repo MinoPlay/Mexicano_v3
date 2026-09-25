@@ -28,6 +28,28 @@ On first launch with no existing data, demo seed data (12 players, 3 tournaments
 
 ## Data Sources
 
+### Supabase source of truth
+
+Production reads and writes use Supabase. DataHub_Mexicano is a generated backup and compatibility export:
+
+- `supabase/migrations/` defines canonical tables, RLS, access grants, audit events, projections, and the notification outbox.
+- `scripts/supabase/import-datahub.mjs` backfills Supabase from the existing `C:\Private\DataHub_Mexicano\mexicano_v3\backup-data` folder.
+- `scripts/supabase/build-elo-projection.mjs` rebuilds versioned ELO snapshots from canonical matches.
+- `scripts/supabase/export-to-github.mjs` writes legacy JSON plus sanitized canonical snapshots and a hashed manifest.
+- `scripts/supabase/verify-backup.mjs` validates exported hashes and row counts.
+- `.github/features/supabase-migration.md` documents the source-of-truth rules and the derived-data policy for ELO.
+
+Use the local migration flow when the source repo is available on disk:
+
+```bash
+SUPABASE_URL="https://<project>.supabase.co" \
+SUPABASE_SERVICE_ROLE_KEY="<service-role-key>" \
+DATAHUB_ROOT="C:/Private/DataHub_Mexicano/mexicano_v3" \
+node scripts/supabase/import-datahub.mjs
+```
+
+To preview the import without writing to Supabase, add `--dry-run`. Browser configuration is loaded from `data/supabase-config.json`; it contains only the public project URL and anon key.
+
 ### Local development — file system (`local-config.json`)
 
 When running on the local dev server (`npm start`), the server reads an optional **`local-config.json`** file from the project root (git-ignored) to serve real match data from your file system.
@@ -57,35 +79,13 @@ The server exposes these via local API endpoints:
 
 On app load, if the local data API is available, matches and players are imported into `localStorage` automatically (once per session).
 
-### Cloud / production — GitHub repository backend
+### Cloud / production — Supabase
 
-When deployed (e.g., on GitHub Pages), data is persisted to a **GitHub repository** via the GitHub Contents API. No server is needed — the app calls the API directly from the browser.
+On first use, the app creates an anonymous Supabase Auth session, validates the shared app code through an Edge Function, and binds the selected player for attribution. Admin operations require separate temporary elevation.
 
-#### Setup
+Pages use `js/services/backend.js`; they do not call GitHub or Supabase directly. Cached data remains readable offline, while mutations are blocked until connectivity returns. Telegram and Web Push use a durable Supabase outbox and server-side DataHub GitHub Actions relays.
 
-1. Create a **private GitHub repository** for your data (e.g., `mexicano-data`).
-2. Generate a **Personal Access Token (PAT)** with the `repo` scope.
-3. Open the app → **Settings** (⚙️) → **GitHub Backend** section → enter owner, repo name, and PAT.
-
-#### How it works
-
-| Concept | Detail |
-|---|---|
-| **Storage format** | Match data stored as `YYYY/YYYY-MM/YYYY-MM-DD.json`; other data under `data/` |
-| **Auto-sync** | Every local write triggers a debounced push (1.5 s after last change) |
-| **Manual sync** | **Push All** / **Pull All** buttons in Settings |
-| **Local cache** | Data is always kept in `localStorage` for instant offline access |
-
-#### Synced data
-
-| App data | GitHub path |
-|---|---|
-| Match results | `YYYY/YYYY-MM/YYYY-MM-DD.json` |
-| Active tournament | `data/active_tournament.json` |
-| Changelog | `data/changelog.json` |
-| Doodle entries | `data/doodle_YYYY-MM.json` |
-
-Members, theme, and current user are **local-only** and not synced to GitHub.
+DataHub runs the backup workflow Tuesday and Thursday at 08:15 `Europe/Copenhagen`. It exports legacy-compatible JSON and sanitized canonical tables, but excludes auth/session data and Web Push endpoint/key material.
 
 ### Summary
 

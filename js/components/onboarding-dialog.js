@@ -1,57 +1,46 @@
-/**
- * Onboarding dialog — shown on first launch when PAT or current_user is missing.
- * Step 1: Enter GitHub PAT → test connection → save config.
- * Step 2: Pick player from members list → save current_user.
- * Returns a Promise that resolves when onboarding is complete.
- */
-
 import { Store } from '../store.js';
-import { testConnection } from '../services/github.js';
+import {
+  bindCurrentPlayer,
+  claimAccess,
+  listPlayers,
+} from '../services/supabase.js';
 
-const FIXED_CONFIG = {
-  owner:    'MinoPlay',
-  repo:     'DataHub_Mexicano',
-  basePath: 'mexicano_v3/backup-data',
-};
+export function getOnboardingStep(now = Date.now()) {
+  const expiry = Store.getAccessExpiry();
+  const hasActiveGrant = Store.getAccessRole()
+    && (!expiry || Date.parse(expiry) > now);
+  if (!hasActiveGrant) return 'access';
+  if (!Store.getCurrentPlayerId() || !Store.getCurrentUser()) return 'player';
+  return null;
+}
 
-/**
- * Fetch members from players.json using the saved config.
- * Returns sorted array of name strings, or [] on failure.
- */
-async function fetchMembers(pat) {
-  try {
-    const { owner, repo, basePath } = FIXED_CONFIG;
-    const path = `${basePath}/players.json`;
-    const url = `https://api.github.com/repos/${owner}/${repo}/contents/${path}`;
-    const res = await fetch(url, {
-      headers: {
-        Authorization: `Bearer ${pat}`,
-        Accept: 'application/vnd.github+json',
-        'X-GitHub-Api-Version': '2022-11-28',
-      },
-    });
-    if (!res.ok) return [];
-    const file = await res.json();
-    const bytes = Uint8Array.from(atob(file.content.replace(/\n/g, '')), c => c.charCodeAt(0));
-    const decoded = JSON.parse(new TextDecoder().decode(bytes));
-    if (!Array.isArray(decoded)) return [];
-    return decoded.map(p => p.Name).filter(Boolean).sort();
-  } catch {
-    return [];
+export async function ensurePublicConfig() {
+  const response = await fetch('./data/supabase-config.json', { cache: 'no-store' });
+  if (!response.ok) throw new Error('Supabase project configuration could not be loaded');
+  const config = await response.json();
+  if (!config?.url || !config?.anonKey) {
+    throw new Error('Supabase project configuration is incomplete');
   }
+  const current = Store.getSupabaseConfig();
+  const nextUrl = String(config.url).replace(/\/$/, '');
+  if (current && (current.url !== nextUrl || current.anonKey !== config.anonKey)) {
+    Store.clearSupabaseSession();
+    Store.setCurrentUser('');
+  }
+  Store.setSupabaseConfig(config);
 }
 
 function createOverlay() {
   const overlay = document.createElement('div');
   Object.assign(overlay.style, {
-    position:       'fixed',
-    inset:          '0',
-    zIndex:         '10000',
-    background:     'rgba(0,0,0,0.7)',
-    display:        'flex',
-    alignItems:     'center',
+    position: 'fixed',
+    inset: '0',
+    zIndex: '10000',
+    background: 'rgba(0,0,0,0.7)',
+    display: 'flex',
+    alignItems: 'center',
     justifyContent: 'center',
-    padding:        '16px',
+    padding: '16px',
   });
   return overlay;
 }
@@ -59,233 +48,164 @@ function createOverlay() {
 function createCard() {
   const card = document.createElement('div');
   Object.assign(card.style, {
-    background:   'var(--bg-card, #1e1e2e)',
-    color:        'var(--text-primary, #cdd6f4)',
-    border:       '1px solid var(--border, #313244)',
+    background: 'var(--bg-card, #1e1e2e)',
+    color: 'var(--text-primary, #cdd6f4)',
+    border: '1px solid var(--border, #313244)',
     borderRadius: '16px',
-    padding:      '28px 24px',
-    minWidth:     '280px',
-    maxWidth:     '380px',
-    width:        '100%',
-    boxShadow:    '0 8px 40px rgba(0,0,0,0.4)',
+    padding: '28px 24px',
+    minWidth: '280px',
+    maxWidth: '380px',
+    width: '100%',
+    boxShadow: '0 8px 40px rgba(0,0,0,0.4)',
   });
   return card;
 }
 
-function stepDots(current, total) {
-  const wrap = document.createElement('div');
-  Object.assign(wrap.style, {
-    display:        'flex',
-    gap:            '6px',
-    justifyContent: 'center',
-    marginBottom:   '20px',
+function addHeading(card, titleText, description) {
+  const title = document.createElement('h2');
+  title.textContent = titleText;
+  Object.assign(title.style, { margin: '0 0 6px', fontSize: '20px', fontWeight: '700' });
+  const text = document.createElement('p');
+  text.textContent = description;
+  Object.assign(text.style, {
+    margin: '0 0 20px',
+    fontSize: '14px',
+    color: 'var(--text-secondary, #a6adc8)',
+    lineHeight: '1.5',
   });
-  for (let i = 1; i <= total; i++) {
-    const dot = document.createElement('span');
-    Object.assign(dot.style, {
-      width:        '8px',
-      height:       '8px',
-      borderRadius: '50%',
-      background:   i === current
-        ? 'var(--color-primary, #3b82f6)'
-        : 'var(--border, #313244)',
-      display:      'inline-block',
-      transition:   'background 0.2s',
-    });
-    wrap.appendChild(dot);
-  }
-  return wrap;
+  card.append(title, text);
 }
 
-/** Step 1: PAT entry. Resolves with the validated PAT string. */
-function renderStep1(card, totalSteps) {
+function errorElement() {
+  const error = document.createElement('div');
+  Object.assign(error.style, {
+    color: 'var(--color-danger, #f38ba8)',
+    fontSize: '13px',
+    marginBottom: '10px',
+    minHeight: '18px',
+    display: 'none',
+  });
+  return error;
+}
+
+function showError(element, error) {
+  element.textContent = error.message || String(error);
+  element.style.display = 'block';
+}
+
+function renderAccessStep(card) {
   return new Promise((resolve) => {
     card.innerHTML = '';
-    card.appendChild(stepDots(1, totalSteps));
-
-    const title = document.createElement('h2');
-    Object.assign(title.style, { margin: '0 0 6px', fontSize: '20px', fontWeight: '700' });
-    title.textContent = '🔑 Connect GitHub';
-
-    const sub = document.createElement('p');
-    Object.assign(sub.style, { margin: '0 0 20px', fontSize: '14px', color: 'var(--text-secondary, #a6adc8)', lineHeight: '1.5' });
-    sub.textContent = 'Enter your Personal Access Token with repo scope to connect the data backend.';
+    addHeading(card, '🔑 Connect Mexicano', 'Enter the shared app access code.');
 
     const input = document.createElement('input');
-    input.type          = 'password';
-    input.placeholder   = 'ghp_…';
-    input.autocomplete  = 'off';
-    input.maxLength     = 255;
-    Object.assign(input.style, { width: '100%', boxSizing: 'border-box', marginBottom: '10px' });
+    input.type = 'password';
+    input.placeholder = 'Access code';
+    input.autocomplete = 'off';
+    input.maxLength = 255;
     input.className = 'form-input';
+    Object.assign(input.style, { width: '100%', boxSizing: 'border-box', marginBottom: '10px' });
 
-    const errorEl = document.createElement('div');
-    Object.assign(errorEl.style, {
-      color:        'var(--color-danger, #f38ba8)',
-      fontSize:     '13px',
-      marginBottom: '10px',
-      minHeight:    '18px',
-      display:      'none',
-    });
+    const error = errorElement();
+    const button = document.createElement('button');
+    button.textContent = 'Connect';
+    button.className = 'btn btn-primary btn-block';
 
-    const btn = document.createElement('button');
-    btn.textContent = 'Connect';
-    btn.className   = 'btn btn-primary btn-block';
-
-    async function attempt() {
-      const pat = input.value.trim();
-      if (!pat) { errorEl.textContent = 'PAT is required.'; errorEl.style.display = 'block'; return; }
-
-      btn.disabled     = true;
-      btn.textContent  = 'Connecting…';
-      errorEl.style.display = 'none';
-
-      Store.setGitHubConfig({ ...FIXED_CONFIG, pat });
-      const result = await testConnection();
-
-      if (result.ok) {
-        btn.textContent = '✓ Connected';
-        setTimeout(() => resolve(pat), 400);
-      } else {
-        Store.clearGitHubConfig();
-        errorEl.textContent   = result.message;
-        errorEl.style.display = 'block';
-        btn.disabled          = false;
-        btn.textContent       = 'Connect';
+    const attempt = async () => {
+      const code = input.value.trim();
+      if (!code) {
+        showError(error, new Error('Access code is required.'));
+        return;
       }
-    }
+      error.style.display = 'none';
+      button.disabled = true;
+      button.textContent = 'Connecting…';
+      try {
+        await claimAccess(code);
+        input.value = '';
+        resolve();
+      } catch (claimError) {
+        showError(error, claimError);
+        button.disabled = false;
+        button.textContent = 'Connect';
+      }
+    };
 
-    btn.addEventListener('click', attempt);
-    input.addEventListener('keydown', (e) => { if (e.key === 'Enter') attempt(); });
-
-    card.appendChild(title);
-    card.appendChild(sub);
-    card.appendChild(input);
-    card.appendChild(errorEl);
-    card.appendChild(btn);
-
+    button.addEventListener('click', attempt);
+    input.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') attempt();
+    });
+    card.append(input, error, button);
     input.focus();
   });
 }
 
-/** Step 2: Player selection. Resolves when user picks a name. */
-function renderStep2(card, totalSteps, pat) {
-  return new Promise(async (resolve) => {
-    card.innerHTML = '';
-    card.appendChild(stepDots(2, totalSteps));
+async function renderPlayerStep(card) {
+  card.innerHTML = '';
+  addHeading(card, '👤 Who are you?', 'Select your player profile.');
+  const loading = document.createElement('div');
+  loading.textContent = 'Loading players…';
+  Object.assign(loading.style, {
+    textAlign: 'center',
+    padding: '12px 0',
+    color: 'var(--text-secondary, #a6adc8)',
+  });
+  card.appendChild(loading);
 
-    const title = document.createElement('h2');
-    Object.assign(title.style, { margin: '0 0 6px', fontSize: '20px', fontWeight: '700' });
-    title.textContent = '👤 Who are you?';
+  const players = await listPlayers();
+  loading.remove();
+  if (!players.length) throw new Error('No active players are available');
 
-    const sub = document.createElement('p');
-    Object.assign(sub.style, { margin: '0 0 16px', fontSize: '14px', color: 'var(--text-secondary, #a6adc8)' });
-    sub.textContent = 'Select your player profile.';
+  return new Promise((resolve) => {
+    const error = errorElement();
+    const list = document.createElement('div');
+    Object.assign(list.style, {
+      display: 'flex',
+      flexDirection: 'column',
+      gap: '8px',
+      maxHeight: '300px',
+      overflowY: 'auto',
+    });
 
-    const loadingEl = document.createElement('div');
-    Object.assign(loadingEl.style, { textAlign: 'center', padding: '12px 0', fontSize: '14px', color: 'var(--text-secondary, #a6adc8)' });
-    loadingEl.textContent = 'Loading players…';
-
-    card.appendChild(title);
-    card.appendChild(sub);
-    card.appendChild(loadingEl);
-
-    const members = await fetchMembers(pat);
-    loadingEl.remove();
-
-    function pickName(name) {
-      Store.setCurrentUser(name);
-      resolve();
+    for (const player of players) {
+      const button = document.createElement('button');
+      button.textContent = player.name;
+      button.className = 'btn btn-secondary btn-block';
+      Object.assign(button.style, { justifyContent: 'flex-start', fontWeight: '500' });
+      button.addEventListener('click', async () => {
+        error.style.display = 'none';
+        button.disabled = true;
+        try {
+          await bindCurrentPlayer(player.id, player.name);
+          resolve();
+        } catch (bindError) {
+          showError(error, bindError);
+          button.disabled = false;
+        }
+      });
+      list.appendChild(button);
     }
-
-    if (members.length > 0) {
-      const list = document.createElement('div');
-      Object.assign(list.style, {
-        display:       'flex',
-        flexDirection: 'column',
-        gap:           '8px',
-        maxHeight:     '260px',
-        overflowY:     'auto',
-        marginBottom:  '0',
-      });
-
-      members.forEach(name => {
-        const btn = document.createElement('button');
-        btn.textContent = name;
-        btn.className   = 'btn btn-secondary btn-block';
-        Object.assign(btn.style, { justifyContent: 'flex-start', fontWeight: '500' });
-        btn.addEventListener('click', () => pickName(name));
-        list.appendChild(btn);
-      });
-
-      card.appendChild(list);
-    } else {
-      // Fallback: text input
-      sub.textContent = 'Could not load player list. Enter your name manually.';
-
-      const input = document.createElement('input');
-      input.type        = 'text';
-      input.placeholder = 'Your name';
-      input.maxLength   = 50;
-      Object.assign(input.style, { width: '100%', boxSizing: 'border-box', marginBottom: '10px' });
-      input.className = 'form-input';
-
-      const errorEl = document.createElement('div');
-      Object.assign(errorEl.style, {
-        color:        'var(--color-danger, #f38ba8)',
-        fontSize:     '13px',
-        marginBottom: '10px',
-        minHeight:    '18px',
-        display:      'none',
-      });
-
-      const btn = document.createElement('button');
-      btn.textContent = 'Continue';
-      btn.className   = 'btn btn-primary btn-block';
-      btn.addEventListener('click', () => {
-        const name = input.value.trim();
-        if (!name) { errorEl.textContent = 'Name required.'; errorEl.style.display = 'block'; return; }
-        pickName(name);
-      });
-      input.addEventListener('keydown', (e) => { if (e.key === 'Enter') btn.click(); });
-
-      card.appendChild(input);
-      card.appendChild(errorEl);
-      card.appendChild(btn);
-      input.focus();
-    }
+    card.append(error, list);
   });
 }
 
-/**
- * Show the onboarding dialog if PAT or current_user is missing.
- * Resolves when onboarding is complete (or skipped entirely).
- */
 export async function showOnboardingDialog() {
-  const hasPat  = !!Store.getGitHubConfig()?.pat;
-  const hasUser = !!Store.getCurrentUser();
-
-  if (hasPat && hasUser) return;
-
-  // Full onboarding (no PAT) always includes player selection,
-  // even if seed-data.js already wrote a default current_user.
-  const needsUser = !hasUser || !hasPat;
-  const totalSteps = (!hasPat && needsUser) ? 2 : 1;
+  await ensurePublicConfig();
+  if (!getOnboardingStep()) return;
 
   const overlay = createOverlay();
-  const card    = createCard();
+  const card = createCard();
   overlay.appendChild(card);
   document.body.appendChild(overlay);
 
-  let pat = Store.getGitHubConfig()?.pat;
-
-  if (!hasPat) {
-    pat = await renderStep1(card, totalSteps);
+  try {
+    if (getOnboardingStep() === 'access') await renderAccessStep(card);
+    if (getOnboardingStep() === 'player') await renderPlayerStep(card);
+  } catch (error) {
+    card.innerHTML = '';
+    addHeading(card, 'Connection unavailable', error.message || 'Supabase onboarding failed');
+    throw error;
+  } finally {
+    if (!getOnboardingStep()) overlay.remove();
   }
-
-  if (needsUser) {
-    await renderStep2(card, totalSteps, pat);
-  }
-
-  overlay.remove();
 }

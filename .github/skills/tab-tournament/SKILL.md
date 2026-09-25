@@ -30,10 +30,18 @@ The page is the live tournament workspace and the historical tournament viewer. 
 Loading rules:
 
 - If `getActiveTournament()` matches the route date, use it first.
-- With GitHub PAT configured (`Store.getGitHubConfig()?.pat`), perform a background refresh via `fetchActiveTournamentJson()`.
-- If GitHub has no in-progress tournament for the active local date, clear stale active state, call `readDayMatches(date)`, merge fetched matches into `mexicano_matches`, then rebuild with `loadTournamentByDate(date)`.
+- With Supabase configured, app startup calls `pullForRoute('#/tournament/:date')`. This route
+  hydrates active players, tournament metadata, and matches for only the requested date; it does
+  not fetch ELO snapshots, doodle availability, or attendance records.
+- The completed route hydration is cached for the page session. The page's background
+  `fetchActiveTournamentJson()` / `ensureDayMatchesLoaded(date)` calls reuse it instead of
+  starting a second PostgREST batch.
+- If Supabase has no in-progress tournament for the active local date, clear stale active state,
+  call `readDayMatches(date)`, merge fetched matches into `mexicano_matches`, then rebuild with
+  `loadTournamentByDate(date)`.
 - If no active tournament exists, load completed local data via `loadTournamentByDate(date)`.
-- If local data is missing and GitHub is configured, call `ensureDayMatchesLoaded(date)`, then retry `loadTournamentByDate(date)`.
+- If local data is missing and Supabase is configured, call `ensureDayMatchesLoaded(date)`, then
+  retry `loadTournamentByDate(date)`.
 - Otherwise render "No tournament found" with a link to `#/create-tournament`.
 
 Header and navigation rules:
@@ -194,6 +202,10 @@ Completed match entity shape in `mexicano_matches` and day files:
 }
 ```
 
+During the legacy Supabase import, completed files contribute top-level `matches[]`. A genuine
+active file contributes nested `tournament.rounds[].matches[]`; stale unfinished snapshots older
+than the latest completed index date are ignored.
+
 GitHub data flow:
 
 - `saveTournamentState(tournament)` stores active tournament state, rewrites completed match entities for that date, emits `tournament-changed`, and calls `markMatchDateDirty(tournament.tournamentDate)`.
@@ -201,7 +213,9 @@ GitHub data flow:
 - `startNextRound()` saves and then calls `flushPush()` to push the completed round.
 - `completeTournament()` writes all completed matches, updates the tournaments index, and calls `pushCompletedTournament(date, dayMatches, indexEntry)` — day file first, then `tournaments.json`, bypassing the debounced `pushAll()` queue. It never pulls the full match history.
 - `deleteTournament(date)` removes local index/matches/active state and calls `removeTournamentIndexEntry(date)` plus `deleteTournamentDayFile(date)`.
-- On-demand page load uses `ensureDayMatchesLoaded(date)` and `readDayMatches(date)` when local data is missing or stale.
+- On-demand page load uses `ensureDayMatchesLoaded(date)` and `readDayMatches(date)` when local
+  data is missing or stale. Both use the date-scoped Supabase hydration and share its in-flight
+  or completed request state.
 
 ## Sub-tabs / Sections
 

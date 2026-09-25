@@ -4,21 +4,20 @@
 Notify a Telegram group via a Telegram bot whenever a doodle entry is saved/deleted,
 when a player confirms tournament attendance, or when a manual test is triggered.
 
-## Architecture — relayed through GitHub Actions
+## Architecture — Supabase outbox relayed through GitHub Actions
 Many networks (e.g. corporate WiFi) block `api.telegram.org`, so the browser cannot
-send Telegram messages directly. `api.github.com` stays reachable (it is the app's
-data backend). Therefore alerts are **relayed**:
+send Telegram messages directly. Alerts remain relayed through DataHub GitHub Actions,
+but the browser no longer holds a GitHub PAT:
 
-1. Client fires a GitHub `repository_dispatch` event (`event_type: telegram_alert`,
-   `client_payload.text`) on the configured data repo (`Store.getGitHubConfig()` →
-   `owner`/`repo`/`pat`).
-2. A workflow in the data repo (`.github/workflows/telegram-relay.yml`) receives the
+1. A successful domain mutation commits a `notification_outbox` record in Supabase.
+2. The server-side outbox dispatcher fires GitHub `repository_dispatch`
+   (`event_type: telegram_alert`) using a GitHub token stored as a Supabase secret.
+3. A workflow in the data repo (`.github/workflows/telegram-relay.yml`) receives the
    event and sends the message via the Telegram Bot API from a GitHub runner (not
    blocked). Bot token + chat id live as repo **secrets**, never in the client.
 
-The client no longer contacts Telegram and no longer reads `config.json`
-`telegram_alerts`. Success on the client only means GitHub accepted the dispatch
-(HTTP 204); actual delivery happens in the workflow.
+The client only receives confirmation that the outbox item was persisted. Delivery
+attempts, retries, and permanent failures are tracked server-side.
 
 ## Trigger Points
 - `DoodleEditSession.save()` in `js/pages/doodle.js` — after `pushDoodleNow()` commits, fires `sendDoodleAlert()` per changed player
@@ -74,11 +73,12 @@ Time: {ISO timestamp}
   (or a `case`/`if` step). Store `-5458909914` as a repo variable/secret there.
 
 ## GitHub repository_dispatch
+- Sent only by the Supabase `dispatch-outbox` function.
 - URL: `POST https://api.github.com/repos/{owner}/{repo}/dispatches`
 - Headers: `Authorization: Bearer {pat}`, `Accept: application/vnd.github+json`, `X-GitHub-Api-Version: 2022-11-28`
 - Body: `{ "event_type": "telegram_alert", "client_payload": { "text": "...", "kind": "...", "target": "<optional group name>" } }`
 - Success: HTTP 204 No Content
-- PAT needs push (Contents write) access to the data repo — the app's existing PAT already has it
+- Browser has no GitHub credential.
 
 ## Workflow (data repo)
 - File: `.github/workflows/telegram-relay.yml` in the data repo (`MinoPlay/DataHub_Mexicano`)
@@ -90,14 +90,14 @@ Time: {ISO timestamp}
 ## Settings UI
 - Section "Telegram Alerts" in Settings page (visible to all users)
 - Test button always enabled; triggers a relay dispatch
-- Shows explicit error when GitHub is not configured or the dispatch is rejected
+- Shows explicit error when the outbox request is rejected
 
 ## Behavior
 - Fire-and-forget for doodle/confirmation triggers: they `.catch` and log failures, never block UI
-- Client dispatch rejects with the GitHub API `message` on non-204 responses (surfaced by the test button)
+- Outbox insertion errors are surfaced by the test button
 - Logs explicit skip reason when a doodle change has no added/removed dates
 - Only fires on explicit user saves
-- Doodle trigger happens post-commit: alerts start only after the GitHub write of the monthly doodle + changelog succeeds
+- Doodle trigger happens post-commit: alerts are enqueued only after the Supabase mutation succeeds
 
 ## File References
 - **Service (client)**: `js/services/telegram.js` — `sendDoodleAlert`, `sendTournamentConfirmationAlert`, `sendTournamentCreatedAlert`, `sendTournamentCompletedAlert`, `sendTelegramTestAlert`, `sendTournamentTestAlert`, `dispatchTelegramAlert`

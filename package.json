@@ -6,6 +6,9 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node server.js",
+    "migrate:datahub:supabase": "node scripts/supabase/import-datahub.mjs",
+    "project:elo:supabase": "node scripts/supabase/build-elo-projection.mjs",
+    "backup:supabase:github": "node scripts/supabase/export-to-github.mjs",
     "test:unit": "vitest run",
     "test": "npx playwright test",
     "test:headed": "npx playwright test --headed",
