@@ -1,3 +1,5 @@
+import { getDeployId } from './deploy-env.js';
+
 // Network-first fetch strategy for the service worker.
 //
 // The network fetch MUST bypass the browser HTTP disk cache (`cache: 'reload'`)
@@ -25,9 +27,13 @@ export function networkFirst(request, { fetch, caches, cacheName, offlineFallbac
 //     re-fetching them inside the SW drops the signal, so a stalled request
 //     hangs forever (the mobile-PWA "End Tournament hangs on finalize" bug);
 //   • caching auth'd, one-off API responses is wrong and can serve stale data.
-export function shouldHandleRequest(request, selfOrigin) {
+// When `scopePath` is given, requests belonging to a different deploy (main vs
+// /preview/<slug>/) are skipped — the main SW's scope also covers previews.
+export function shouldHandleRequest(request, selfOrigin, scopePath) {
   if (!request || request.method !== 'GET') return false;
   let url;
   try { url = new URL(request.url); } catch { return false; }
-  return url.origin === selfOrigin;
+  if (url.origin !== selfOrigin) return false;
+  if (scopePath !== undefined && getDeployId(url.pathname) !== getDeployId(scopePath)) return false;
+  return true;
 }

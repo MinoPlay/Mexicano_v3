@@ -1,3 +1,4 @@
+import './storage-ns-init.js'; // must stay first: namespaces storage for previews
 import { Router } from './router.js';
 import { Store } from './store.js';
 import { State } from './state.js';
@@ -8,6 +9,7 @@ import { showRefreshDialog } from './components/refresh-dialog.js';
 import { pullForRoute } from './services/github.js';
 import { showOnboardingDialog } from './components/onboarding-dialog.js';
 import { parsePatFromUrl } from './services/pat-url.js';
+import { currentDeployId, nsPrefix } from './deploy-env.js';
 
 // Pages
 import { renderHome } from './pages/home.js';
@@ -107,7 +109,8 @@ init();
 
 // Cross-tab PAT sync: when another tab saves/clears the GitHub config, reload data here too.
 window.addEventListener('storage', (e) => {
-  if (e.key !== 'mexicano_github_config') return;
+  // Event keys are raw (un-namespaced) storage keys.
+  if (e.key !== nsPrefix(currentDeployId()) + 'mexicano_github_config') return;
   if (e.newValue) {
     loadFromGitHub();
   } else {

@@ -1,0 +1,75 @@
+# Deploys main at the site root and every other branch at /preview/<slug>/.
+# See .github/features/preview-deployments.md. Every run rebuilds all branches,
+# so deleted branches disappear automatically.
+name: Deploy Pages (main + branch previews)
+
+on:
+  push:
+    branches: ['**']
+  delete:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Assemble site from all branches
+        shell: bash
+        run: |
+          set -euo pipefail
+          DEFAULT_BRANCH="${{ github.event.repository.default_branch }}"
+          STRIP=(node_modules tests docs features scripts .github .agents package.json package-lock.json \
+                 server.js vitest.config.js skills-lock.json README.md .gitignore .DS_Store)
+          slugify() { echo "$1" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9-]/-/g'; }
+          extract() {
+            mkdir -p "$2"
+            git archive "origin/$1" | tar -x -C "$2"
+            for f in "${STRIP[@]}"; do rm -rf "$2/$f"; done
+          }
+
+          rm -rf _site && mkdir -p _site/preview
+          extract "$DEFAULT_BRANCH" _site
+          touch _site/.nojekyll
+
+          LINKS=""
+          while read -r branch; do
+            [ "$branch" = "$DEFAULT_BRANCH" ] && continue
+            slug="$(slugify "$branch")"
+            echo "preview: $branch -> preview/$slug/"
+            extract "$branch" "_site/preview/$slug"
+            LINKS="$LINKS<li><a href=\"./$slug/\">$branch</a></li>"
+          done < <(git for-each-ref --format='%(refname:lstrip=3)' refs/remotes/origin | grep -v '^HEAD$')
+
+          cat > _site/preview/index.html <<HTML
+          <!doctype html><meta charset="utf-8"><title>Mexicano previews</title>
+          <meta name="viewport" content="width=device-width,initial-scale=1">
+          <h1>Mexicano branch previews</h1>
+          <p><a href="../">main</a></p><ul>$LINKS</ul>
+          HTML
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

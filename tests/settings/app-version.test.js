@@ -83,7 +83,7 @@ describe('Settings — App Version', () => {
     const sw = fs.readFileSync(path.resolve(process.cwd(), 'sw.js'), 'utf8');
     const ver = fs.readFileSync(path.resolve(process.cwd(), 'js/version.js'), 'utf8');
     expect(sw).toMatch(/export\s+const\s+APP_VERSION\s*=\s*\d+/);
-    expect(sw).toMatch(/CACHE_NAME\s*=\s*[`'"]mexicano-v\$\{APP_VERSION\}/);
+    expect(sw).toMatch(/CACHE_NAME\s*=\s*getCacheName\(APP_VERSION,/);
     expect(ver).toMatch(/import\s*\{\s*APP_VERSION\s*\}\s*from\s*['"]\.\.\/sw\.js['"]/);
   });
 });

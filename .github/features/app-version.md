@@ -6,7 +6,9 @@ App carry simple integer version. No more guid/datetime cache name.
 - Version = single integer digit, bump by +1 each release.
 - Single source of truth: `sw.js` -> `export const APP_VERSION` (Number).
 - `sw.js` is a **module service worker** (`register('./sw.js', { type: 'module' })`) that
-  declares `APP_VERSION` and derives `CACHE_NAME = ` + "`mexicano-v${APP_VERSION}`" + `.
+  declares `APP_VERSION` and derives `CACHE_NAME = getCacheName(APP_VERSION, DEPLOY_ID)`
+  (`js/deploy-env.js`) = `mexicano-v<N>` on main, `mexicano-<slug>-v<N>` on a branch preview
+  (see `preview-deployments.md`). SW `activate` and `refreshApp()` delete only own-deploy caches.
 - **Fetch strategy = network-first with HTTP-cache bypass**: every request tries the
   network using `fetch(req, { cache: 'reload' })` (implemented in `js/sw-fetch.js`
   `networkFirst`, imported by `sw.js`), so opening the app pulls the latest files and
@@ -25,7 +27,7 @@ Version + refresh live in the Home page header title:
 (refresh icon `↻`, transparent button inside the `h1`).
 - Refresh icon click -> `stopPropagation()` (so the title's clear-cache handler does not
   fire) then `refreshApp()`:
-  - clear all caches (`caches.keys()` -> delete),
+  - clear this deploy's caches (`caches.keys()` filtered by `isOwnCache` -> delete),
   - `location.reload()` to pull latest files fresh from network.
   - The SW is **kept registered** on purpose: its network-first strategy uses
     `cache: 'reload'` (see `js/sw-fetch.js`), so the controlled reload re-fetches every
