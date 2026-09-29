@@ -10,7 +10,8 @@ Supabase is the canonical writable data source. `DataHub_Mexicano` becomes a gen
 - Keep onboarding shape: shared app access code, then player selection.
 - Player selection attributes actions but does not grant authorization.
 - Admin actions require a separate, expiring admin elevation.
-- Supabase Auth anonymous sessions identify a device session.
+- Supabase Auth supports transitional anonymous sessions plus named, pre-approved email users.
+- Approved email users may authenticate with password or magic link against one Auth identity.
 - Server-side access grants and RLS authorize reads/writes.
 - Cached data may render offline; domain writes are blocked while offline.
 - Browser never receives Supabase service-role, GitHub relay, Telegram, VAPID private, access-code hash, or admin-code hash secrets.
@@ -63,14 +64,19 @@ Matches reference stable player UUIDs. Legacy player names are resolved through 
 
 ## Access flow
 
-1. Create/restore an anonymous Supabase Auth session.
-2. Submit shared code to `claim-access`.
-3. Server verifies the secret and records an ordinary, expiring grant for `auth.uid()`.
-4. Fetch active players and bind the chosen `player_id`.
-5. Admin code calls `elevate-admin`; server records a short-lived admin grant.
-6. RLS checks active grants. Selecting an administrator name alone grants nothing.
+During migration, two identity entry paths share the same authorization layer:
+
+1. Legacy: create/restore an anonymous session, submit the shared code, and receive an expiring
+   `app_access_grants` row.
+2. Named: an administrator pre-provisions an approved email Auth user and its
+   `app_access_grants` row. The user signs in with password or magic link.
+3. Fetch active players and bind the chosen `player_id`.
+4. Admin code calls `elevate-admin`; server records a short-lived admin grant.
+5. RLS checks active grants. Selecting an administrator name alone grants nothing.
 
 Shared/admin codes are rate-limited, rotatable, revocable, hashed server-side, and never retained by the app after successful exchange.
+Public email signup is disabled; the service-role provisioning script is the only account creation
+path. See `email-authentication.md`.
 
 ## App data boundary
 
@@ -188,6 +194,9 @@ Rollback requires exporting current Supabase data first. Old GitHub mutation cod
 - Ambiguous/unmapped name => import fails with source path and name.
 - Raw matches + calculation version => deterministic ELO snapshots tagged with that version.
 - Anonymous session without access grant => protected read/write denied.
+- Approved email user using password or magic link => same Auth user ID and active member grant.
+- Unapproved email => no public signup and no protected access.
+- Revoked approved email => existing Auth session cannot read or mutate protected data.
 - Ordinary grant + selected admin player => admin mutation denied.
 - Valid admin elevation => admin mutation allowed until expiry.
 - Offline cached route => route renders cached data.
