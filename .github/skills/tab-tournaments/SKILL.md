@@ -24,12 +24,12 @@ The Tournaments tab renders the flat list page for `#/tournaments`. It shows eve
 
 Every list item gets a click listener that sets `window.location.hash` to `'/tournament/<date>'`. There is no admin/read lock in this page; active and completed tournaments are clickable for all users. Write access is guarded elsewhere.
 
-The first render includes a floating action button (`.fab`) linking to `#/create-tournament`. If the index is empty and GitHub config has a PAT, the page initially shows `⏳ Loading…` and lazy-imports `../services/github.js`, then calls `fetchTournamentsIndexPublic()`. After the fetch, it re-reads `Store.getTournamentsIndex()`, re-sorts descending, and renders the list. If no entries are found, it replaces the loading state with the empty state. On fetch failure, it shows `Failed to load tournaments`.
+The first render includes a floating action button (`.fab`) linking to `#/create-tournament`. If the index is empty and GitHub config has a PAT, the page initially shows `⏳ Loading…` and lazy-imports `../services/backend.js`, then calls `fetchTournamentsIndexPublic()`. After the fetch, it re-reads `Store.getTournamentsIndex()`, re-sorts descending, and renders the list. If no entries are found, it replaces the loading state with the empty state. On fetch failure, it shows `Failed to load tournaments`.
 
 ## Key Files & Symbols
 - `js/pages/tournaments.js` — exports `renderTournaments(container, params)`; helper symbols: `formatDate(dateStr)`, `statusBadge(entry)`, nested `renderList()`.
 - `js/store.js` — `Store.getTournamentsIndex()` reads the in-memory `tournaments_index` cache; `Store.getGitHubConfig()` controls whether the lazy GitHub fetch runs; `Store.setTournamentsIndex(entries)` is used by GitHub services.
-- `js/services/github.js` — `fetchTournamentsIndexPublic()` calls `fetchTournamentsIndex({ create: true })`, populates `Store.setTournamentsIndex(entries)`, and updates cached tournament dates.
+- `js/services/backend.js` — `fetchTournamentsIndexPublic()` calls `fetchTournamentsIndex({ create: true })`, populates `Store.setTournamentsIndex(entries)`, and updates cached tournament dates.
 - `js/app.js` — imports `renderTournaments`, maps `'/tournaments'` to it, and calls `pullForRoute(window.location.hash)` on GitHub-backed loads.
 - `js/components/nav.js` — bottom nav includes `{ path: '/tournaments', icon: '📋', label: 'Tournaments' }`.
 - `css/pages.css` and `css/components.css` — define `.tournament-list-item`, `.fab`, `.empty-state`, and badge classes used by this page.

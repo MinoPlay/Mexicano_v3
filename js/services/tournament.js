@@ -3,14 +3,18 @@
  * Manages tournament lifecycle: create → start → play rounds → complete.
  */
 import { Store } from '../store.js';
+import { Cache } from '../cache.js';
 import { State } from '../state.js';
 import { rankPlayers } from './ranking.js';
 import { calculateAllEloRankings, processMatchElo } from './elo.js';
 import { logRoundResult } from './round-log.js';
-import { cancelPendingSync, pushTournamentDayFile, readDayMatches, pushCompletedTournament, markMatchDateDirty, dispatchConfirmAttendance, FAST_TIMEOUTS } from './backend.js';
+import { cancelPendingSync, pushTournamentDayFile, readDayMatches, pushCompletedTournament, dispatchConfirmAttendance, FAST_TIMEOUTS } from './backend.js';
+import { isMatchComplete, isRoundComplete, recalculateAllPlayerStats } from './tournament-shape.js';
 
-/** localStorage key holding the ELO map produced by the last completion. */
-export const ELO_BASELINE_KEY = 'mexicano_elo_baseline';
+export { isMatchComplete, isRoundComplete, recalculateAllPlayerStats };
+
+/** In-memory cache key holding the ELO map produced by the last completion. */
+export const ELO_BASELINE_KEY = 'elo_baseline';
 
 /** Latest tournament date in the index strictly before `date`, or null. */
 function previousTournamentDate(date) {
@@ -57,14 +61,11 @@ function eloFromDayMatches(dayMatches) {
 export async function resolveEloBaseline(date) {
   const prevDate = previousTournamentDate(date);
 
-  // 1. Snapshot from the previous completion — exact, zero cost.
-  try {
-    const raw = localStorage.getItem(ELO_BASELINE_KEY);
-    const snapshot = raw ? JSON.parse(raw) : null;
-    if (snapshot?.date && prevDate && snapshot.date === prevDate && snapshot.elo) {
-      return { elo: { ...snapshot.elo }, source: 'snapshot' };
-    }
-  } catch { /* corrupt snapshot — ignore */ }
+  // 1. Snapshot from the previous completion in this session — exact, zero cost.
+  const snapshot = Cache.get(ELO_BASELINE_KEY);
+  if (snapshot?.date && prevDate && snapshot.date === prevDate && snapshot.elo) {
+    return { elo: { ...snapshot.elo }, source: 'snapshot' };
+  }
 
   // 2. players.json summary.
   const elo = {};
@@ -108,14 +109,6 @@ export function generateUUID() {
     const v = c === 'x' ? r : (r & 0x3) | 0x8;
     return v.toString(16);
   });
-}
-
-export function isMatchComplete(match) {
-  return match.team1Score + match.team2Score === 25;
-}
-
-export function isRoundComplete(round) {
-  return round.matches.every(m => isMatchComplete(m));
 }
 
 export function isTournamentEditable(tournament) {
@@ -325,51 +318,12 @@ export function setMatchScore(tournament, roundNumber, matchId, team1Score, team
 
   saveTournamentState(tournament);
   cancelPendingSync();
-  if (isPreviousRoundEdit) {
-    // The cascade rewrote/removed rounds that were already pushed. Write the day
-    // file now (verified write), otherwise the remote copy keeps the stale rounds
-    // and silently overwrites this edit on the next load.
-    Promise.resolve(pushTournamentDayFile(tournament))
-      .then(() => console.log('[tournament] previous-round edit pushed:', tournament.tournamentDate))
-      .catch(e => console.warn('[tournament] previous-round edit push failed:', e));
-  }
-  // Otherwise suppress auto-push on individual score updates — only push on
-  // round advance / end tournament.
+  // Local state is ephemeral, so every score edit is written straight through
+  // to Supabase instead of waiting for round advance / end of tournament.
+  persistTournamentState(tournament)
+    .then(() => console.log('[tournament] score pushed:', tournament.tournamentDate))
+    .catch(() => {});
   return tournament;
-}
-
-export function recalculateAllPlayerStats(tournament) {
-  // Reset all player stats
-  for (const player of tournament.players) {
-    player.totalPoints = 0;
-    player.gamesPlayed = 0;
-    player.wins = 0;
-    player.losses = 0;
-  }
-
-  // Replay every completed match
-  for (const round of tournament.rounds) {
-    for (const match of round.matches) {
-      if (!isMatchComplete(match)) continue;
-
-      const team1Won = match.team1Score > match.team2Score;
-
-      // Update each player
-      const updatePlayer = (playerRef, teamScore, isWinner) => {
-        const player = tournament.players.find(p => p.name === playerRef.name);
-        if (!player) return;
-        player.totalPoints += teamScore;
-        player.gamesPlayed++;
-        if (isWinner) player.wins++;
-        else player.losses++;
-      };
-
-      updatePlayer(match.player1, match.team1Score, team1Won);
-      updatePlayer(match.player2, match.team1Score, team1Won);
-      updatePlayer(match.player3, match.team2Score, !team1Won);
-      updatePlayer(match.player4, match.team2Score, !team1Won);
-    }
-  }
 }
 
 export function startNextRound(tournament) {
@@ -399,11 +353,8 @@ export function startNextRound(tournament) {
   tournament.currentRoundNumber = nextRoundNumber;
 
   saveTournamentState(tournament);
-  // Push all scores for this round in one commit
-  import('./backend.js').then(({ cancelPendingSync, flushPush }) => {
-    cancelPendingSync();
-    flushPush();
-  }).catch(() => {});
+  cancelPendingSync();
+  persistTournamentState(tournament).catch(() => {});
   return tournament;
 }
 
@@ -411,8 +362,9 @@ export function completeTournament(tournament, onProgress) {
   if (Store.getCurrentUser() && !Store.isAdministrator()) throw new Error("Tournament mutations require admin access");
   // Idempotent guard: if already completed, just retry the push
   if (tournament.isCompleted && tournament.completedAt) {
-    retryCompletedTournamentPush();
-    return Promise.resolve(tournament);
+    return persistTournamentState(tournament)
+      .then(() => { Store.clearActiveTournament(); return tournament; })
+      .catch(() => tournament);
   }
 
   tournament.isCompleted = true;
@@ -621,21 +573,17 @@ async function finalizeCompletedTournament(tournament, onProgress) {
     eloAfter,
   ));
 
-  // Snapshot the post-tournament ELO (and its pre-tournament baseline) so the
-  // NEXT completion resolves its baseline with zero network reads, and so a
-  // GitHub pull can overlay this onto players.json while the data-repo
-  // pipeline is still catching up (see github.js applyEloBaselineOverlay()).
-  try {
-    localStorage.setItem(ELO_BASELINE_KEY, JSON.stringify({
-      date: tournament.tournamentDate,
-      elo: eloAfter,
-      previousElo: eloBefore,
-    }));
-  } catch { /* storage full — baseline falls back to players.json */ }
+  // Snapshot the post-tournament ELO (and its pre-tournament baseline) so a
+  // follow-up completion in this session resolves its baseline without a read.
+  // Supabase remains the source of truth after the next page load.
+  Cache.set(ELO_BASELINE_KEY, {
+    date: tournament.tournamentDate,
+    elo: eloAfter,
+    previousElo: eloBefore,
+  });
 
-  localStorage.setItem('mexicano_completion_marker', tournament.tournamentDate);
-  // Keep active_tournament in localStorage until GitHub push succeeds.
-  // Mark completed so UI shows correct state, but don't remove yet.
+  // Mark completed so the UI shows the correct state; the push below is what
+  // makes it durable.
   Store.setActiveTournament(tournament);
   State.emit('tournament-changed', tournament);
 
@@ -713,18 +661,14 @@ async function finalizeCompletedTournament(tournament, onProgress) {
       });
     } catch (e) {
       console.warn('[tournament] post-complete sync failed:', e);
-      // Keep the date dirty and the local copy intact so the reconnect retry
-      // (and the next background push) can still deliver it.
-      markMatchDateDirty(tournament.tournamentDate);
       import('./round-log.js')
-        .then(({ logError }) => logError('post-complete GitHub sync', e))
+        .then(({ logError }) => logError('post-complete Supabase sync', e))
         .catch(() => {});
       throw e;
     }
 
-    // Push succeeded — safe to clear local tournament data
+    // Push succeeded — Supabase now owns the completed tournament.
     Store.clearActiveTournament();
-    localStorage.removeItem('mexicano_completion_marker');
   })();
 
   // Only make callers wait for the sync when they asked for progress. Existing
@@ -736,74 +680,6 @@ async function finalizeCompletedTournament(tournament, onProgress) {
   }
 
   return tournament;
-}
-
-/**
- * Retry pushing a completed tournament that failed to sync to GitHub.
- * Called on reconnect or when completeTournament is called again on
- * an already-completed tournament.
- */
-export function retryCompletedTournamentPush() {
-  const tournament = Store.getActiveTournament();
-  if (!tournament || !tournament.isCompleted) return;
-
-  const marker = localStorage.getItem('mexicano_completion_marker');
-  if (!marker) return; // no pending push
-
-  console.log('[tournament] retrying push for completed tournament:', marker);
-
-  import('./backend.js').then(({ flushPush, markMatchDateDirty, updateTournamentIndexEntry }) => {
-    markMatchDateDirty(tournament.tournamentDate);
-
-    const indexPlayers = new Set();
-    const indexRoundNums = new Set();
-    let indexMatchCount = 0;
-    let indexCompletedCount = 0;
-    for (const round of tournament.rounds || []) {
-      for (const m of round.matches || []) {
-        if (m.player1?.name) indexPlayers.add(m.player1.name);
-        if (m.player2?.name) indexPlayers.add(m.player2.name);
-        if (m.player3?.name) indexPlayers.add(m.player3.name);
-        if (m.player4?.name) indexPlayers.add(m.player4.name);
-        indexRoundNums.add(round.roundNumber);
-        indexMatchCount++;
-        if (isMatchComplete(m)) indexCompletedCount++;
-      }
-    }
-    const indexEntry = {
-      date: tournament.tournamentDate,
-      playerCount: indexPlayers.size,
-      roundCount: indexRoundNums.size,
-      matchCount: indexMatchCount,
-      completedCount: indexCompletedCount,
-      isComplete: indexMatchCount > 0 && indexCompletedCount === indexMatchCount,
-    };
-
-    Promise.resolve(flushPush())
-      .then(async () => {
-        await updateTournamentIndexEntry(indexEntry).catch(() => {});
-        Store.clearActiveTournament();
-        localStorage.removeItem('mexicano_completion_marker');
-        console.log('[tournament] retry push succeeded, local data cleared');
-      })
-      .catch(e => {
-        console.warn('[tournament] retry push failed, will try again on next reconnect:', e);
-        import('./round-log.js')
-          .then(({ logError }) => logError('retry GitHub push', e))
-          .catch(() => {});
-      });
-  }).catch(() => {});
-}
-
-// Auto-retry on network reconnect
-if (typeof window !== 'undefined') {
-  window.addEventListener('online', () => {
-    const marker = localStorage.getItem('mexicano_completion_marker');
-    if (marker) {
-      console.log('[tournament] network restored, retrying pending push...');
-      retryCompletedTournamentPush();
-    }
-  });
 }
 
 export function getActiveTournament() {
@@ -833,8 +709,9 @@ export function markPlayerConfirmed(tournament, name) {
 
 /**
  * Confirm attendance for `playerName` on the active tournament.
- * Self-confirmation is allowed for EVERYONE (not admin-gated). Persists via
- * saveTournamentState (which marks the day file dirty for GitHub push).
+ * Self-confirmation is allowed for EVERYONE (not admin-gated), so this only
+ * updates local state optimistically — `confirmAttendanceAndPush` performs the
+ * durable write through the member-permitted `confirm_attendance` mutation.
  * Returns true when a change was made, false otherwise (no active tournament,
  * name not a player, or already confirmed).
  */
@@ -1004,11 +881,31 @@ export function saveTournamentState(tournament) {
 
   Store.setMatches(otherMatches);
   State.emit('tournament-changed', tournament);
+}
 
-  // Mark this date dirty so only its match file is pushed
-  import('./backend.js').then(({ markMatchDateDirty }) => {
-    markMatchDateDirty(tournament.tournamentDate);
-  }).catch(() => {});
+/**
+ * Update local state and write it through to Supabase.
+ *
+ * Tournament state is no longer persisted on the device, so Supabase must
+ * receive every mutation immediately; the in-memory copy is only an optimistic
+ * render of what was just sent.
+ */
+export function persistTournamentState(tournament) {
+  saveTournamentState(tournament);
+  let pending;
+  try {
+    pending = pushTournamentDayFile(tournament);
+  } catch (e) {
+    pending = Promise.reject(e);
+  }
+  return Promise.resolve(pending)
+    .catch(e => {
+      console.warn('[tournament] state push failed:', tournament.tournamentDate, e);
+      import('./round-log.js')
+        .then(({ logError }) => logError('tournament state push', e))
+        .catch(() => {});
+      throw e;
+    });
 }
 
 export async function deleteTournament(date) {
@@ -1057,9 +954,7 @@ export function updateAccessCode(date, code) {
   Store.setActiveTournament(tournament);
   State.emit('tournament-changed', tournament);
 
-  // Push to GitHub with same pattern as other mutations
-  import('./backend.js').then(({ markMatchDateDirty, flushPush }) => {
-    markMatchDateDirty(date);
-    flushPush();
-  }).catch(() => {});
+  // The access code lives on the tournaments row, so persist it through the
+  // normal tournament write instead of relying on a background flush.
+  return persistTournamentState(tournament).catch(() => {});
 }

@@ -57,7 +57,7 @@ async function loadLocalData() {
     if (!status.available) return;
 
     // ─── Matches + players: only on first load ───
-    if (localStorage.getItem('mexicano_local_data_loaded') === 'true') return;
+    if (Store.isMatchesFullyLoaded()) return;
     console.log('Loading local test data…');
     const [matches, players] = await Promise.all([
       fetch('/api/local-data/matches').then(r => r.json()),
@@ -65,21 +65,21 @@ async function loadLocalData() {
     ]);
     if (matches.length > 0) {
       Store.setMatches(matches);
-      localStorage.setItem('mexicano_matches_fully_loaded', JSON.stringify(true));
+      Store.setMatchesFullyLoaded(true);
       if (Array.isArray(players)) {
         const names = players.map(p => p.Name).sort();
         Store.setMembers(names);
       }
-      localStorage.setItem('mexicano_local_data_loaded', 'true');
       console.log(`Loaded ${matches.length} matches from local data`);
-      location.reload();
     }
   } catch { /* not running on dev server, or no local data */ }
 }
 
 async function init() {
-  // One-time migration: remove stale Azure connection string from localStorage
+  // One-time migration: drop Supabase-owned data that older builds persisted
+  // on this device, so it can never shadow the live backend state.
   localStorage.removeItem('mexicano_azure_conn_str');
+  Store.purgeNonPersistedKeys();
 
   Store.applyDeviceType();
 

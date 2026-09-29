@@ -59,7 +59,7 @@ Empty and warning states:
 ## Key Files & Symbols
 - `js/pages/elo-charts.js` — exported `renderEloCharts(container, params = {})`; exported helpers `ELO_ENTRY_COLORS`, `colorForEntryIndex`, `buildEntryColorMap`, `updateEloCache`, `removeFromEloCache`, and `filterMemberSuggestions`; internal helpers `drawLineChart`, `drawEmptyChart`, `setupTooltip`, `buildDatasets`, `mergePlayerHistoryFiles`, `eloHistoryForPeriod`, and `eloHistoryForDateRange`.
 - `js/services/elo.js` — ELO math and latest tournament history, especially `calculateCombinedOpponentElo`, `calculateExpectedScore`, `calculateClassicElo`, `processMatchElo`, and `getEloHistoryForLatestTournament`.
-- `js/services/github.js` — per-player history file loading through `pullEloHistoryForPlayerIds` and `getCachedEloHistoryForPlayerIds`; files resolve to `elo_history/elo_history_{playerId}.json` under the configured backup data root.
+- `js/services/backend.js` — per-player history file loading through `pullEloHistoryForPlayerIds` and `getCachedEloHistoryForPlayerIds`; files resolve to `elo_history/elo_history_{playerId}.json` under the configured backup data root.
 - `js/store.js` — `Store.getMatches()`, `Store.getPlayersSummary()`, `Store.getCurrentUser()`, and `Store.getGitHubConfig()`.
 - `js/services/members.js` — `getMembers()` supplies the selectable member names used by the cache chips and typeahead.
 - `js/components/chart.js` — generic canvas chart helpers exist here, but the ELO Charts page currently uses its own local canvas line chart implementation instead.

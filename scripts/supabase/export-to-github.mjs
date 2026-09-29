@@ -4,7 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const DEFAULT_GITHUB_ROOT = path.resolve(process.cwd(), '..', 'DataHub_Mexicano', 'mexicano_v3');
-const SCHEMA_VERSION = '20260924120000';
+const SCHEMA_VERSION = '20260929090000';
 const PAGE_SIZE = 1000;
 const SAFE_TABLES = [
   'players',
@@ -15,6 +15,7 @@ const SAFE_TABLES = [
   'matches',
   'match_players',
   'doodle_availability',
+  'doodle_changelog',
   'attendance_records',
   'attendance_players',
   'app_settings',

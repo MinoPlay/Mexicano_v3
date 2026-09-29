@@ -177,12 +177,16 @@ describe('editing the previous round', () => {
     await new Promise(r => setTimeout(r, 0));
   });
 
-  it('does not push on a normal current-round score entry', () => {
+  it('writes every score straight through to the backend', async () => {
     const t = tournamentAtRound(3);
     github.pushTournamentDayFile.mockClear();
 
     setMatchScore(t, 3, t.rounds[2].matches[0].id, 15, 10);
 
-    expect(github.pushTournamentDayFile).not.toHaveBeenCalled();
+    // Tournament state is no longer kept on the device, so an ordinary score
+    // entry must reach Supabase immediately.
+    expect(github.pushTournamentDayFile).toHaveBeenCalledTimes(1);
+    expect(github.pushTournamentDayFile.mock.calls[0][0].tournamentDate).toBe(DATE);
+    await new Promise(r => setTimeout(r, 0));
   });
 });

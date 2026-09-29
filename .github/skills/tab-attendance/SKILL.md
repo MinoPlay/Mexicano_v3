@@ -17,7 +17,7 @@ The page shows attendance derived from tournament matches and manual no-tourname
 
 Month navigation is local to the page. `renderNav()` renders previous and next buttons around the current `MONTHS[currentMonth - 1] currentYear` label. Clicking previous decrements `currentMonth`, rolling from January to December and decrementing `currentYear`; clicking next increments `currentMonth`, rolling from December to January and incrementing `currentYear`. Each click calls `renderContent()`.
 
-When no matches are loaded, the page checks `Store.getPlayersSummary().length > 0` and `Store.getGitHubConfig()?.pat`. If summary data and a PAT exist, it shows a loading state, dynamically imports `ensureAllMatchesLoaded` from `../services/github.js`, replaces `allMatches`, recalculates the initial month, and then calls `buildContent()`. If that load fails, it shows a failure empty state. Without loadable history it shows “No attendance data”.
+When no matches are loaded, the page checks `Store.getPlayersSummary().length > 0` and `Store.getGitHubConfig()?.pat`. If summary data and a PAT exist, it shows a loading state, dynamically imports `ensureAllMatchesLoaded` from `../services/backend.js`, replaces `allMatches`, recalculates the initial month, and then calls `buildContent()`. If that load fails, it shows a failure empty state. Without loadable history it shows “No attendance data”.
 
 Sub-tab switching is controlled by the local `activeTab` variable inside `buildContent()`. It starts as `'calendar'`. `renderTabsBar()` renders `Calendar` and `Statistics` buttons, marks the active one with the `active` class, and on click updates `activeTab`, then calls `renderTabsBar()` and `renderBody()`.
 
@@ -38,14 +38,14 @@ Manual attendance is created outside this page by `showManualAttendanceDialog()`
 - `js/services/attendance.js` — exports `buildMonthParticipation`, `upsertManualEntry`, `getMonthlyAttendance`, and `getAttendanceStatistics`; merges tournament match attendance with manual attendance.
 - `js/components/manual-attendance-dialog.js` — exports `showManualAttendanceDialog`; writes manual no-tournament attendance through `Store.setManualAttendance`.
 - `js/store.js` — `Store.getMatches()`, `Store.getManualAttendance()`, and `Store.setManualAttendance(entries)` are the key data accessors.
-- `js/services/github.js` — `keyToPath('attendance_manual')` maps to `data/attendance_manual.json`; `pullCoreData` reads that file into `localStorage` as `mexicano_attendance_manual`; `schedulePush`/`executePush` sync store writes.
+- `js/services/backend.js` — `pullCoreData()` hydrates manual attendance from the Supabase `manual_attendance` rows into the in-memory `Cache` key `attendance_manual`; `pushManualAttendance()` persists changes through the `domain-mutation` edge function.
 - `js/app.js` — registers route `/attendance` to `renderAttendance` and gives it the page name `Attendance`.
 - `js/components/nav.js` — bottom nav source; `/attendance` is intentionally absent from `NAV_ITEMS`.
 
 ## Data
 The Attendance page reads tournament match data from `Store.getMatches()`. Match rows are expected to include `date` plus player name fields used by the attendance service: `team1Player1Name`, `team1Player2Name`, `team2Player1Name`, and `team2Player2Name`.
 
-Manual no-tournament attendance is stored under the Store key `attendance_manual` and persisted to `data/attendance_manual.json`. The feature document defines the JSON shape as:
+Manual no-tournament attendance lives in the in-memory `Cache` key `attendance_manual`, hydrated from Supabase on every pull. The feature document defines the JSON shape as:
 
 ```json
 [
@@ -53,7 +53,7 @@ Manual no-tournament attendance is stored under the Store key `attendance_manual
 ]
 ```
 
-`Store.getManualAttendance()` defaults to `[]`. `Store.setManualAttendance(entries)` writes the store key, which schedules a GitHub push because `attendance_manual` is allowlisted by `keyToPath`.
+`Store.getManualAttendance()` defaults to `[]`. `Store.setManualAttendance(entries)` updates the in-memory cache; the durable write goes to Supabase via the backend service.
 
 `buildMonthParticipation(matches, manualEntries, yearMonth)` builds `{ datePlayerMap, tournamentDates }`, where `datePlayerMap` maps each date to a `Set` of unique player names. `getMonthlyAttendance` converts that to sorted monthly rows. `getAttendanceStatistics` groups tournament and manual dates into session dates, counts player attendance, and computes attendance percentage over the number of sessions.
 

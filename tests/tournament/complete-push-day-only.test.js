@@ -85,10 +85,10 @@ beforeEach(() => {
   gh.readDayMatches.mockResolvedValue([]);
   Store.setTournamentsIndex([{ date: '2025-06-01', isComplete: true }]);
   Store.setPlayersSummaryCache(PLAYERS_4.map(name => ({ name, elo: 1000 })));
-  localStorage.setItem(ELO_BASELINE_KEY, JSON.stringify({
+  Cache.set(ELO_BASELINE_KEY, {
     date: '2025-06-01',
     elo: { Alice: 1000, Bob: 1000, Carol: 1000, Dave: 1000 },
-  }));
+  });
 });
 
 describe('completeTournament network footprint', () => {
@@ -129,7 +129,7 @@ describe('completeTournament network footprint', () => {
     const t = makePlayedTournament();
     await completeTournament(t, () => {});
 
-    const snapshot = JSON.parse(localStorage.getItem(ELO_BASELINE_KEY));
+    const snapshot = Cache.get(ELO_BASELINE_KEY);
     expect(snapshot.date).toBe(DATE);
     expect(snapshot.elo.Alice).toBeGreaterThan(1000);
     expect(snapshot.elo.Carol).toBeLessThan(1000);
@@ -140,7 +140,6 @@ describe('completeTournament network footprint', () => {
     await completeTournament(t, () => {});
 
     expect(Store.getActiveTournament()).toBeNull();
-    expect(localStorage.getItem('mexicano_completion_marker')).toBeNull();
   });
 
   it('keeps local data for retry when the push fails', async () => {
@@ -150,6 +149,5 @@ describe('completeTournament network footprint', () => {
     await expect(completeTournament(t, () => {})).rejects.toThrow(/timed out/i);
 
     expect(Store.getActiveTournament()).not.toBeNull();
-    expect(localStorage.getItem('mexicano_completion_marker')).toBe(DATE);
   });
 });

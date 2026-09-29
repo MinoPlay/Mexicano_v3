@@ -54,3 +54,26 @@ describe('Supabase source-of-truth schema', () => {
     expect(sql).toContain('idempotency_key');
   });
 });
+
+const liveStatePath = path.resolve(
+  'supabase/migrations/20260929090000_live_state_source_of_truth.sql',
+);
+
+describe('Live-state schema additions', () => {
+  it('stores the access code and courts on the tournament row', () => {
+    expect(fs.existsSync(liveStatePath)).toBe(true);
+    const sql = fs.readFileSync(liveStatePath, 'utf8');
+
+    expect(sql).toContain('add column if not exists access_code text');
+    expect(sql).toContain('add column if not exists courts jsonb');
+    expect(sql).toContain('access_code');
+  });
+
+  it('adds a member-readable doodle changelog', () => {
+    const sql = fs.readFileSync(liveStatePath, 'utf8');
+
+    expect(sql).toContain('create table if not exists public.doodle_changelog');
+    expect(sql).toContain('alter table public.doodle_changelog enable row level security');
+    expect(sql).toContain('public.has_active_access()');
+  });
+});

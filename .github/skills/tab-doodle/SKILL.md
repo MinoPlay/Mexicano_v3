@@ -32,13 +32,12 @@ Toggles are staged in `DoodleEditSession`, not written immediately. The session 
 
 Saving runs through `DoodleEditSession.save()`:
 1. Prevent concurrent saves with `isSaving`.
-2. Pull the latest remote month via `pullDoodleMonth(ym)`.
-3. Merge remote player entries not already in local `Store.getDoodle(ym)`.
-4. Apply the edited selections with `saveDoodle(playerName, year, month, selectedDates)`.
-5. Collect returned changelog entries as pending Telegram alerts.
-6. Push the month immediately with `pushDoodleNow(ym)`.
-7. Fire `sendDoodleAlert()` for each changed player after the GitHub write succeeds.
-8. Call `cancelPendingSync()` and show `Doodle saved`.
+2. Re-pull the latest month via `pullDoodleMonth(ym)` so edits are applied on top of the current Supabase state.
+3. Apply the edited selections with `saveDoodle(playerName, year, month, selectedDates)`.
+4. Collect the returned changelog entries as pending Telegram alerts.
+5. Push the month immediately with `pushDoodleNow(ym, changes)` — one batched `save_doodle` mutation carrying the availability entries plus the new changelog entries.
+6. Fire `sendDoodleAlert()` for each changed player after the write succeeds.
+7. Call `cancelPendingSync()` and show `Doodle saved`.
 
 `saveDoodle()` validates every selected date against `getAllDatesInMonth()`, writes the normalized sorted `selectedDates` array to `Store.setDoodle()`, attempts a dev-server `writeDoodle()`, computes `selectedAdded` and `selectedRemoved`, appends a changelog entry through `logDoodleChange()` when the diff is non-empty, and emits `State.emit('doodle-changed', { year, month })`.
 
@@ -55,7 +54,7 @@ Telegram alerts are fire-and-forget after successful GitHub commit. `sendDoodleA
 ## Key Files & Symbols
 - `js/pages/doodle.js` — exports `renderDoodle()`; defines `DoodleEditSession`, `buildEloMap()`, `formatDay()`, `renderUserCalendar()`, `renderMatrix()`, `renderPlayerOverview()`, `renderChangelog()`, save bar, unsaved-change modal, route blocker, and GitHub pull-on-render logic.
 - `js/services/doodle.js` — `getAllDatesInMonth()`, `getDoodle()`, `saveDoodle()`, `deleteDoodle()`, `logDoodleChange()`, `getChangelog()`.
-- `js/services/github.js` — `pullDoodleMonth()`, `pushDoodleNow()`, `cancelPendingSync()`, `clearSessionTTL()`, `pullMonthlyOverview()`, `ensureDayMatchesLoaded()`.
+- `js/services/backend.js` — `pullDoodleMonth()`, `pushDoodleNow()`, `cancelPendingSync()`, `clearSessionTTL()`, `pullMonthlyOverview()`, `ensureDayMatchesLoaded()`.
 - `js/services/telegram.js` — `sendDoodleAlert()`, `buildDoodleAlertText()`, `dispatchTelegramAlert()`.
 - `js/services/attendance.js` — `buildMonthParticipation()` for the Player Overview section.
 - `js/store.js` — `Store.getDoodle()`, `Store.setDoodle()`, `Store.getDoodleChangelog()`, `Store.setDoodleChangelog()`, `Store.getCurrentUser()`, `Store.getGitHubConfig()`, `Store.getPlayersSummary()`, `Store.getMonthlyOverview()`, `Store.getManualAttendance()`, `Store.getMatches()`, `Store.getTournamentDates()`.
@@ -63,12 +62,14 @@ Telegram alerts are fire-and-forget after successful GitHub commit. `sendDoodleA
 - `js/app.js` — maps `/doodle` to `renderDoodle()`.
 
 ## Data
-Local Store keys:
-- `doodle_<YYYY-MM>` — monthly doodle entries.
-- `doodle_changelog_<YYYY-MM>` — monthly changelog entries.
-- `current_user` — active player name.
-- `github_config` — `{ owner, repo, pat }`, used for GitHub sync and Telegram relay dispatch.
+In-memory `Cache` keys (hydrated from Supabase on every pull, never persisted):
+- `doodle_<YYYY-MM>` — monthly doodle entries (from `doodle_availability`).
+- `doodle_changelog_<YYYY-MM>` — monthly changelog entries (from `doodle_changelog`).
 - `attendance_manual` — manual no-tournament attendance used by Player Overview.
+
+Persisted `localStorage` keys:
+- `current_user` — active player name.
+- `github_config` — `{ owner, repo, pat }`, legacy backend config.
 - cached/read-only data used by this page includes `players_summary`, `monthly_<YYYY-MM>`, `tournament_dates`, and `matches`.
 
 Raw monthly doodle JSON shape:

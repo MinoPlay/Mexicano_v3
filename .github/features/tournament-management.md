@@ -162,12 +162,12 @@ The Telegram and Web Push relays are independent of the GitHub sync and of each 
 Ending a tournament used to pull the **entire** match history — one sequential GitHub read
 per tournament date — because the pre-tournament ELO baseline was recomputed from scratch
 via `calculateAllEloRankings()`. On a slow or stalled connection this took minutes; when the
-`mexicano_matches_fully_loaded` flag happened to be set it returned instantly, which is why
+`matches_fully_loaded` cache flag happened to be set it returned instantly, which is why
 it felt random.
 
 The baseline is now **read, not recomputed** — `resolveEloBaseline(date)` in
 `js/services/tournament.js`, first hit wins:
-1. `mexicano_elo_baseline` snapshot written by the previous completion — 0 requests
+1. the in-memory `elo_baseline` snapshot written by the previous completion in the same session — 0 requests
 2. `players_summary` (`players.json`, normally already cached) — 0–1 request
 3. the previous tournament's day file, whose embedded `Team*Elo` are authoritative for its
    participants (covers a lagging data pipeline) — ≤1 request, 0 if already cached locally
@@ -183,9 +183,9 @@ Files touched when ending a tournament:
 
 `players.json` and the month's `players_overview.json` are **not** written by the app — the
 data pipeline regenerates them from our `tournaments.json` push. Until that pipeline run
-finishes, a GitHub pull can still fetch pre-tournament ELO. `js/services/github.js`
+finishes, a GitHub pull can still fetch pre-tournament ELO. `js/services/backend.js`
 `applyEloBaselineOverlay()` (called after every `fetchTournamentsIndex()` in the route pull
-functions) overlays the `mexicano_elo_baseline` snapshot onto the freshly pulled summary when
+functions) overlays the in-memory `elo_baseline` snapshot onto the freshly pulled summary when
 the snapshot belongs to the latest complete tournament date, so refreshing right after ending
 a tournament doesn't briefly regress to stale ELO. The overlay is per-player and staleness-gated:
 it only replaces a player's ELO while `players.json` still reports that player's *pre-tournament*
@@ -196,7 +196,7 @@ permanently mask a legitimate backend recalculation (e.g. Statistics showing a d
 change than the ELO History chart, which reads per-player history files unaffected by this
 overlay).
 
-The completion push (`pushCompletedTournament` in `js/services/github.js`) deliberately
+The completion push (`pushCompletedTournament` in `js/services/backend.js`) deliberately
 bypasses the debounced `pushAll()` queue (it cancels any pending sync first): waiting for
 that queue — which rewrites every synced file and any unrelated in-flight push — was a
 second source of the hang. Everything else keeps syncing in the background.
@@ -206,8 +206,7 @@ All requests in this flow use the shared timed fetch (`js/services/http.js`) wit
 fails fast and retries once instead of hanging forever. Telegram and Web Push relay
 dispatches use the same helper; background reads use a single 5s attempt.
 
-On failure the local copy is preserved: `mexicano_completion_marker` stays set, the date is
-re-marked dirty, and `retryCompletedTournamentPush()` runs on reconnect.
+On failure the in-memory copy is kept so the user can retry from the open page — calling `completeTournament()` again on an already-completed tournament re-pushes it. Nothing is buffered on the device across a page refresh.
 
 **Non-Admins**:
 - Cannot perform ANY mutations on tournaments (all write endpoints guarded in service layer)
@@ -373,7 +372,7 @@ An **incomplete** tournament can be deleted. A **completed** tournament cannot.
 2. Purges all match entities for `date` from the Store (`Store.setMatches`).
 3. Clears the active tournament if it matches `date` (`Store.clearActiveTournament`).
 4. Emits `tournament-changed` (payload `null`).
-5. Remote cleanup (via `js/services/github.js`):
+5. Remote cleanup (via `js/services/backend.js`):
    - `removeTournamentIndexEntry(date)` → rewrites `tournaments.json` without that date.
    - `deleteTournamentDayFile(date)` → deletes the generated `YYYY/YYYY-MM/YYYY-MM-DD.json` file (no-op if 404 / not configured).
 

@@ -1,6 +1,10 @@
 # Sync Architecture
 
-Documents the GitHub sync flows, localStorage schema, and data lifecycle for the Mexicano app.
+Documents the GitHub sync flows, client storage model, and data lifecycle for the Mexicano app.
+
+> **Current state:** Supabase is the source of truth. The GitHub flows below are
+> retained for historical context; see **Client Storage Model** for what the
+> browser actually persists today.
 
 ---
 
@@ -108,34 +112,69 @@ flowchart TD
 
 ---
 
-## localStorage Key Reference
+## Client Storage Model
 
-| Key | What is stored | Set when | Cleared when | Notes |
-|-----|---------------|----------|--------------|-------|
-| `mexicano_github_config` | `{owner, repo, pat, basePath}` | User saves Settings | User clicks Clear | Never cleared by pull |
-| `mexicano_github_log` | Array of API operation log entries | Every GitHub API call | Never auto-cleared | Max 200 entries |
-| `mexicano_theme` | `'light'` or `'dark'` | Theme toggle | Never | User preference, survives pull |
-| `mexicano_current_user` | Player name string | User picks themselves in Settings | Never | User preference, survives pull |
-| `mexicano_members` | `string[]` sorted player names | `pullAll` (from `players.json`) | Start of `pullAll` | Empty if no `players.json` in repo |
-| `mexicano_players_summary` | `{name, elo, previousElo}[]` | `pullAll` (from `players.json`) | Start of `pullAll` | ELO leaderboard source |
-| `mexicano_tournament_dates` | `'YYYY-MM-DD'[]` sorted | `pullAll` (directory walk) | Start of `pullAll` | Tournament list source |
-| `mexicano_monthly_YYYY-MM` | `{name, totalPoints, wins, …}[]` | `pullAll` per month | Start of `pullAll` | Monthly stats |
-| `mexicano_doodle_YYYY-MM` | `{name, selectedDates[]}[]` | `pullAll` + `Store.setDoodle` | Start of `pullAll` | Attendance schedule |
-| `mexicano_matches` | `Match[]` all loaded match objects | Lazy load per tournament day | Start of `pullAll` | Populated on-demand, never by pull directly |
-| `mexicano_matches_fully_loaded` | `true` | After bulk local data load | Start of `pullAll` | Flag for local dev server only |
-| `mexicano_changelog` | `{playerName, year, month, …}[]` | `pullAll` + `Store.setChangelog` | Start of `pullAll` | Doodle change history |
-| `mexicano_active_tournament` | Tournament object | `Store.setActiveTournament` | `Store.clearActiveTournament` + start of `pullAll` | In-progress tournament |
-| `mexicano_local_data_loaded` | `'true'` | Dev server local data load | Never | Dev-only, prevents double-loading |
+Supabase is the source of truth. The browser therefore persists **only** state
+that Supabase does not own, and keeps everything else in the ephemeral
+in-memory `Cache` (`js/cache.js`), which is wiped on every page load and
+re-hydrated from Supabase by `pullForRoute()`.
 
-### Preserved across `pullAll`
+### What is persisted in `localStorage`
 
-These keys are **never touched** by `pullAll` (neither cleared nor overwritten):
+Exactly three categories. `Store.set()` enforces this with an allowlist in
+`js/store.js` and logs a warning for anything else.
 
-- `mexicano_github_config` — config must survive to make the API calls
-- `mexicano_github_log` — audit trail
-- `mexicano_theme` — user display preference
-- `mexicano_current_user` — who you are
-- `mexicano_local_data_loaded` — dev-server one-shot flag; if cleared, `loadLocalData()` re-runs and triggers a reload loop
+**1. Backend configuration and authentication state**
+
+| Key | What is stored |
+|-----|---------------|
+| `mexicano_supabase_config` | `{url, anonKey}` |
+| `mexicano_supabase_session` | Supabase auth session (access/refresh token) |
+| `mexicano_access_role` | `'admin'` or `'member'` |
+| `mexicano_access_expires_at` | Access grant expiry |
+| `mexicano_current_player_id` | Selected player identity for this device |
+| `mexicano_github_config` | `{owner, repo, pat}` — legacy backend config |
+
+**2. User and device preferences**
+
+| Key | What is stored |
+|-----|---------------|
+| `mexicano_current_user` | Player name chosen in Settings |
+| `mexicano_device_type` | `'android'` or `'iphone'` (top padding) |
+| `mexicano_logs_enabled` | Logs tab toggle |
+| `mexicano_theme` | `'light'` or `'dark'` |
+| `mexicano_round_log` | Admin diagnostics ring buffer (max 200 entries) |
+
+**3. Page-specific preferences**
+
+Written directly by the page modules and intentionally unprefixed:
+`stats_active_filter`, `stats_active_tab`, `stats_attendance_filter`,
+`stats-attendance-prefs`, `elo-charts-prefs`.
+
+### What is held in memory only
+
+All Supabase-owned data: `matches`, `matches_fully_loaded`, `members`,
+`players_summary`, `tournaments_index`, `tournament_dates`, `active_tournament`,
+`elo_baseline`, `doodle_<YYYY-MM>`, `doodle_changelog_<YYYY-MM>`,
+`attendance_manual`, `monthly_<YYYY-MM>`, `monthly_raw_<YYYY-MM>`,
+`elo_history_player_<id>`, plus the `supabase_*_loaded` pull guards.
+
+Because none of this survives a refresh, the UI can never show a stale local
+copy of backend state, and every tournament mutation is written straight
+through to Supabase (`persistTournamentState` in `js/services/tournament.js`)
+rather than being buffered on the device.
+
+### Migration
+
+`Store.purgeNonPersistedKeys()` runs once at startup (`js/app.js`) and removes
+any `mexicano_*` key outside the allowlist, so devices upgrading from the build
+that persisted domain data cannot shadow live Supabase state.
+
+### Preview deployments
+
+`installStorageNamespace()` (`js/deploy-env.js`) transparently prefixes every
+key with `preview-<slug>:` on preview deploys, so the table above describes the
+main deploy's unprefixed names.
 
 ---
 

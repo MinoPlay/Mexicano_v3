@@ -66,7 +66,7 @@ Restored on page load. Falls back to `'latest'` if not set.
 ## File References
 
 - **Page logic**: `js/pages/statistics.js` — `renderTable()` function
-- **Data fetch**: `js/services/github.js` — `pullCoreData()`, `pullMonthlyOverview()`
+- **Data fetch**: `js/services/backend.js` — `pullCoreData()`, `pullMonthlyOverview()`
 - **Store**: `js/store.js` — `getPlayersSummary()`, `getMonthlyOverview(yearMonth)`
 
 ---

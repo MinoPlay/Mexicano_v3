@@ -147,7 +147,7 @@ describe('Supabase domain hydration', () => {
       supabase.pullForRoute('#/statistics', { force: true }),
     ]);
 
-    expect(fetch).toHaveBeenCalledTimes(6);
+    expect(fetch).toHaveBeenCalledTimes(7);
     const urls = fetch.mock.calls.map(([url]) => url);
     expect(urls.some((url) => url.includes('/rest/v1/match_players?'))).toBe(false);
     expect(urls.some((url) => url.includes('/rest/v1/tournament_players?'))).toBe(false);

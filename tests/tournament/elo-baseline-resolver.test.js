@@ -73,10 +73,10 @@ beforeEach(() => {
 
 describe('resolveEloBaseline', () => {
   it('uses the local snapshot when it matches the previous tournament — no network', async () => {
-    localStorage.setItem(ELO_BASELINE_KEY, JSON.stringify({
+    Cache.set(ELO_BASELINE_KEY, {
       date: PREV,
       elo: { Alice: 1120, Bob: 980 },
-    }));
+    });
     Store.setPlayersSummaryCache([{ name: 'Alice', elo: 1 }, { name: 'Bob', elo: 2 }]);
 
     const { elo, source } = await resolveEloBaseline(TODAY);

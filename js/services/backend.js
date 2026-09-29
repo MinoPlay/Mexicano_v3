@@ -75,6 +75,8 @@ function tournamentDataset(tournament, dayMatches = null) {
       completed_at: tournament?.completedAt
         ? new Date(tournament.completedAt).toISOString()
         : null,
+      access_code: tournament?.accessCode ?? null,
+      courts: Array.isArray(tournament?.courts) ? tournament.courts : null,
       source_path: 'supabase-app',
     }],
     tournament_players: (tournament?.players || []).map((player, index) => ({
@@ -163,11 +165,19 @@ export async function dispatchConfirmAttendance(date, playerName) {
   return mutate('confirm_attendance', { date, player_name: playerName });
 }
 
-export async function pushDoodleNow(yearMonth) {
+/**
+ * Persist a month of doodle availability.
+ *
+ * @param {string} yearMonth
+ * @param {Array}  changes - only the changelog entries produced by this save.
+ *   The changelog is a shared history owned by Supabase, so the client appends
+ *   to it instead of replaying its own accumulated list.
+ */
+export async function pushDoodleNow(yearMonth, changes = []) {
   return mutate('save_doodle', {
     year_month: yearMonth,
     entries: Store.getDoodle(yearMonth),
-    changelog: Store.getDoodleChangelog(yearMonth),
+    changes,
   });
 }
 

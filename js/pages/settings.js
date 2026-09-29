@@ -1,7 +1,7 @@
 import { Store } from '../store.js';
 import { getMembers, addMember, removeMember } from '../services/members.js';
 import { showToast } from '../components/toast.js';
-import { testConnection, onSyncStatus, getSyncStatus, pushDoodleNow, addPlayerToPlayersJson } from '../services/backend.js';
+import { testConnection, onSyncStatus, getSyncStatus, addPlayerToPlayersJson } from '../services/backend.js';
 import { isInstalled } from '../components/install-prompt.js';
 import { sendTelegramTestAlert, sendTournamentTestAlert } from '../services/telegram.js';
 import { isPushSupported, subscribeToPush, sendPushNotification } from '../services/push.js';

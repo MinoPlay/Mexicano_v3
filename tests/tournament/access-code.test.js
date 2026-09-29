@@ -12,6 +12,7 @@ vi.mock('../../js/services/backend.js', () => ({
   flushPush: vi.fn().mockResolvedValue(undefined),
   updateTournamentIndexEntry: vi.fn().mockResolvedValue(undefined),
   markMatchDateDirty: vi.fn(),
+  pushTournamentDayFile: vi.fn().mockResolvedValue(undefined),
   keyToPath: vi.fn().mockReturnValue(null),
   readFile: vi.fn().mockResolvedValue(null),
   deleteFile: vi.fn().mockResolvedValue(undefined),
@@ -108,15 +109,15 @@ describe('tournament accessCode', () => {
     expect(stored.accessCode).toBe('XYZ-789');
   });
 
-  it('updateAccessCode triggers markMatchDateDirty and flushPush', async () => {
-    const github = await import('../../js/services/backend.js');
-    
-    const t = createTournament(DATE, PLAYERS_4, 'ABC-123');
-    
-    updateAccessCode(DATE, 'XYZ-789');
-    
-    // markMatchDateDirty and flushPush should be called
-    expect(github.markMatchDateDirty).toHaveBeenCalledWith(DATE);
-    expect(github.flushPush).toHaveBeenCalled();
+  it('updateAccessCode writes the tournament through to the backend', async () => {
+    const backend = await import('../../js/services/backend.js');
+    backend.pushTournamentDayFile.mockClear();
+
+    createTournament(DATE, PLAYERS_4, 'ABC-123');
+
+    await updateAccessCode(DATE, 'XYZ-789');
+
+    expect(backend.pushTournamentDayFile).toHaveBeenCalledTimes(1);
+    expect(backend.pushTournamentDayFile.mock.calls[0][0].accessCode).toBe('XYZ-789');
   });
 });

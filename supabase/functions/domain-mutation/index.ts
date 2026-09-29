@@ -62,6 +62,8 @@ async function saveTournament(client: any, userId: string, grant: Grant, payload
   await audit(client, userId, grant, 'save', 'tournament', date, {
     matches: dataset.matches.length,
     complete: payload.tournaments?.[0]?.is_complete === true,
+    access_code: payload.tournaments?.[0]?.access_code ?? null,
+    courts: payload.tournaments?.[0]?.courts ?? null,
   });
   return data;
 }
@@ -128,9 +130,35 @@ async function saveDoodle(client: any, userId: string, grant: Grant, payload: an
       if (insertError) throw insertError;
     }
   }
+
+  // Changelog is a shared, member-readable history, so it is appended here
+  // rather than kept per-device. Only the changes produced by this save are
+  // sent; the client never replays its whole local list.
+  const changes = Array.isArray(payload.changes) ? payload.changes : [];
+  const writableChanges = grant.role === 'admin'
+    ? changes
+    : changes.filter((change: any) => change.playerName === selectedName);
+  if (grant.role !== 'admin' && writableChanges.length !== changes.length) {
+    throw new Error('You can only change your own doodle availability');
+  }
+  const changelogRows = [];
+  for (const change of writableChanges) {
+    changelogRows.push({
+      year_month: payload.year_month,
+      player_id: await resolvePlayer(client, change.playerName),
+      selected_added: change.selectedAdded || [],
+      selected_removed: change.selectedRemoved || [],
+      source_path: 'supabase-app',
+    });
+  }
+  if (changelogRows.length) {
+    const { error: changelogError } = await client.from('doodle_changelog').insert(changelogRows);
+    if (changelogError) throw changelogError;
+  }
+
   await audit(client, userId, grant, 'save', 'doodle', payload.year_month, {
     entries: writableEntries.length,
-    changelog: payload.changelog || [],
+    changes: writableChanges.length,
   });
   return { saved: true };
 }

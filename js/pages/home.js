@@ -10,7 +10,7 @@ import { currentDeployId } from '../deploy-env.js';
 import { renderNotificationBell } from '../components/notification-bell.js';
 import { showErrorDialog } from '../components/error-dialog.js';
 
-export function shouldShowConfirmationPopup(activeTournament, currentUser, alreadyConfirmed) {
+export function shouldShowConfirmationPopup(activeTournament, currentUser, alreadyConfirmed = false) {
   if (!activeTournament || activeTournament.isCompleted) return false;
   if (!currentUser) return false;
   if (alreadyConfirmed) return false;
@@ -601,20 +601,20 @@ export function renderHome(container, params) {
   if (titleEl) {
     titleEl.addEventListener('click', () => {
       if (!confirm('Clear all cached tournament data and reload?')) return;
-      Store.remove('matches');
-      Store.remove('matches_fully_loaded');
+      // Domain data is in-memory only, so a reload re-pulls everything from
+      // Supabase; this just drops it early for a clean re-render.
+      Store.setMatches([]);
+      Store.setMatchesFullyLoaded(false);
       Store.clearActiveTournament();
-      Store.remove('completion_marker');
       location.reload();
     });
   }
 
-  // Tournament confirmation popup — once per tournament per user
+  // Tournament confirmation popup — driven by the confirmed flag pulled from
+  // Supabase, so it follows the player across devices.
   if (activeTournament) {
     const currentUser = Store.getCurrentUser();
-    const confirmKey = `confirmed_tournament_${activeTournament.tournamentDate}`;
-    const alreadyConfirmed = !!Store.get(confirmKey);
-    if (shouldShowConfirmationPopup(activeTournament, currentUser, alreadyConfirmed) &&
+    if (shouldShowConfirmationPopup(activeTournament, currentUser) &&
         !document.getElementById('tournament-confirm-overlay')) {
       const overlay = document.createElement('div');
       overlay.id = 'tournament-confirm-overlay';
@@ -653,7 +653,6 @@ export function renderHome(container, params) {
           return;
         }
         if (!result.changed) { overlay.remove(); return; }
-        Store.set(confirmKey, true);
         overlay.remove();
         import('../services/telegram.js').then(({ sendTournamentConfirmationAlert }) => {
           sendTournamentConfirmationAlert(currentUser, activeTournament.tournamentDate)

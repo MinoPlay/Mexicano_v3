@@ -1,6 +1,7 @@
 import { Store } from '../store.js';
 import { Cache } from '../cache.js';
 import { calculatePlayerStatistics } from './statistics.js';
+import { buildTournamentFromRows } from './tournament-shape.js';
 
 const EXPIRY_SKEW_SECONDS = 30;
 const snapshotPromises = new Map();
@@ -429,6 +430,68 @@ function hydrateMonthlyProjections(dataset, appMatches, playersById, tournaments
   }
 }
 
+function hydrateDoodleChangelog(dataset, playersById) {
+  const byMonth = new Map();
+  for (const row of dataset.doodle_changelog || []) {
+    const entries = byMonth.get(row.year_month) || [];
+    entries.push({
+      playerName: playersById.get(row.player_id)?.name || '',
+      yearMonth: row.year_month,
+      year: Number(row.year_month.slice(0, 4)),
+      month: Number(row.year_month.slice(5, 7)),
+      selectedAdded: row.selected_added || [],
+      selectedRemoved: row.selected_removed || [],
+      timestamp: row.created_at,
+    });
+    byMonth.set(row.year_month, entries);
+  }
+  for (const key of Cache.keys('doodle_changelog_')) Cache.del(key);
+  for (const [month, entries] of byMonth) {
+    Store.setDoodleChangelog(
+      month,
+      entries.sort((a, b) => String(b.timestamp).localeCompare(String(a.timestamp))),
+    );
+  }
+}
+
+/**
+ * Rebuild the in-progress tournament from Supabase instead of trusting a local
+ * copy, so a refresh (or a second device) always sees the real current round.
+ *
+ * `loadedTournamentIds` restricts hydration to tournaments whose matches are
+ * present in `dataset`; partial route snapshots pass it so they cannot
+ * overwrite a fully hydrated tournament with an empty one.
+ */
+function hydrateActiveTournament(dataset, playersById, loadedTournamentIds = null) {
+  const candidates = (dataset.tournaments || [])
+    .filter((tournament) => tournament.is_complete !== true
+      && tournament.status !== 'completed'
+      && tournament.status !== 'cancelled')
+    .sort((a, b) => b.tournament_date.localeCompare(a.tournament_date));
+
+  const active = candidates[0];
+  if (!active) {
+    Store.clearActiveTournament();
+    return null;
+  }
+  if (loadedTournamentIds && !loadedTournamentIds.has(active.id)) {
+    return Store.getActiveTournament();
+  }
+
+  const matches = (dataset.matches || []).filter((match) => match.tournament_id === active.id);
+  const matchIds = new Set(matches.map((match) => match.id));
+  const built = buildTournamentFromRows({
+    tournament: active,
+    tournamentPlayers: (dataset.tournament_players || [])
+      .filter((row) => row.tournament_id === active.id),
+    matches,
+    matchPlayers: (dataset.match_players || []).filter((row) => matchIds.has(row.match_id)),
+    playersById,
+  });
+  Store.setActiveTournament(built);
+  return built;
+}
+
 export function hydrateSupabaseDataset(dataset) {
   const playersById = new Map((dataset.players || []).map((player) => [player.id, player]));
   const tournamentsById = new Map((dataset.tournaments || []).map((tournament) => [tournament.id, tournament]));
@@ -440,10 +503,12 @@ export function hydrateSupabaseDataset(dataset) {
   Store.setPlayersSummaryCache(summary);
   Store.setTournamentsIndex(buildTournamentIndex(dataset, appMatches, playersById));
   hydrateDoodles(dataset, playersById);
+  hydrateDoodleChangelog(dataset, playersById);
   hydrateAttendance(dataset, playersById);
   hydrateEloHistory(dataset, playersById, tournamentsById);
   hydrateMonthlyProjections(dataset, appMatches, playersById, tournamentsById);
-  localStorage.setItem('mexicano_matches_fully_loaded', JSON.stringify(true));
+  hydrateActiveTournament(dataset, playersById);
+  Store.setMatchesFullyLoaded(true);
   Cache.set('supabase_snapshot_loaded', true);
   return { matches: appMatches, players: summary };
 }
@@ -472,13 +537,15 @@ async function loadSnapshot() {
     matches,
     eloSnapshots,
     doodleAvailability,
+    doodleChangelog,
     attendanceRecords,
   ] = await Promise.all([
     selectAll('players', 'select=id,name,email,match_padel_id&active=eq.true&order=name.asc,id.asc'),
-    selectAll('tournaments', 'select=id,tournament_date,status,is_complete,current_round_number,completed_at,tournament_players(player_id,seed_position,confirmed)&order=tournament_date.asc,id.asc'),
-    selectAll('matches', 'select=id,tournament_id,round_number,match_order,score_team_1,score_team_2,match_players(player_id,team,position)&order=tournament_id.asc,round_number.asc,match_order.asc,id.asc'),
+    selectAll('tournaments', 'select=id,tournament_date,status,is_complete,current_round_number,completed_at,legacy_id,access_code,courts,tournament_players(player_id,seed_position,confirmed)&order=tournament_date.asc,id.asc'),
+    selectAll('matches', 'select=id,tournament_id,round_number,match_order,score_team_1,score_team_2,completed_at,match_players(player_id,team,position)&order=tournament_id.asc,round_number.asc,match_order.asc,id.asc'),
     selectAll('elo_snapshots', 'select=tournament_id,player_id,elo,previous_elo&calculation_version=eq.mexicano-v1&order=tournament_id.asc,player_id.asc'),
     selectAll('doodle_availability', 'select=availability_date,player_id&order=availability_date.asc,player_id.asc'),
+    selectAll('doodle_changelog', 'select=year_month,player_id,selected_added,selected_removed,created_at&order=created_at.desc'),
     selectAll('attendance_records', 'select=id,attendance_date,kind,note,attendance_players(player_id,confirmed)&order=attendance_date.asc,id.asc'),
   ]);
 
@@ -506,6 +573,7 @@ async function loadSnapshot() {
     match_players: matchPlayers,
     elo_snapshots: eloSnapshots,
     doodle_availability: doodleAvailability,
+    doodle_changelog: doodleChangelog,
     attendance_records: attendanceRecords,
     attendance_players: attendancePlayers,
   });
@@ -551,7 +619,7 @@ function buildHomeTournamentIndex(tournaments) {
 async function loadHomeSnapshot() {
   const [players, tournaments] = await Promise.all([
     selectAll('players', 'select=id,name,email,match_padel_id&active=eq.true&order=name.asc,id.asc'),
-    selectAll('tournaments', 'select=id,tournament_date,status,is_complete,current_round_number,completed_at,tournament_players(player_id,seed_position,confirmed)&order=tournament_date.asc,id.asc'),
+    selectAll('tournaments', 'select=id,tournament_date,status,is_complete,current_round_number,completed_at,legacy_id,access_code,courts,tournament_players(player_id,seed_position,confirmed)&order=tournament_date.asc,id.asc'),
   ]);
   const month = currentYearMonth();
   const previousMonth = previousYearMonth(month);
@@ -568,7 +636,7 @@ async function loadHomeSnapshot() {
     ? await Promise.all([
       selectAll(
         'matches',
-        `select=id,tournament_id,round_number,match_order,score_team_1,score_team_2,match_players(player_id,team,position)&tournament_id=${idFilter}&order=tournament_id.asc,round_number.asc,match_order.asc,id.asc`,
+        `select=id,tournament_id,round_number,match_order,score_team_1,score_team_2,completed_at,match_players(player_id,team,position)&tournament_id=${idFilter}&order=tournament_id.asc,round_number.asc,match_order.asc,id.asc`,
       ),
       selectAll(
         'elo_snapshots',
@@ -601,6 +669,7 @@ async function loadHomeSnapshot() {
   Store.setMembers(players.map((player) => player.name).sort());
   Store.setTournamentsIndex(buildHomeTournamentIndex(tournaments));
   hydrateMonthlyProjections(dataset, appMatches, playersById, tournamentsById);
+  hydrateActiveTournament(dataset, playersById, new Set(relevantIds));
   Cache.set(`home_month_${month}_loaded`, true);
   Cache.set(`home_month_${previousMonth}_loaded`, true);
   return true;
@@ -610,10 +679,10 @@ async function loadTournamentSnapshot(date) {
   const encodedDate = encodeURIComponent(date);
   const [players, tournaments, matches] = await Promise.all([
     selectAll('players', 'select=id,name,email,match_padel_id&active=eq.true&order=name.asc,id.asc'),
-    selectAll('tournaments', 'select=id,tournament_date,status,is_complete,current_round_number,completed_at,tournament_players(player_id,seed_position,confirmed)&order=tournament_date.asc,id.asc'),
+    selectAll('tournaments', 'select=id,tournament_date,status,is_complete,current_round_number,completed_at,legacy_id,access_code,courts,tournament_players(player_id,seed_position,confirmed)&order=tournament_date.asc,id.asc'),
     selectAll(
       'matches',
-      `select=id,tournament_id,round_number,match_order,score_team_1,score_team_2,match_players(player_id,team,position),tournaments!inner(tournament_date)&tournaments.tournament_date=eq.${encodedDate}&order=tournament_id.asc,round_number.asc,match_order.asc,id.asc`,
+      `select=id,tournament_id,round_number,match_order,score_team_1,score_team_2,completed_at,match_players(player_id,team,position),tournaments!inner(tournament_date)&tournaments.tournament_date=eq.${encodedDate}&order=tournament_id.asc,round_number.asc,match_order.asc,id.asc`,
     ),
   ]);
 
@@ -628,10 +697,14 @@ async function loadTournamentSnapshot(date) {
   const tournamentsById = new Map(tournaments.map((tournament) => [tournament.id, tournament]));
   const dayMatches = buildAppMatches(dataset, playersById, tournamentsById);
   const retainedMatches = Store.getMatches().filter((match) => match.date !== date);
+  const loadedIds = new Set(tournaments
+    .filter((tournament) => tournament.tournament_date === date)
+    .map((tournament) => tournament.id));
 
   Store.setMatches([...retainedMatches, ...dayMatches]);
   Store.setMembers(players.map((player) => player.name).sort());
   Store.setTournamentsIndex(buildTournamentIndex(dataset, dayMatches, playersById));
+  hydrateActiveTournament(dataset, playersById, loadedIds);
   return true;
 }
 

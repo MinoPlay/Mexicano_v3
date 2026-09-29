@@ -32,9 +32,9 @@ The Home tab is the landing page for route `/`. It is available to all users and
   `home_players_summary`. They do not overwrite full-history `Store.getMatches()`.
 - Missing latest-day matches can still be loaded through `ensureDayMatchesLoaded(latestDate)`.
   Current and previous monthly projections are reused through `pullMonthlyOverview()`.
-- The title `#home-title` renders `🎾 Mexicano v<APP_VERSION>` and is clickable. After confirmation, it removes `matches`, `matches_fully_loaded`, `active_tournament`, and `completion_marker`, then reloads the page.
+- The title `#home-title` renders `🎾 Mexicano v<APP_VERSION>` and is clickable. After confirmation, it clears the in-memory `matches`, `matches_fully_loaded` and `active_tournament` cache entries, then reloads the page (which re-pulls everything from Supabase).
 - The title also contains `#app-refresh-btn` (refresh icon `↻`). Its click stops propagation (so the clear-cache handler does not fire) and calls `refreshApp()` from `js/version.js`, which clears all caches and reloads.
-- Tournament attendance confirmation is shown only when `shouldShowConfirmationPopup(activeTournament, currentUser, alreadyConfirmed)` returns true and no `#tournament-confirm-overlay` exists. Confirmation stores `confirmed_tournament_<date>`, calls `confirmAttendance(currentUser)`, removes the overlay, and best-effort sends a Telegram alert.
+- Tournament attendance confirmation is shown only when `shouldShowConfirmationPopup(activeTournament, currentUser)` returns true and no `#tournament-confirm-overlay` exists. Confirmation calls `confirmAttendanceAndPush(currentUser)` (which persists to Supabase), removes the overlay, and best-effort sends a Telegram alert.
 - `State`, `calculateAllEloRankings`, and `getMembers` are imported in `home.js` but are not used by the current implementation.
 
 ## Key Files & Symbols
@@ -60,7 +60,7 @@ The Home tab is the landing page for route `/`. It is available to all users and
   - cached `home_players_summary` — Home-only player rows with `name`, `elo`, and `previousElo`.
   - cached `monthly_YYYY-MM` — monthly overview rows derived from canonical matches and ELO snapshots.
   - cached `tournaments_index` — entries with at least `date` and `isComplete`.
-  - `confirmed_tournament_<YYYY-MM-DD>` — local flag that suppresses the confirmation popup after the user confirms.
+  - `confirmed` flag on each `active_tournament` player — hydrated from Supabase and used to suppress the confirmation popup.
 - Monthly overview rows are derived from date-scoped canonical matches and ELO snapshots:
   `{ name, totalPoints, wins, losses, average, elo }`.
 - `overviewToStats()` converts monthly rows to table rows: `{ name, wins, losses, points, average, winRate, elo, eloChange }`.
