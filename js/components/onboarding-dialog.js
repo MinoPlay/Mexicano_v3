@@ -1,8 +1,12 @@
 import { Store } from '../store.js';
 import {
   bindCurrentPlayer,
+  captureAuthSessionFromUrl,
   claimAccess,
   listPlayers,
+  sendMagicLink,
+  signInWithPassword,
+  syncAccessGrant,
 } from '../services/supabase.js';
 
 export function getOnboardingStep(now = Date.now()) {
@@ -93,50 +97,140 @@ function showError(element, error) {
   element.style.display = 'block';
 }
 
-function renderAccessStep(card) {
+function renderAccessStep(card, initialError = null) {
   return new Promise((resolve) => {
     card.innerHTML = '';
-    addHeading(card, '🔑 Connect Mexicano', 'Enter the shared app access code.');
+    addHeading(card, '🔐 Sign in to Mexicano', 'Use an approved email or the shared access code.');
 
-    const input = document.createElement('input');
-    input.type = 'password';
-    input.placeholder = 'Access code';
-    input.autocomplete = 'off';
-    input.maxLength = 255;
-    input.className = 'form-input';
-    Object.assign(input.style, { width: '100%', boxSizing: 'border-box', marginBottom: '10px' });
+    const email = document.createElement('input');
+    email.type = 'email';
+    email.placeholder = 'Email address';
+    email.autocomplete = 'email';
+    email.className = 'form-input';
+    Object.assign(email.style, { width: '100%', boxSizing: 'border-box', marginBottom: '10px' });
+
+    const password = document.createElement('input');
+    password.type = 'password';
+    password.placeholder = 'Password';
+    password.autocomplete = 'current-password';
+    password.className = 'form-input';
+    Object.assign(password.style, { width: '100%', boxSizing: 'border-box', marginBottom: '10px' });
+
+    const passwordButton = document.createElement('button');
+    passwordButton.textContent = 'Sign in with password';
+    passwordButton.className = 'btn btn-primary btn-block';
+
+    const magicButton = document.createElement('button');
+    magicButton.textContent = 'Send magic link';
+    magicButton.className = 'btn btn-secondary btn-block';
+    magicButton.style.marginTop = '8px';
+
+    const divider = document.createElement('div');
+    divider.textContent = 'Use shared access code';
+    Object.assign(divider.style, {
+      margin: '20px 0 10px',
+      textAlign: 'center',
+      color: 'var(--text-secondary, #a6adc8)',
+      fontSize: '13px',
+    });
+
+    const codeInput = document.createElement('input');
+    codeInput.type = 'password';
+    codeInput.placeholder = 'Access code';
+    codeInput.autocomplete = 'off';
+    codeInput.maxLength = 255;
+    codeInput.className = 'form-input';
+    Object.assign(codeInput.style, { width: '100%', boxSizing: 'border-box', marginBottom: '10px' });
 
     const error = errorElement();
-    const button = document.createElement('button');
-    button.textContent = 'Connect';
-    button.className = 'btn btn-primary btn-block';
+    const status = document.createElement('div');
+    Object.assign(status.style, {
+      color: 'var(--color-success, #a6e3a1)',
+      fontSize: '13px',
+      marginBottom: '10px',
+      display: 'none',
+    });
+    if (initialError) showError(error, initialError);
 
-    const attempt = async () => {
-      const code = input.value.trim();
+    const codeButton = document.createElement('button');
+    codeButton.textContent = 'Connect with access code';
+    codeButton.className = 'btn btn-secondary btn-block';
+
+    const attemptCode = async () => {
+      const code = codeInput.value.trim();
       if (!code) {
         showError(error, new Error('Access code is required.'));
         return;
       }
       error.style.display = 'none';
-      button.disabled = true;
-      button.textContent = 'Connecting…';
+      codeButton.disabled = true;
+      codeButton.textContent = 'Connecting…';
       try {
         await claimAccess(code);
-        input.value = '';
+        codeInput.value = '';
         resolve();
       } catch (claimError) {
         showError(error, claimError);
-        button.disabled = false;
-        button.textContent = 'Connect';
+        codeButton.disabled = false;
+        codeButton.textContent = 'Connect with access code';
       }
     };
 
-    button.addEventListener('click', attempt);
-    input.addEventListener('keydown', (event) => {
-      if (event.key === 'Enter') attempt();
+    const attemptPassword = async () => {
+      error.style.display = 'none';
+      status.style.display = 'none';
+      passwordButton.disabled = true;
+      passwordButton.textContent = 'Signing in…';
+      try {
+        await signInWithPassword(email.value, password.value);
+        password.value = '';
+        resolve();
+      } catch (signInError) {
+        showError(error, signInError);
+        passwordButton.disabled = false;
+        passwordButton.textContent = 'Sign in with password';
+      }
+    };
+
+    const requestMagicLink = async () => {
+      error.style.display = 'none';
+      status.style.display = 'none';
+      magicButton.disabled = true;
+      magicButton.textContent = 'Sending…';
+      try {
+        const redirectTo = window.location.href.split('#')[0];
+        await sendMagicLink(email.value, redirectTo);
+        status.textContent = 'Check your email for the Mexicano sign-in link.';
+        status.style.display = 'block';
+      } catch (magicError) {
+        showError(error, magicError);
+      } finally {
+        magicButton.disabled = false;
+        magicButton.textContent = 'Send magic link';
+      }
+    };
+
+    passwordButton.addEventListener('click', attemptPassword);
+    magicButton.addEventListener('click', requestMagicLink);
+    codeButton.addEventListener('click', attemptCode);
+    password.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') attemptPassword();
     });
-    card.append(input, error, button);
-    input.focus();
+    codeInput.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') attemptCode();
+    });
+    card.append(
+      email,
+      password,
+      passwordButton,
+      magicButton,
+      divider,
+      codeInput,
+      error,
+      status,
+      codeButton,
+    );
+    email.focus();
   });
 }
 
@@ -191,6 +285,15 @@ async function renderPlayerStep(card) {
 
 export async function showOnboardingDialog() {
   await ensurePublicConfig();
+  const callbackCaptured = captureAuthSessionFromUrl();
+  let authenticationError = null;
+  if ((callbackCaptured || Store.getSupabaseSession()?.access_token) && !Store.getAccessRole()) {
+    try {
+      await syncAccessGrant();
+    } catch (error) {
+      authenticationError = error;
+    }
+  }
   if (!getOnboardingStep()) return;
 
   const overlay = createOverlay();
@@ -199,7 +302,7 @@ export async function showOnboardingDialog() {
   document.body.appendChild(overlay);
 
   try {
-    if (getOnboardingStep() === 'access') await renderAccessStep(card);
+    if (getOnboardingStep() === 'access') await renderAccessStep(card, authenticationError);
     if (getOnboardingStep() === 'player') await renderPlayerStep(card);
   } catch (error) {
     card.innerHTML = '';

@@ -28,7 +28,7 @@ email magic-link sign-in for pre-approved users.
    - Configure custom SMTP before production use.
    - Keep anonymous sign-ins enabled only while shared-code onboarding is still supported.
 3. Provision approved users with `scripts/supabase/manage-auth-user.mjs`.
-4. Add the app login screen:
+4. The app login screen provides:
    - Password: `signInWithPassword({ email, password })`.
    - Magic link: `signInWithOtp({ email, options: { shouldCreateUser: false, emailRedirectTo } })`.
    - Restore sessions on startup and use the returned access token for PostgREST and Edge Functions.
@@ -176,10 +176,17 @@ an empty result because RLS no longer sees active access. Edge Function mutation
 
 ## Acceptance
 
+- No local grant => onboarding displays password, magic-link, and shared-code choices.
+- Approved email + valid password => session and existing member grant are restored, then player
+  selection is shown.
+- Approved email + magic-link request => request uses `create_user: false` and the current deployed
+  page as its redirect URL.
+- Magic-link callback fragment => session is stored, auth parameters are removed from the URL, and
+  the existing member grant is restored.
+- Invalid password or unapproved identity => remain on authentication with an inline error.
 - One approved Auth user can use password and magic-link login.
 - Both methods resolve to the same Auth user ID and app access grant.
 - An unapproved email cannot self-register.
 - Revocation blocks reads and writes without deleting the identity.
 - Selecting an admin player does not grant admin rights.
 - No service-role key or user password is committed or sent to the browser.
-

@@ -8,6 +8,7 @@ import { showToast } from './components/toast.js';
 import { showRefreshDialog } from './components/refresh-dialog.js';
 import { pullForRoute } from './services/backend.js';
 import { showOnboardingDialog } from './components/onboarding-dialog.js';
+import { captureAuthSessionFromUrl } from './services/supabase.js';
 import { currentDeployId, nsPrefix } from './deploy-env.js';
 
 // Pages
@@ -74,6 +75,8 @@ async function loadLocalData() {
     }
   } catch { /* not running on dev server, or no local data */ }
 }
+
+captureAuthSessionFromUrl();
 
 async function init() {
   // One-time migration: drop Supabase-owned data that older builds persisted

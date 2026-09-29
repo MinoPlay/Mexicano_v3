@@ -25,6 +25,125 @@ async function parseError(response, fallback) {
   return body?.message || body?.error_description || body?.error || fallback;
 }
 
+function normalizeEmail(email) {
+  const normalized = String(email || '').trim().toLowerCase();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized)) {
+    throw new Error('Enter a valid email address.');
+  }
+  return normalized;
+}
+
+export function captureAuthSessionFromUrl() {
+  if (typeof window === 'undefined' || !window.location.hash) return false;
+  const params = new URLSearchParams(window.location.hash.slice(1));
+  const accessToken = params.get('access_token');
+  if (!accessToken) return false;
+
+  const expiresIn = Number(params.get('expires_in') || 3600);
+  Store.setSupabaseSession({
+    access_token: accessToken,
+    refresh_token: params.get('refresh_token') || '',
+    token_type: params.get('token_type') || 'bearer',
+    expires_at: Math.floor(Date.now() / 1000) + expiresIn,
+  });
+  window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}#/`);
+  return true;
+}
+
+async function fetchCurrentAuthUser(session) {
+  const config = getConfig();
+  const response = await fetch(`${config.url}/auth/v1/user`, {
+    headers: {
+      apikey: config.anonKey,
+      Authorization: 'Bearer ' + session.access_token,
+    },
+  });
+  if (!response.ok) {
+    throw new Error(await parseError(response, `User session lookup failed (${response.status})`));
+  }
+  return response.json();
+}
+
+export async function syncAccessGrant(session = Store.getSupabaseSession()) {
+  if (!session?.access_token) throw new Error('Supabase session is missing.');
+  const config = getConfig();
+  const user = session.user || await fetchCurrentAuthUser(session);
+  if (!user?.id) throw new Error('Supabase session has no user identity.');
+  if (!session.user) {
+    session = { ...session, user };
+    Store.setSupabaseSession(session);
+  }
+
+  const response = await fetch(
+    `${config.url}/rest/v1/app_access_grants`
+      + `?select=role,expires_at,revoked_at&user_id=eq.${encodeURIComponent(user.id)}`,
+    {
+      headers: {
+        apikey: config.anonKey,
+        Authorization: 'Bearer ' + session.access_token,
+        'Content-Type': 'application/json',
+      },
+    },
+  );
+  if (!response.ok) {
+    throw new Error(await parseError(response, `Access grant lookup failed (${response.status})`));
+  }
+  const [grant] = await response.json();
+  if (!grant || grant.revoked_at || Date.parse(grant.expires_at) <= Date.now()) {
+    Store.clearSupabaseSession();
+    throw new Error('This email address does not have active Mexicano access.');
+  }
+  Store.setAccessGrant(grant);
+  return grant;
+}
+
+export async function signInWithPassword(email, password) {
+  const config = getConfig();
+  const normalizedEmail = normalizeEmail(email);
+  if (!password) throw new Error('Password is required.');
+  const response = await fetch(`${config.url}/auth/v1/token?grant_type=password`, {
+    method: 'POST',
+    headers: {
+      apikey: config.anonKey,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ email: normalizedEmail, password }),
+  });
+  if (!response.ok) {
+    throw new Error(await parseError(response, 'Email or password is incorrect.'));
+  }
+  const session = await response.json();
+  Store.setSupabaseSession(session);
+  try {
+    await syncAccessGrant(session);
+  } catch (error) {
+    Store.clearSupabaseSession();
+    throw error;
+  }
+  return session;
+}
+
+export async function sendMagicLink(email, redirectTo) {
+  const config = getConfig();
+  const normalizedEmail = normalizeEmail(email);
+  const redirectUrl = String(redirectTo || '').trim();
+  if (!redirectUrl) throw new Error('Magic-link redirect URL is missing.');
+  const response = await fetch(
+    `${config.url}/auth/v1/otp?redirect_to=${encodeURIComponent(redirectUrl)}`,
+    {
+      method: 'POST',
+      headers: {
+        apikey: config.anonKey,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ email: normalizedEmail, create_user: false }),
+    },
+  );
+  if (!response.ok) {
+    throw new Error(await parseError(response, `Magic-link request failed (${response.status})`));
+  }
+}
+
 async function createAnonymousSession() {
   const config = getConfig();
   const response = await fetch(`${config.url}/auth/v1/signup`, {

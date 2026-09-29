@@ -5,6 +5,7 @@ import * as onboarding from '../../js/components/onboarding-dialog.js';
 describe('Supabase onboarding state', () => {
   beforeEach(() => {
     localStorage.clear();
+    document.body.innerHTML = '';
     vi.restoreAllMocks();
   });
 
@@ -53,5 +54,25 @@ describe('Supabase onboarding state', () => {
     expect(Store.getAccessRole()).toBe('');
     expect(Store.getCurrentPlayerId()).toBeNull();
     expect(Store.getCurrentUser()).toBe('');
+  });
+
+  it('shows password, magic-link, and shared-code authentication choices', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        url: 'https://btyfcijkkwjhtcecrggm.supabase.co',
+        anonKey: 'public-anon-key',
+      }),
+    }));
+
+    onboarding.showOnboardingDialog();
+
+    await vi.waitFor(() => {
+      const text = document.body.textContent;
+      expect(text).toContain('Sign in with password');
+      expect(text).toContain('Send magic link');
+      expect(text).toContain('Use shared access code');
+    });
+    expect(document.querySelector('input[type="email"]')).not.toBeNull();
   });
 });

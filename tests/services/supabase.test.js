@@ -75,4 +75,105 @@ describe('Supabase browser access', () => {
       }),
     );
   });
+
+  it('signs in with password and restores the approved app grant', async () => {
+    Store.setSupabaseConfig({
+      url: 'https://example.supabase.co',
+      anonKey: 'public-anon-key',
+    });
+    const supabase = await loadSupabaseModule();
+    vi.stubGlobal('fetch', vi.fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          access_token: 'email-access-token',
+          refresh_token: 'email-refresh-token',
+          expires_at: 9999999999,
+          user: { id: 'approved-user' },
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => [{
+          role: 'member',
+          expires_at: '2099-01-01T00:00:00Z',
+          revoked_at: null,
+        }],
+      }));
+
+    await supabase.signInWithPassword('approved@example.com', 'correct-password');
+
+    expect(Store.getSupabaseSession().access_token).toBe('email-access-token');
+    expect(Store.getAccessRole()).toBe('member');
+    expect(fetch).toHaveBeenNthCalledWith(
+      1,
+      'https://example.supabase.co/auth/v1/token?grant_type=password',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({
+          email: 'approved@example.com',
+          password: 'correct-password',
+        }),
+      }),
+    );
+    expect(fetch).toHaveBeenNthCalledWith(
+      2,
+      'https://example.supabase.co/rest/v1/app_access_grants'
+        + '?select=role,expires_at,revoked_at&user_id=eq.approved-user',
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          Authorization: 'Bearer email-access-token',
+        }),
+      }),
+    );
+  });
+
+  it('requests a magic link without creating unknown users', async () => {
+    Store.setSupabaseConfig({
+      url: 'https://example.supabase.co',
+      anonKey: 'public-anon-key',
+    });
+    const supabase = await loadSupabaseModule();
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({}),
+    }));
+
+    await supabase.sendMagicLink(
+      'approved@example.com',
+      'https://minoplay.github.io/Mexicano_v3/preview/test/',
+    );
+
+    expect(fetch).toHaveBeenCalledWith(
+      'https://example.supabase.co/auth/v1/otp'
+        + '?redirect_to=https%3A%2F%2Fminoplay.github.io%2FMexicano_v3%2Fpreview%2Ftest%2F',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({
+          email: 'approved@example.com',
+          create_user: false,
+        }),
+      }),
+    );
+  });
+
+  it('captures a magic-link callback session before hash routing', async () => {
+    const supabase = await loadSupabaseModule();
+    window.history.replaceState(
+      null,
+      '',
+      '/Mexicano_v3/preview/test/#access_token=magic-token'
+        + '&refresh_token=magic-refresh&expires_in=3600&token_type=bearer&type=magiclink',
+    );
+
+    const captured = supabase.captureAuthSessionFromUrl();
+
+    expect(captured).toBe(true);
+    expect(Store.getSupabaseSession()).toEqual(expect.objectContaining({
+      access_token: 'magic-token',
+      refresh_token: 'magic-refresh',
+      token_type: 'bearer',
+    }));
+    expect(window.location.hash).toBe('#/');
+  });
 });

@@ -4,10 +4,12 @@
 
 First launch has two required steps:
 
-1. Enter the shared Mexicano app access code.
+1. Authenticate with approved email/password, approved-email magic link, or the transitional shared
+   Mexicano app access code.
 2. Select the current player profile.
 
-The access code replaces the GitHub PAT. Supabase project URL and public anon key are shipped as public application configuration.
+Supabase Auth replaces the GitHub PAT. Supabase project URL and public anon key are shipped as
+public application configuration.
 
 ## Trigger
 
@@ -17,9 +19,12 @@ The access code replaces the GitHub PAT. Supabase project URL and public anon ke
 
 ## Access
 
-- App creates/restores an anonymous Supabase Auth session.
-- `claim-access` validates the shared code server-side.
-- Successful exchange stores role/expiry only; the code is never persisted.
+- Password sign-in stores the returned Supabase session, loads the user's existing access grant, and
+  never stores the password.
+- Magic-link requests set `create_user: false`; callback tokens are captured before hash routing,
+  then the user's existing access grant is loaded.
+- Transitional shared-code access creates/restores an anonymous session and calls `claim-access`.
+- Successful authentication stores role/expiry only; passwords and access codes are never persisted.
 - Players are loaded from Supabase after the grant succeeds.
 - Selecting a player calls `bind_current_player` and stores the returned/bound player ID locally for cache lookup.
 
@@ -47,6 +52,8 @@ session, access grant, and selected-player binding before onboarding continues.
 ## UX
 
 - No dismiss/skip button.
+- Email/password, magic-link, and shared-code options are visible together.
+- A successful magic-link request reports that the user should check their email.
 - Invalid/expired access reports an inline error.
 - Missing public project configuration reports deployment misconfiguration; it does not ask users for URL/key.
 - Player list failure is an error; arbitrary free-text identity is not allowed.
@@ -54,7 +61,10 @@ session, access grant, and selected-player binding before onboarding continues.
 
 ## Acceptance
 
-- no grant => shared-code step shown.
+- no grant => email/password, magic-link, and shared-code choices shown.
+- approved email + valid password => ordinary grant restored and player selection shown.
+- approved email + magic-link callback => ordinary grant restored and player selection shown.
+- unknown magic-link email => no account is created.
 - valid code => ordinary grant stored, raw code absent from storage.
 - invalid code => remain on step 1 with error.
 - persisted config for another project + current deployed config => deployed config stored and old project session/grant/player binding cleared.
