@@ -56,7 +56,7 @@ describe('Supabase onboarding state', () => {
     expect(Store.getCurrentUser()).toBe('');
   });
 
-  it('shows password, magic-link, and shared-code authentication choices', async () => {
+  it('shows magic-link and shared-code authentication choices without password login', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({
@@ -69,10 +69,11 @@ describe('Supabase onboarding state', () => {
 
     await vi.waitFor(() => {
       const text = document.body.textContent;
-      expect(text).toContain('Sign in with password');
       expect(text).toContain('Send magic link');
       expect(text).toContain('Use shared access code');
+      expect(text).not.toContain('Sign in with password');
     });
     expect(document.querySelector('input[type="email"]')).not.toBeNull();
+    expect(document.querySelector('input[placeholder="Password"]')).toBeNull();
   });
 });

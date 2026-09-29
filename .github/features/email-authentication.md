@@ -2,17 +2,22 @@
 
 ## Goal
 
-Replace GitHub PAT authentication with Supabase Auth while supporting both email/password and
-email magic-link sign-in for pre-approved users.
+Replace GitHub PAT authentication with Supabase Auth while supporting magic-link sign-in for
+pre-approved users.
 
 ## Architecture
 
 - Supabase Auth owns credentials and sessions.
-- `approved_auth_users` records which Auth users are approved for Mexicano.
+- `players.email` is the authoritative allowlist. Only an active player row whose `email` matches
+  (case-insensitively) may be approved for email sign-in.
+- `approved_auth_users` records which Auth users are approved for Mexicano and stores the
+  `player_id` resolved from `players.email`.
 - `app_access_grants` remains the single authorization source used by RLS and Edge Functions.
+  `selected_player_id` is set from the resolved player, so email users skip the player-selection
+  step during onboarding.
 - The local provisioning script creates or updates the Auth user, records approval, and grants
   member access.
-- Password and magic-link sign-in resolve to the same `auth.users.id`.
+- Magic-link sign-in resolves to the approved `auth.users.id`.
 - Public self-signup is disabled. Unapproved addresses cannot create accounts.
 - Existing anonymous shared-code access can remain enabled during migration, then be retired
   separately after all users have moved.
@@ -20,7 +25,8 @@ email magic-link sign-in for pre-approved users.
 
 ## Rollout plan
 
-1. Apply `supabase/migrations/20260929133000_approved_email_auth.sql`.
+1. Apply `supabase/migrations/20260929133000_approved_email_auth.sql`, then
+   `supabase/migrations/20260929143000_players_email_allowlist.sql` (in that order).
 2. In Supabase Dashboard:
    - Authentication -> Sign In / Providers -> Email: keep Email enabled.
    - Disable **Allow new users to sign up**.
@@ -29,7 +35,6 @@ email magic-link sign-in for pre-approved users.
    - Keep anonymous sign-ins enabled only while shared-code onboarding is still supported.
 3. Provision approved users with `scripts/supabase/manage-auth-user.mjs`.
 4. The app login screen provides:
-   - Password: `signInWithPassword({ email, password })`.
    - Magic link: `signInWithOtp({ email, options: { shouldCreateUser: false, emailRedirectTo } })`.
    - Restore sessions on startup and use the returned access token for PostgREST and Edge Functions.
 5. Migrate users in small batches and verify audit attribution/player binding.
@@ -41,7 +46,8 @@ email magic-link sign-in for pre-approved users.
 ### Supabase SQL Editor
 
 Open `supabase/migrations/20260929133000_approved_email_auth.sql`, paste the full file into a new
-SQL query, and run it once.
+SQL query, and run it once. Repeat for
+`supabase/migrations/20260929143000_players_email_allowlist.sql`.
 
 ### Supabase CLI
 
@@ -53,26 +59,29 @@ npx supabase db push
 
 ## Provision an approved user
 
-Use PowerShell environment variables so secrets and initial passwords are not placed in shell
-history:
+Use PowerShell environment variables for the Supabase service-role key:
 
 ```powershell
 $env:SUPABASE_URL = 'https://<project-ref>.supabase.co'
 $env:SUPABASE_SERVICE_ROLE_KEY = '<service-role-key>'
-$env:AUTH_USER_PASSWORD = '<temporary-password-at-least-8-characters>'
 npm run auth:user:supabase -- approve approved@example.com
-Remove-Item Env:AUTH_USER_PASSWORD
 ```
 
-This enables both password and magic-link login. Omit `AUTH_USER_PASSWORD` to create a magic-link
-only account initially. Re-running `approve` with `AUTH_USER_PASSWORD` sets or replaces its password.
+This provisions an email-confirmed account for magic-link login only. Existing password credentials
+are not used by the application.
 
 Inspect or revoke access:
 
 ```powershell
 npm run auth:user:supabase -- status approved@example.com
 npm run auth:user:supabase -- revoke approved@example.com
+npm run auth:user:supabase -- list
 ```
+
+`list` prints every allowed email derived from active `players.email` values, together with the
+player it maps to and whether that player currently has active access. `approve` fails with
+`<email> is not an approved Mexicano email` when the address is absent from `players.email`; add
+or correct the player row first.
 
 Revocation removes application access immediately. It intentionally does not delete the Auth user,
 so access can be restored without creating a second identity.
@@ -103,42 +112,13 @@ Use a non-production test user first.
 
 | Scenario | Steps | Expected |
 |---|---|---|
-| Approved password | Provision with `AUTH_USER_PASSWORD`; sign in with email/password; load `players` | Login succeeds and protected data is returned |
 | Approved magic link | Provision user; request magic link; click it from the same browser; load app | Session is created for the same Auth user and protected data is returned |
-| Wrong password | Use approved email with an incorrect password | Auth returns invalid credentials; no session |
-| Unknown password signup | Call sign-up with an unapproved email | Rejected because new-user signup is disabled |
 | Unknown magic link | Request a magic link for an unapproved email | No Auth user is created and no usable link grants access; response may be generic to prevent email enumeration |
 | Revoked user | Sign in, run `revoke`, retry a protected read and mutation | Existing token remains an identity, but RLS returns no protected rows and mutation rejects active access |
 | Re-approved user | Run `approve` again, refresh/sign in again | Access works with the original Auth user ID |
 | Expired grant | Temporarily set test grant expiry to the past | Protected reads and writes are denied |
 | Anonymous transition | Complete old shared-code flow while anonymous sign-ins remain enabled | Existing onboarding still works during migration |
 | Admin separation | Sign in as approved member and select an admin player without elevation | Admin mutation remains denied |
-
-### Password test without the app UI
-
-```powershell
-$body = @{
-  email = 'approved@example.com'
-  password = $env:AUTH_USER_PASSWORD
-} | ConvertTo-Json
-
-$session = Invoke-RestMethod `
-  -Method Post `
-  -Uri "$env:SUPABASE_URL/auth/v1/token?grant_type=password" `
-  -Headers @{ apikey = '<public-anon-key>' } `
-  -ContentType 'application/json' `
-  -Body $body
-
-Invoke-RestMethod `
-  -Method Get `
-  -Uri "$env:SUPABASE_URL/rest/v1/players?select=id,name&limit=1" `
-  -Headers @{
-    apikey = '<public-anon-key>'
-    Authorization = "Bearer $($session.access_token)"
-  }
-```
-
-Expected: the first call returns an access token and the second returns a player row.
 
 ### Magic-link request without the app UI
 
@@ -176,16 +156,12 @@ an empty result because RLS no longer sees active access. Edge Function mutation
 
 ## Acceptance
 
-- No local grant => onboarding displays password, magic-link, and shared-code choices.
-- Approved email + valid password => session and existing member grant are restored, then player
-  selection is shown.
+- No local grant => onboarding displays magic-link and shared-code choices.
 - Approved email + magic-link request => request uses `create_user: false` and the current deployed
   page as its redirect URL.
 - Magic-link callback fragment => session is stored, auth parameters are removed from the URL, and
   the existing member grant is restored.
-- Invalid password or unapproved identity => remain on authentication with an inline error.
-- One approved Auth user can use password and magic-link login.
-- Both methods resolve to the same Auth user ID and app access grant.
+- Unapproved identity => remain on authentication with an inline error.
 - An unapproved email cannot self-register.
 - Revocation blocks reads and writes without deleting the identity.
 - Selecting an admin player does not grant admin rights.

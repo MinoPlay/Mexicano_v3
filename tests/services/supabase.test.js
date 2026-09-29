@@ -76,58 +76,6 @@ describe('Supabase browser access', () => {
     );
   });
 
-  it('signs in with password and restores the approved app grant', async () => {
-    Store.setSupabaseConfig({
-      url: 'https://example.supabase.co',
-      anonKey: 'public-anon-key',
-    });
-    const supabase = await loadSupabaseModule();
-    vi.stubGlobal('fetch', vi.fn()
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({
-          access_token: 'email-access-token',
-          refresh_token: 'email-refresh-token',
-          expires_at: 9999999999,
-          user: { id: 'approved-user' },
-        }),
-      })
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => [{
-          role: 'member',
-          expires_at: '2099-01-01T00:00:00Z',
-          revoked_at: null,
-        }],
-      }));
-
-    await supabase.signInWithPassword('approved@example.com', 'correct-password');
-
-    expect(Store.getSupabaseSession().access_token).toBe('email-access-token');
-    expect(Store.getAccessRole()).toBe('member');
-    expect(fetch).toHaveBeenNthCalledWith(
-      1,
-      'https://example.supabase.co/auth/v1/token?grant_type=password',
-      expect.objectContaining({
-        method: 'POST',
-        body: JSON.stringify({
-          email: 'approved@example.com',
-          password: 'correct-password',
-        }),
-      }),
-    );
-    expect(fetch).toHaveBeenNthCalledWith(
-      2,
-      'https://example.supabase.co/rest/v1/app_access_grants'
-        + '?select=role,expires_at,revoked_at&user_id=eq.approved-user',
-      expect.objectContaining({
-        headers: expect.objectContaining({
-          Authorization: 'Bearer email-access-token',
-        }),
-      }),
-    );
-  });
-
   it('requests a magic link without creating unknown users', async () => {
     Store.setSupabaseConfig({
       url: 'https://example.supabase.co',

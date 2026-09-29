@@ -5,7 +5,6 @@ import {
   claimAccess,
   listPlayers,
   sendMagicLink,
-  signInWithPassword,
   syncAccessGrant,
 } from '../services/supabase.js';
 
@@ -109,17 +108,6 @@ function renderAccessStep(card, initialError = null) {
     email.className = 'form-input';
     Object.assign(email.style, { width: '100%', boxSizing: 'border-box', marginBottom: '10px' });
 
-    const password = document.createElement('input');
-    password.type = 'password';
-    password.placeholder = 'Password';
-    password.autocomplete = 'current-password';
-    password.className = 'form-input';
-    Object.assign(password.style, { width: '100%', boxSizing: 'border-box', marginBottom: '10px' });
-
-    const passwordButton = document.createElement('button');
-    passwordButton.textContent = 'Sign in with password';
-    passwordButton.className = 'btn btn-primary btn-block';
-
     const magicButton = document.createElement('button');
     magicButton.textContent = 'Send magic link';
     magicButton.className = 'btn btn-secondary btn-block';
@@ -176,22 +164,6 @@ function renderAccessStep(card, initialError = null) {
       }
     };
 
-    const attemptPassword = async () => {
-      error.style.display = 'none';
-      status.style.display = 'none';
-      passwordButton.disabled = true;
-      passwordButton.textContent = 'Signing in…';
-      try {
-        await signInWithPassword(email.value, password.value);
-        password.value = '';
-        resolve();
-      } catch (signInError) {
-        showError(error, signInError);
-        passwordButton.disabled = false;
-        passwordButton.textContent = 'Sign in with password';
-      }
-    };
-
     const requestMagicLink = async () => {
       error.style.display = 'none';
       status.style.display = 'none';
@@ -210,19 +182,13 @@ function renderAccessStep(card, initialError = null) {
       }
     };
 
-    passwordButton.addEventListener('click', attemptPassword);
     magicButton.addEventListener('click', requestMagicLink);
     codeButton.addEventListener('click', attemptCode);
-    password.addEventListener('keydown', (event) => {
-      if (event.key === 'Enter') attemptPassword();
-    });
     codeInput.addEventListener('keydown', (event) => {
       if (event.key === 'Enter') attemptCode();
     });
     card.append(
       email,
-      password,
-      passwordButton,
       magicButton,
       divider,
       codeInput,

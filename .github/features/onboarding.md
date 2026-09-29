@@ -4,8 +4,8 @@
 
 First launch has two required steps:
 
-1. Authenticate with approved email/password, approved-email magic link, or the transitional shared
-   Mexicano app access code.
+1. Authenticate with an approved-email magic link or the transitional shared Mexicano app access
+   code.
 2. Select the current player profile.
 
 Supabase Auth replaces the GitHub PAT. Supabase project URL and public anon key are shipped as
@@ -19,13 +19,13 @@ public application configuration.
 
 ## Access
 
-- Password sign-in stores the returned Supabase session, loads the user's existing access grant, and
-  never stores the password.
 - Magic-link requests set `create_user: false`; callback tokens are captured before hash routing,
   then the user's existing access grant is loaded.
 - Transitional shared-code access creates/restores an anonymous session and calls `claim-access`.
 - Successful authentication stores role/expiry only; passwords and access codes are never persisted.
 - Players are loaded from Supabase after the grant succeeds.
+- When the grant has a `selected_player_id` (set by email approval from `players.email`), the player
+  name is fetched and bound automatically and the player-selection step is skipped.
 - Selecting a player calls `bind_current_player` and stores the returned/bound player ID locally for cache lookup.
 
 ## Admin
@@ -52,7 +52,7 @@ session, access grant, and selected-player binding before onboarding continues.
 ## UX
 
 - No dismiss/skip button.
-- Email/password, magic-link, and shared-code options are visible together.
+- Magic-link and shared-code options are visible together.
 - A successful magic-link request reports that the user should check their email.
 - Invalid/expired access reports an inline error.
 - Missing public project configuration reports deployment misconfiguration; it does not ask users for URL/key.
@@ -61,8 +61,7 @@ session, access grant, and selected-player binding before onboarding continues.
 
 ## Acceptance
 
-- no grant => email/password, magic-link, and shared-code choices shown.
-- approved email + valid password => ordinary grant restored and player selection shown.
+- no grant => magic-link and shared-code choices shown.
 - approved email + magic-link callback => ordinary grant restored and player selection shown.
 - unknown magic-link email => no account is created.
 - valid code => ordinary grant stored, raw code absent from storage.

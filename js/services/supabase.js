@@ -76,7 +76,8 @@ export async function syncAccessGrant(session = Store.getSupabaseSession()) {
 
   const response = await fetch(
     `${config.url}/rest/v1/app_access_grants`
-      + `?select=role,expires_at,revoked_at&user_id=eq.${encodeURIComponent(user.id)}`,
+      + `?select=role,expires_at,revoked_at,selected_player_id`
+      + `&user_id=eq.${encodeURIComponent(user.id)}`,
     {
       headers: {
         apikey: config.anonKey,
@@ -94,33 +95,29 @@ export async function syncAccessGrant(session = Store.getSupabaseSession()) {
     throw new Error('This email address does not have active Mexicano access.');
   }
   Store.setAccessGrant(grant);
+  if (grant.selected_player_id) {
+    await bindPlayerFromGrant(grant.selected_player_id, session);
+  }
   return grant;
 }
 
-export async function signInWithPassword(email, password) {
+async function bindPlayerFromGrant(playerId, session) {
   const config = getConfig();
-  const normalizedEmail = normalizeEmail(email);
-  if (!password) throw new Error('Password is required.');
-  const response = await fetch(`${config.url}/auth/v1/token?grant_type=password`, {
-    method: 'POST',
-    headers: {
-      apikey: config.anonKey,
-      'Content-Type': 'application/json',
+  const response = await fetch(
+    `${config.url}/rest/v1/players?select=id,name&id=eq.${encodeURIComponent(playerId)}`,
+    {
+      headers: {
+        apikey: config.anonKey,
+        Authorization: 'Bearer ' + session.access_token,
+        'Content-Type': 'application/json',
+      },
     },
-    body: JSON.stringify({ email: normalizedEmail, password }),
-  });
-  if (!response.ok) {
-    throw new Error(await parseError(response, 'Email or password is incorrect.'));
-  }
-  const session = await response.json();
-  Store.setSupabaseSession(session);
-  try {
-    await syncAccessGrant(session);
-  } catch (error) {
-    Store.clearSupabaseSession();
-    throw error;
-  }
-  return session;
+  );
+  if (!response.ok) return;
+  const [player] = await response.json();
+  if (!player?.name) return;
+  Store.setCurrentPlayerId(player.id);
+  Store.setCurrentUser(player.name);
 }
 
 export async function sendMagicLink(email, redirectTo) {

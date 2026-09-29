@@ -59,15 +59,13 @@ async function findAuthUser(supabaseUrl, serviceRoleKey, email) {
   throw new Error('Auth user lookup exceeded 100 pages.');
 }
 
-async function ensureAuthUser(supabaseUrl, serviceRoleKey, email, password) {
+async function ensureAuthUser(supabaseUrl, serviceRoleKey, email) {
   const existing = await findAuthUser(supabaseUrl, serviceRoleKey, email);
   const body = {
     email,
     email_confirm: true,
     user_metadata: { mexicano_access: 'approved-email' },
   };
-  if (password) body.password = password;
-
   if (!existing) {
     return apiRequest(`${supabaseUrl}/auth/v1/admin/users`, serviceRoleKey, {
       method: 'POST',
@@ -75,11 +73,7 @@ async function ensureAuthUser(supabaseUrl, serviceRoleKey, email, password) {
     }).then((result) => result?.user || result);
   }
 
-  if (!password) return existing;
-  return apiRequest(`${supabaseUrl}/auth/v1/admin/users/${existing.id}`, serviceRoleKey, {
-    method: 'PUT',
-    body: JSON.stringify(body),
-  }).then((result) => result?.user || result);
+  return existing;
 }
 
 async function invokeRpc(supabaseUrl, serviceRoleKey, functionName, body) {
@@ -94,17 +88,12 @@ export async function approveUser(email, options = {}) {
   const supabaseUrl = (options.supabaseUrl || requiredEnvironment('SUPABASE_URL'))
     .replace(/\/+$/, '');
   const serviceRoleKey = options.serviceRoleKey || requiredEnvironment('SUPABASE_SERVICE_ROLE_KEY');
-  const password = options.password ?? process.env.AUTH_USER_PASSWORD?.trim();
   const accessDays = Number(options.accessDays ?? process.env.AUTH_USER_ACCESS_DAYS ?? 3650);
   if (!Number.isFinite(accessDays) || accessDays <= 0) {
     throw new Error('AUTH_USER_ACCESS_DAYS must be a positive number.');
   }
-  if (password && password.length < 8) {
-    throw new Error('AUTH_USER_PASSWORD must contain at least 8 characters.');
-  }
-
   const normalizedEmail = normalizeEmail(email);
-  const user = await ensureAuthUser(supabaseUrl, serviceRoleKey, normalizedEmail, password);
+  const user = await ensureAuthUser(supabaseUrl, serviceRoleKey, normalizedEmail);
   const expiresAt = new Date(Date.now() + accessDays * 86400000).toISOString();
   const approval = await invokeRpc(supabaseUrl, serviceRoleKey, 'approve_email_user', {
     p_user_id: user.id,
@@ -113,7 +102,7 @@ export async function approveUser(email, options = {}) {
     p_approved_by: process.env.AUTH_USER_APPROVED_BY || 'local-script',
     p_notes: process.env.AUTH_USER_NOTES || null,
   });
-  return { ...approval, password_enabled: Boolean(password) };
+  return approval;
 }
 
 export async function revokeUser(email, options = {}) {
@@ -125,6 +114,13 @@ export async function revokeUser(email, options = {}) {
   });
 }
 
+export async function listAllowedEmails(options = {}) {
+  const supabaseUrl = (options.supabaseUrl || requiredEnvironment('SUPABASE_URL'))
+    .replace(/\/+$/, '');
+  const serviceRoleKey = options.serviceRoleKey || requiredEnvironment('SUPABASE_SERVICE_ROLE_KEY');
+  return invokeRpc(supabaseUrl, serviceRoleKey, 'list_allowed_emails', {});
+}
+
 export async function getUserStatus(email, options = {}) {
   const supabaseUrl = (options.supabaseUrl || requiredEnvironment('SUPABASE_URL'))
     .replace(/\/+$/, '');
@@ -133,7 +129,7 @@ export async function getUserStatus(email, options = {}) {
   const encodedEmail = encodeURIComponent(normalizedEmail);
   const rows = await apiRequest(
     `${supabaseUrl}/rest/v1/approved_auth_users`
-      + `?select=user_id,email,approved_at,approved_by,revoked_at,notes`
+      + `?select=user_id,email,player_id,approved_at,approved_by,revoked_at,notes`
       + `&email=eq.${encodedEmail}`,
     serviceRoleKey,
   );
@@ -147,9 +143,14 @@ export async function getUserStatus(email, options = {}) {
 
 async function main(argv) {
   const [command, email] = argv;
+  if (command === 'list') {
+    console.log(JSON.stringify(await listAllowedEmails(), null, 2));
+    return;
+  }
   if (!['approve', 'revoke', 'status'].includes(command) || !email) {
     throw new Error(
-      'Usage: node scripts/supabase/manage-auth-user.mjs <approve|revoke|status> <email>',
+      'Usage: node scripts/supabase/manage-auth-user.mjs <approve|revoke|status> <email>'
+      + ' | node scripts/supabase/manage-auth-user.mjs list',
     );
   }
   const actions = {
