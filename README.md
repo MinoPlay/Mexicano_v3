@@ -34,7 +34,6 @@ Production reads and writes use Supabase. DataHub_Mexicano is a generated backup
 
 - `supabase/migrations/` defines canonical tables, RLS, access grants, audit events, projections, and the notification outbox.
 - `scripts/supabase/import-datahub.mjs` backfills Supabase from the existing `C:\Private\DataHub_Mexicano\mexicano_v3\backup-data` folder.
-- `scripts/supabase/build-elo-projection.mjs` rebuilds versioned ELO snapshots from canonical matches.
 - `scripts/supabase/export-to-github.mjs` writes legacy JSON plus sanitized canonical snapshots and a hashed manifest.
 - `scripts/supabase/verify-backup.mjs` validates exported hashes and row counts.
 - `.github/features/supabase-migration.md` documents the source-of-truth rules and the derived-data policy for ELO.

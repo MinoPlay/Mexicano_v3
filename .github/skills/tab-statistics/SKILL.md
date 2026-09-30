@@ -20,7 +20,7 @@ The Statistics panel has a filter bar and a sortable table. Filter state is stor
 
 - `all` — all-time stats from `Store.getPlayersSummary()` / `players.json`; fallback computes from local matches.
 - `latest` — stats for `getLatestCompleteTournamentDate()`.
-- `YYYY-MM` — monthly overview from `Store.getMonthlyOverview(yearMonth)`, prebuilt during Supabase hydration from canonical matches and persisted ELO snapshots.
+- `YYYY-MM` — monthly overview from `Store.getMonthlyOverview(yearMonth)`, prebuilt during Supabase hydration from canonical matches, with ELO calculated at runtime.
 - `YYYY-MM-DD` — one tournament day from cached matches or `ensureDayMatchesLoaded(date)`.
 
 The main table is rendered by `renderSortableTable(container, stats, onPlayerClick, columns = STAT_COLUMNS, defaultSort = 'average')`. `STAT_COLUMNS` defines `#`, `NAME`, `W/T`, `PTS`, `AVG`, `WIN`, `ELO`, and `WLO`. Default sort is `average` descending; `name` defaults to ascending when first selected. User header clicks use `getNextStatisticsSortState`, then `sortStatisticsRows`, which sorts by the selected column, then `wins` descending, then `name` ascending. `rank` is recalculated after sorting. The `rank` column is not clickable. Column resize handles support drag resize and double-click auto-fit.

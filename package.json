@@ -7,7 +7,6 @@
     "start": "node server.js",
     "dev": "node server.js",
     "migrate:datahub:supabase": "node scripts/supabase/import-datahub.mjs",
-    "project:elo:supabase": "node scripts/supabase/build-elo-projection.mjs",
     "backup:supabase:github": "node scripts/supabase/export-to-github.mjs",
     "auth:user:supabase": "node scripts/supabase/manage-auth-user.mjs",
     "test:unit": "vitest run",

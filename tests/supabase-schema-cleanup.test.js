@@ -4,7 +4,6 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { Cache } from '../js/cache.js';
 import { Store } from '../js/store.js';
 import { buildTournamentFromRows } from '../js/services/tournament-shape.js';
-import { buildEloProjection } from '../scripts/supabase/build-elo-projection.mjs';
 
 const migrationPath = path.resolve('supabase/migrations/20260930100000_schema_cleanup.sql');
 const read = (file) => fs.readFileSync(path.resolve(file), 'utf8');
@@ -177,8 +176,13 @@ describe('Edge function and scripts', () => {
     }
   });
 
-  it('ELO projection payload has no version bookkeeping', () => {
-    const projection = buildEloProjection({ matches: [], match_players: [] });
-    expect(projection).toEqual({ snapshots: [] });
+  it('stored ELO projection is removed; ELO is runtime-only', () => {
+    const sql = read('supabase/migrations/20260930130000_drop_elo_snapshots.sql');
+    expect(sql).toContain('drop function if exists public.replace_elo_projection(jsonb)');
+    expect(sql).toContain('drop table if exists public.elo_snapshots');
+    expect(fs.existsSync(path.resolve('scripts/supabase/build-elo-projection.mjs'))).toBe(false);
+    expect(read('package.json')).not.toContain('project:elo');
+    expect(read('js/services/supabase.js')).not.toContain('elo_snapshots');
+    expect(read('scripts/supabase/export-to-github.mjs')).not.toContain('elo_snapshots');
   });
 });

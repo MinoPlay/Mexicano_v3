@@ -43,9 +43,6 @@ describe('Supabase domain hydration', () => {
         { match_id: 'm1', player_id: 'p3', team: 2, position: 1 },
         { match_id: 'm1', player_id: 'p4', team: 2, position: 2 },
       ],
-      elo_snapshots: [
-        { tournament_id: 't1', player_id: 'p1', elo: 1016, previous_elo: 1000 },
-      ],
       doodle_availability: [
         { availability_date: '2026-01-08', player_id: 'p1' },
       ],
@@ -67,11 +64,22 @@ describe('Supabase domain hydration', () => {
       team2Player1Name: 'C',
       team2Player2Name: 'D',
     }]);
+    // ELO is calculated at runtime from matches; no elo_snapshots rows are provided.
     expect(Store.getPlayersSummary()[0]).toMatchObject({
       id: 'p1',
       name: 'A',
       elo: 1016,
       previousElo: 1000,
+    });
+    expect(Store.getPlayersSummary()[2]).toMatchObject({
+      name: 'C',
+      elo: 984.74,
+      previousElo: 1000,
+    });
+    expect(Cache.get('elo_history_player_p3')).toEqual({
+      playerId: 'p3',
+      playerName: 'C',
+      points: [{ date: '2026-01-01', elo: 984.74, delta: -15.3 }],
     });
     expect(Store.getTournamentsIndex()).toEqual([{
       date: '2026-01-01',
@@ -109,6 +117,7 @@ describe('Supabase domain hydration', () => {
         losses: 1,
         totalPoints: 10,
         average: 10,
+        elo: 984.74,
       }),
       expect.objectContaining({
         name: 'D',
@@ -145,7 +154,7 @@ describe('Supabase domain hydration', () => {
       supabase.pullForRoute('#/statistics', { force: true }),
     ]);
 
-    expect(fetch).toHaveBeenCalledTimes(7);
+    expect(fetch).toHaveBeenCalledTimes(6);
     const urls = fetch.mock.calls.map(([url]) => url);
     expect(urls.some((url) => url.includes('/rest/v1/match_players?'))).toBe(false);
     expect(urls.some((url) => url.includes('/rest/v1/tournament_players?'))).toBe(false);
@@ -235,6 +244,19 @@ describe('Supabase domain hydration', () => {
         ];
       } else if (url.includes('/rest/v1/matches?')) {
         rows = [{
+          id: 'm-old',
+          tournament_id: 't-old',
+          round_number: 1,
+          match_order: 1,
+          score_team_1: 13,
+          score_team_2: 10,
+          match_players: [
+            { player_id: 'p1', team: 1, position: 1 },
+            { player_id: 'p2', team: 1, position: 2 },
+            { player_id: 'p3', team: 2, position: 1 },
+            { player_id: 'p4', team: 2, position: 2 },
+          ],
+        }, {
           id: 'm1',
           tournament_id: 't-sep',
           round_number: 1,
@@ -248,10 +270,6 @@ describe('Supabase domain hydration', () => {
             { player_id: 'p4', team: 2, position: 2 },
           ],
         }];
-      } else if (url.includes('/rest/v1/elo_snapshots?')) {
-        rows = [
-          { tournament_id: 't-sep', player_id: 'p1', elo: 1016, previous_elo: 1000 },
-        ];
       }
       return { ok: true, status: 200, json: async () => rows };
     }));
@@ -262,26 +280,48 @@ describe('Supabase domain hydration', () => {
     await backend.pullMonthlyOverview('2026-09');
     await backend.pullMonthlyOverview('2026-08');
 
-    expect(fetch).toHaveBeenCalledTimes(4);
+    expect(fetch).toHaveBeenCalledTimes(3);
     const urls = fetch.mock.calls.map(([url]) => url);
     expect(urls.find((url) => url.includes('/rest/v1/tournaments?')))
       .not.toContain('matches(');
+    // Runtime ELO needs the full match history, so matches are not filtered by tournament.
     expect(urls.find((url) => url.includes('/rest/v1/matches?')))
-      .toContain('tournament_id=in.(t-aug,t-sep)');
-    expect(urls.find((url) => url.includes('/rest/v1/elo_snapshots?')))
-      .toContain('tournament_id=in.(t-aug,t-sep)');
+      .not.toContain('tournament_id=in.');
+    expect(urls.some((url) => url.includes('/rest/v1/elo_snapshots?'))).toBe(false);
     expect(urls.some((url) => url.includes('/rest/v1/doodle_availability?'))).toBe(false);
     expect(urls.some((url) => url.includes('/rest/v1/attendance_records?'))).toBe(false);
     expect(Cache.get('home_matches')).toEqual([
       expect.objectContaining({ date: '2026-09-24', scoreTeam1: 13, scoreTeam2: 10 }),
     ]);
     expect(Cache.get('home_players_summary')).toEqual([
-      expect.objectContaining({ name: 'A', elo: 1016 }),
+      expect.objectContaining({ name: 'A', elo: 1030.56, previousElo: 1016, wins: 1 }),
       expect.objectContaining({ name: 'B' }),
       expect.objectContaining({ name: 'C' }),
       expect.objectContaining({ name: 'D' }),
     ]);
+    expect(Store.getMonthlyOverview('2026-09')).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: 'A', wins: 1, elo: 1030.56 }),
+      expect.objectContaining({ name: 'C', wins: 0, elo: 970.84 }),
+    ]));
     expect(Store.getMatches()).toEqual(existingMatches);
+  });
+
+  it('full hydration calculates ELO at runtime without reading elo_snapshots', async () => {
+    Store.setSupabaseConfig({ url: 'https://example.supabase.co', anonKey: 'anon' });
+    Store.setSupabaseSession({
+      access_token: 'access-token',
+      refresh_token: 'refresh-token',
+      expires_at: 9999999999,
+    });
+    vi.stubGlobal('fetch', vi.fn().mockImplementation(async () => ({
+      ok: true, status: 200, json: async () => [],
+    })));
+
+    await supabase.pullForRoute('#/__full__');
+
+    const urls = fetch.mock.calls.map(([url]) => url);
+    expect(urls.some((url) => url.includes('/rest/v1/matches?'))).toBe(true);
+    expect(urls.some((url) => url.includes('/rest/v1/elo_snapshots?'))).toBe(false);
   });
 
   it.each(['#/logs', '#/settings'])('skips canonical hydration for %s', async (hash) => {

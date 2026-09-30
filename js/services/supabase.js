@@ -2,6 +2,7 @@ import { Store } from '../store.js';
 import { Cache } from '../cache.js';
 import { calculatePlayerStatistics } from './statistics.js';
 import { buildTournamentFromRows } from './tournament-shape.js';
+import { getEloSnapshots } from './elo.js';
 
 const EXPIRY_SKEW_SECONDS = 30;
 const snapshotPromises = new Map();
@@ -341,13 +342,23 @@ function buildAppMatches(dataset, playersById, tournamentsById) {
   }).sort((a, b) => a.date.localeCompare(b.date) || a.roundNumber - b.roundNumber);
 }
 
-function buildPlayerSummary(dataset, appMatches, playersById, tournamentsById) {
-  const latestElo = new Map();
-  for (const snapshot of dataset.elo_snapshots || []) {
-    const date = tournamentsById.get(snapshot.tournament_id)?.tournament_date || '';
-    const current = latestElo.get(snapshot.player_id);
-    if (!current || date > current.date) latestElo.set(snapshot.player_id, { ...snapshot, date });
+// ELO is derived at runtime from the full match history:
+// player name -> [{ date, elo, previous_elo }] (end of each tournament, ascending).
+function buildRuntimeElo(allAppMatches) {
+  const { snapshots } = getEloSnapshots(allAppMatches);
+  const eloByName = new Map();
+  for (const [name, byDate] of Object.entries(snapshots)) {
+    let previous = 1000;
+    eloByName.set(name, Object.keys(byDate).sort().map((date) => {
+      const point = { date, elo: byDate[date], previous_elo: previous };
+      previous = byDate[date];
+      return point;
+    }));
   }
+  return eloByName;
+}
+
+function buildPlayerSummary(dataset, appMatches, eloByName) {
 
   const stats = new Map();
   const ensureStats = (name) => {
@@ -378,7 +389,7 @@ function buildPlayerSummary(dataset, appMatches, playersById, tournamentsById) {
     const playerStats = stats.get(player.name) || {
       wins: 0, losses: 0, points: 0, games: 0, tournaments: new Set(),
     };
-    const elo = latestElo.get(player.id);
+    const elo = eloByName.get(player.name)?.at(-1);
     return {
       id: player.id,
       name: player.name,
@@ -459,31 +470,23 @@ function hydrateAttendance(dataset, playersById) {
     .sort((a, b) => a.date.localeCompare(b.date)));
 }
 
-function hydrateEloHistory(dataset, playersById, tournamentsById) {
-  const byPlayer = new Map();
-  for (const snapshot of dataset.elo_snapshots || []) {
-    const player = playersById.get(snapshot.player_id);
-    const date = tournamentsById.get(snapshot.tournament_id)?.tournament_date;
-    if (!player || !date) continue;
-    const points = byPlayer.get(player.id) || [];
-    points.push({
-      date,
-      elo: Number(snapshot.elo),
-      delta: Math.round((Number(snapshot.elo) - Number(snapshot.previous_elo)) * 10) / 10,
-    });
-    byPlayer.set(player.id, points);
-  }
-  for (const [playerId, points] of byPlayer) {
-    const player = playersById.get(playerId);
-    Cache.set(`elo_history_player_${playerId}`, {
-      playerId,
+function hydrateEloHistory(dataset, eloByName) {
+  for (const player of dataset.players || []) {
+    const history = eloByName.get(player.name);
+    if (!history?.length) continue;
+    Cache.set(`elo_history_player_${player.id}`, {
+      playerId: player.id,
       playerName: player.name,
-      points: points.sort((a, b) => a.date.localeCompare(b.date)),
+      points: history.map(({ date, elo, previous_elo: previousElo }) => ({
+        date,
+        elo,
+        delta: Math.round((elo - previousElo) * 10) / 10,
+      })),
     });
   }
 }
 
-function hydrateMonthlyProjections(dataset, appMatches, playersById, tournamentsById) {
+function hydrateMonthlyProjections(appMatches, eloByName) {
   for (const key of Cache.keys('monthly_')) Cache.del(key);
 
   const matchesByMonth = new Map();
@@ -510,17 +513,13 @@ function hydrateMonthlyProjections(dataset, appMatches, playersById, tournaments
   }
 
   const monthlyElo = new Map();
-  for (const snapshot of dataset.elo_snapshots || []) {
-    const date = tournamentsById.get(snapshot.tournament_id)?.tournament_date;
-    const player = playersById.get(snapshot.player_id);
-    if (!date || !player) continue;
-    const month = date.slice(0, 7);
-    const eloByPlayer = monthlyElo.get(month) || new Map();
-    const current = eloByPlayer.get(player.name);
-    if (!current || date > current.date) {
-      eloByPlayer.set(player.name, { date, elo: Number(snapshot.elo) });
+  for (const [name, history] of eloByName) {
+    for (const { date, elo } of history) {
+      const month = date.slice(0, 7);
+      const eloByPlayer = monthlyElo.get(month) || new Map();
+      eloByPlayer.set(name, { date, elo });
+      monthlyElo.set(month, eloByPlayer);
     }
-    monthlyElo.set(month, eloByPlayer);
   }
 
   for (const [month, matches] of matchesByMonth) {
@@ -610,7 +609,8 @@ export function hydrateSupabaseDataset(dataset) {
   const playersById = new Map((dataset.players || []).map((player) => [player.id, player]));
   const tournamentsById = new Map((dataset.tournaments || []).map((tournament) => [tournament.id, tournament]));
   const appMatches = buildAppMatches(dataset, playersById, tournamentsById);
-  const summary = buildPlayerSummary(dataset, appMatches, playersById, tournamentsById);
+  const eloByName = buildRuntimeElo(appMatches);
+  const summary = buildPlayerSummary(dataset, appMatches, eloByName);
 
   Store.setMatches(appMatches);
   Store.setMembers(summary.map((player) => player.name).sort());
@@ -619,8 +619,8 @@ export function hydrateSupabaseDataset(dataset) {
   hydrateDoodles(dataset, playersById);
   hydrateDoodleChangelog(dataset, playersById);
   hydrateAttendance(dataset, playersById);
-  hydrateEloHistory(dataset, playersById, tournamentsById);
-  hydrateMonthlyProjections(dataset, appMatches, playersById, tournamentsById);
+  hydrateEloHistory(dataset, eloByName);
+  hydrateMonthlyProjections(appMatches, eloByName);
   hydrateActiveTournament(dataset, playersById);
   Store.setMatchesFullyLoaded(true);
   Cache.set('supabase_snapshot_loaded', true);
@@ -649,7 +649,6 @@ async function loadSnapshot() {
     players,
     tournaments,
     matches,
-    eloSnapshots,
     doodleAvailability,
     doodleChangelog,
     attendanceRecords,
@@ -657,7 +656,6 @@ async function loadSnapshot() {
     selectAll('players', 'select=id,name,email,match_padel_id&active=eq.true&order=name.asc,id.asc'),
     selectAll('tournaments', 'select=id,tournament_date,status,current_round_number,completed_at,access_code,courts,tournament_players(player_id,seed_position,confirmed)&order=tournament_date.asc,id.asc'),
     selectAll('matches', 'select=id,tournament_id,round_number,match_order,score_team_1,score_team_2,match_players(player_id,team,position)&order=tournament_id.asc,round_number.asc,match_order.asc,id.asc'),
-    selectAll('elo_snapshots', 'select=tournament_id,player_id,elo,previous_elo&order=tournament_id.asc,player_id.asc'),
     selectAll('doodle_availability', 'select=availability_date,player_id&order=availability_date.asc,player_id.asc'),
     selectAll('doodle_changelog', 'select=year_month,player_id,selected_added,selected_removed,created_at&order=created_at.desc'),
     selectAll('attendance_records', 'select=id,attendance_date,note,attendance_players(player_id)&order=attendance_date.asc,id.asc'),
@@ -685,7 +683,6 @@ async function loadSnapshot() {
     tournament_players: tournamentPlayers,
     matches,
     match_players: matchPlayers,
-    elo_snapshots: eloSnapshots,
     doodle_availability: doodleAvailability,
     doodle_changelog: doodleChangelog,
     attendance_records: attendanceRecords,
@@ -745,19 +742,13 @@ async function loadHomeSnapshot() {
     || tournament.tournament_date.startsWith(previousMonth)
     || tournament.id === latestCompleted?.id);
   const relevantIds = relevantTournaments.map((tournament) => tournament.id);
-  const idFilter = `in.(${relevantIds.join(',')})`;
-  const [matches, eloSnapshots] = relevantIds.length
-    ? await Promise.all([
-      selectAll(
-        'matches',
-        `select=id,tournament_id,round_number,match_order,score_team_1,score_team_2,match_players(player_id,team,position)&tournament_id=${idFilter}&order=tournament_id.asc,round_number.asc,match_order.asc,id.asc`,
-      ),
-      selectAll(
-        'elo_snapshots',
-        `select=tournament_id,player_id,elo,previous_elo&tournament_id=${idFilter}&order=tournament_id.asc,player_id.asc`,
-      ),
-    ])
-    : [[], []];
+  const relevantIdSet = new Set(relevantIds);
+  // Full match history is needed to calculate ELO at runtime.
+  const allMatches = await selectAll(
+    'matches',
+    'select=id,tournament_id,round_number,match_order,score_team_1,score_team_2,match_players(player_id,team,position)&order=tournament_id.asc,round_number.asc,match_order.asc,id.asc',
+  );
+  const matches = allMatches.filter((match) => relevantIdSet.has(match.tournament_id));
 
   const dataset = {
     players,
@@ -769,21 +760,24 @@ async function loadHomeSnapshot() {
     ),
     matches,
     match_players: flattenEmbeddedRows(matches, 'match_players', 'match_id'),
-    elo_snapshots: eloSnapshots,
   };
   const playersById = new Map(players.map((player) => [player.id, player]));
-  const tournamentsById = new Map(
-    relevantTournaments.map((tournament) => [tournament.id, tournament]),
-  );
-  const appMatches = buildAppMatches(dataset, playersById, tournamentsById);
-  const summary = buildPlayerSummary(dataset, appMatches, playersById, tournamentsById);
+  const allTournamentsById = new Map(tournaments.map((tournament) => [tournament.id, tournament]));
+  const allAppMatches = buildAppMatches({
+    matches: allMatches,
+    match_players: flattenEmbeddedRows(allMatches, 'match_players', 'match_id'),
+  }, playersById, allTournamentsById);
+  const relevantDates = new Set(relevantTournaments.map((tournament) => tournament.tournament_date));
+  const appMatches = allAppMatches.filter((match) => relevantDates.has(match.date));
+  const eloByName = buildRuntimeElo(allAppMatches);
+  const summary = buildPlayerSummary(dataset, appMatches, eloByName);
 
   Cache.set('home_matches', appMatches);
   Cache.set('home_players_summary', summary);
   Store.setMembers(players.map((player) => player.name).sort());
   Store.setTournamentsIndex(buildHomeTournamentIndex(tournaments));
-  hydrateMonthlyProjections(dataset, appMatches, playersById, tournamentsById);
-  hydrateActiveTournament(dataset, playersById, new Set(relevantIds));
+  hydrateMonthlyProjections(appMatches, eloByName);
+  hydrateActiveTournament(dataset, playersById, relevantIdSet);
   Cache.set(`home_month_${month}_loaded`, true);
   Cache.set(`home_month_${previousMonth}_loaded`, true);
   return true;

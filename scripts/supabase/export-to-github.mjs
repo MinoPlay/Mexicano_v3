@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { getEloSnapshots } from '../../js/services/elo.js';
 
 const DEFAULT_GITHUB_ROOT = path.resolve(process.cwd(), '..', 'DataHub_Mexicano', 'mexicano_v3');
 const SCHEMA_VERSION = '20260930100000';
@@ -18,7 +19,6 @@ const SAFE_TABLES = [
   'attendance_records',
   'attendance_players',
   'audit_events',
-  'elo_snapshots',
 ];
 const isDirectRun = process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1]);
 
@@ -79,12 +79,7 @@ function buildLegacy(snapshot, generatedAt) {
     current.push(row);
     rosterByTournament.set(row.tournament_id, current);
   }
-  const snapshots = new Map((snapshot.elo_snapshots || []).map((row) => [
-    `${row.tournament_id}:${row.player_id}`,
-    row,
-  ]));
-
-  const dayFiles = new Map();
+  const namedMatches = [];
   for (const match of snapshot.matches || []) {
     const tournament = tournamentsById.get(match.tournament_id);
     if (!tournament) throw new Error(`Match ${match.id} references missing tournament ${match.tournament_id}`);
@@ -95,47 +90,54 @@ function buildLegacy(snapshot, generatedAt) {
       const slot = slots.find((row) => row.team === team && row.position === position);
       const resolved = playersById.get(slot?.player_id);
       if (!resolved) throw new Error(`Match ${match.id} references missing player`);
-      return { slot, resolved, elo: snapshots.get(`${match.tournament_id}:${slot.player_id}`)?.elo ?? null };
+      return resolved.name;
     };
-    const p11 = player(1, 1);
-    const p12 = player(1, 2);
-    const p21 = player(2, 1);
-    const p22 = player(2, 2);
-    const date = tournament.tournament_date;
-    const rows = dayFiles.get(date) || [];
-    rows.push({
-      Date: date,
-      RoundNumber: match.round_number,
-      ScoreTeam1: match.score_team_1,
-      ScoreTeam2: match.score_team_2,
-      Team1Player1Name: p11.resolved.name,
-      Team1Player2Name: p12.resolved.name,
-      Team2Player1Name: p21.resolved.name,
-      Team2Player2Name: p22.resolved.name,
-      Team1Player1Elo: p11.elo,
-      Team1Player2Elo: p12.elo,
-      Team2Player1Elo: p21.elo,
-      Team2Player2Elo: p22.elo,
+    namedMatches.push({
+      date: tournament.tournament_date,
+      roundNumber: match.round_number,
+      scoreTeam1: match.score_team_1,
+      scoreTeam2: match.score_team_2,
+      team1Player1Name: player(1, 1),
+      team1Player2Name: player(1, 2),
+      team2Player1Name: player(2, 1),
+      team2Player2Name: player(2, 2),
     });
-    dayFiles.set(date, rows);
   }
 
-  const latestSnapshotByPlayer = new Map();
-  for (const row of snapshot.elo_snapshots || []) {
-    const tournament = tournamentsById.get(row.tournament_id);
-    const current = latestSnapshotByPlayer.get(row.player_id);
-    if (!current || tournament?.tournament_date > current.date) {
-      latestSnapshotByPlayer.set(row.player_id, { ...row, date: tournament?.tournament_date || '' });
-    }
+  // ELO is calculated at runtime from matches (end-of-tournament values).
+  const { snapshots: eloByName } = getEloSnapshots(namedMatches);
+  const eloAt = (name, date) => eloByName[name]?.[date] ?? null;
+
+  const dayFiles = new Map();
+  for (const match of namedMatches) {
+    const rows = dayFiles.get(match.date) || [];
+    rows.push({
+      Date: match.date,
+      RoundNumber: match.roundNumber,
+      ScoreTeam1: match.scoreTeam1,
+      ScoreTeam2: match.scoreTeam2,
+      Team1Player1Name: match.team1Player1Name,
+      Team1Player2Name: match.team1Player2Name,
+      Team2Player1Name: match.team2Player1Name,
+      Team2Player2Name: match.team2Player2Name,
+      Team1Player1Elo: eloAt(match.team1Player1Name, match.date),
+      Team1Player2Elo: eloAt(match.team1Player2Name, match.date),
+      Team2Player1Elo: eloAt(match.team2Player1Name, match.date),
+      Team2Player2Elo: eloAt(match.team2Player2Name, match.date),
+    });
+    dayFiles.set(match.date, rows);
   }
+
   const legacyPlayers = stableRows(snapshot.players || []).map((player) => {
-    const elo = latestSnapshotByPlayer.get(player.id);
+    const dates = Object.keys(eloByName[player.name] || {}).sort();
+    const elo = dates.length ? eloByName[player.name][dates.at(-1)] : 1000;
+    const previousElo = dates.length > 1 ? eloByName[player.name][dates.at(-2)] : 1000;
     return {
       Id: player.id,
       Name: player.name,
       MatchPadelId: player.match_padel_id || 0,
-      ELO: elo?.elo ?? 1000,
-      PreviousELO: elo?.previous_elo ?? 1000,
+      ELO: elo,
+      PreviousELO: previousElo,
       Wins: 0,
       Losses: 0,
       TotalPoints: 0,

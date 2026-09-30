@@ -9,17 +9,18 @@ Below the "Latest Tournament" table on the home page, a second table shows aggre
 
 | Source | Path |
 |--------|------|
-| Primary | Date-scoped Supabase matches and ELO snapshots for the current and previous calendar months |
+| Primary | Supabase matches for the current and previous calendar months; ELO calculated at runtime from the full match history |
 | Latest tournament | Supabase matches for the latest completed tournament |
 | Fallback | Previously cached local matches |
 
 - Home hydration fetches players and lightweight tournament metadata first.
 - Tournament metadata must not embed historical matches; Home only needs tournament dates,
   completion state, and roster metadata.
-- It then fetches match details only for the current month, previous month, and latest completed
-  tournament, plus ELO snapshots for those same tournament IDs.
-- Doodle availability, attendance records, and the complete historical match/ELO datasets are
-  not Home dependencies and must not be requested.
+- It then fetches the full match history (with embedded player slots). ELO and ELO change are
+  calculated at runtime from all matches; stats tables and `home_matches` use only the current
+  month, previous month, and latest completed tournament.
+- Doodle availability and attendance records are not Home dependencies and must not be
+  requested. There is no stored ELO table.
 - Partial Home matches and player summary live in Home-specific in-memory cache entries. They
   must not overwrite `Store.getMatches()` or masquerade as fully hydrated history for other tabs.
 - Current and previous monthly projections remain available through
@@ -45,10 +46,11 @@ Same columns as the statistics page monthly view.
 
 ## Acceptance
 
-- At `2026-09-25`, Home with August and September tournaments => four logical PostgREST
-  resources: players, tournament metadata, relevant matches, and relevant ELO snapshots.
-- The relevant match/ELO queries => tournament IDs from August, September, and the latest
-  completed tournament only.
+- At `2026-09-25`, Home with August and September tournaments => three logical PostgREST
+  resources: players, tournament metadata, and all matches (no tournament filter).
+- A July match plus a September match (A+B beat C+D 13-10 both times) => Home summary
+  `A` has `elo 1030.56`, `previousElo 1016`, `wins 1` (wins only from relevant months);
+  `monthly_2026-09` has `A elo 1030.56`, `C elo 970.84`.
 - Home refresh => zero doodle-availability or attendance-record requests.
 - Re-rendering Home after route hydration => no second PostgREST batch.
 - Current/previous-month page requests racing Home startup => join the Home hydration promise;

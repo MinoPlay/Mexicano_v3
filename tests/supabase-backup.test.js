@@ -9,21 +9,25 @@ const roots = [];
 
 function fixture() {
   return {
-    players: [{ id: 'p1', name: 'Alex', match_padel_id: 0, active: true }],
+    players: [
+      { id: 'p1', name: 'Alex', match_padel_id: 0, active: true },
+      { id: 'p2', name: 'Bo', match_padel_id: 0, active: true },
+      { id: 'p3', name: 'Cy', match_padel_id: 0, active: true },
+      { id: 'p4', name: 'Di', match_padel_id: 0, active: true },
+    ],
     player_roles: [],
     tournaments: [{ id: 't1', tournament_date: '2026-01-06', status: 'completed' }],
     tournament_players: [{ tournament_id: 't1', player_id: 'p1', seed_position: 1, confirmed: true }],
     matches: [{ id: 'm1', tournament_id: 't1', round_number: 1, match_order: 1, score_team_1: 15, score_team_2: 10 }],
     match_players: [
       { match_id: 'm1', player_id: 'p1', team: 1, position: 1 },
-      { match_id: 'm1', player_id: 'p1', team: 1, position: 2 },
-      { match_id: 'm1', player_id: 'p1', team: 2, position: 1 },
-      { match_id: 'm1', player_id: 'p1', team: 2, position: 2 },
+      { match_id: 'm1', player_id: 'p2', team: 1, position: 2 },
+      { match_id: 'm1', player_id: 'p3', team: 2, position: 1 },
+      { match_id: 'm1', player_id: 'p4', team: 2, position: 2 },
     ],
     doodle_availability: [{ availability_date: '2026-01-06', player_id: 'p1' }],
     attendance_records: [{ id: 'a1', attendance_date: '2026-01-08' }],
     attendance_players: [{ attendance_id: 'a1', player_id: 'p1' }],
-    elo_snapshots: [{ tournament_id: 't1', player_id: 'p1', elo: 1012.5, previous_elo: 1000 }],
   };
 }
 
@@ -45,7 +49,11 @@ describe('Supabase DataHub backup', () => {
     });
 
     expect(fs.existsSync(stale)).toBe(false);
-    expect(JSON.parse(fs.readFileSync(path.join(root, 'backup-data', 'players.json')))[0].Name).toBe('Alex');
+    const legacyPlayers = JSON.parse(fs.readFileSync(path.join(root, 'backup-data', 'players.json')));
+    expect(legacyPlayers[0]).toMatchObject({ Name: 'Alex', ELO: 1016, PreviousELO: 1000 });
+    expect(legacyPlayers[2]).toMatchObject({ Name: 'Cy', ELO: 984.74, PreviousELO: 1000 });
+    const day = JSON.parse(fs.readFileSync(path.join(root, 'backup-data', '2026', '2026-01', '2026-01-06.json')));
+    expect(day.matches[0]).toMatchObject({ Team1Player1Elo: 1016, Team2Player1Elo: 984.74 });
     expect(JSON.parse(fs.readFileSync(path.join(root, 'backup-data', 'tournaments.json')))[0].date).toBe('2026-01-06');
     expect(JSON.parse(fs.readFileSync(path.join(root, 'backup-data', '2026', '2026-01', '2026-01-06.json'))).match_count).toBe(1);
     expect(JSON.parse(fs.readFileSync(path.join(root, 'backup-data', '2026', '2026-01', 'doodle_2026-01.json')))[0].name).toBe('Alex');

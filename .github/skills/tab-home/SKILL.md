@@ -26,8 +26,8 @@ The Home tab is the landing page for route `/`. It is available to all users and
 - Sortable columns are `name`, `wl`, `pts`, `avg`, `win`, `elo`, and `change`. Clicking the active sort column toggles direction; clicking a new column sorts names ascending and other columns descending.
 - Current-month sorting has an additional tie-breaker: wins descending, then name ascending.
 - With Supabase configured, `pullForRoute('#/')` fetches players and lightweight tournament
-  metadata, then fetches detailed matches and ELO snapshots only for the current month, previous
-  month, and latest completed tournament.
+  metadata, then the full match history. ELO/ELO change are calculated at runtime from all
+  matches; Home stats use only the current month, previous month, and latest completed tournament.
 - Home-specific partial matches and player summary are stored in `Cache` as `home_matches` and
   `home_players_summary`. They do not overwrite full-history `Store.getMatches()`.
 - Missing latest-day matches can still be loaded through `ensureDayMatchesLoaded(latestDate)`.
@@ -58,10 +58,10 @@ The Home tab is the landing page for route `/`. It is available to all users and
   - `current_user` — current player name used for attendance confirmation.
   - `supabase_config` — enables route-scoped Supabase hydration.
   - cached `home_players_summary` — Home-only player rows with `name`, `elo`, and `previousElo`.
-  - cached `monthly_YYYY-MM` — monthly overview rows derived from canonical matches and ELO snapshots.
+  - cached `monthly_YYYY-MM` — monthly overview rows derived from canonical matches and runtime ELO.
   - cached `tournaments_index` — entries with at least `date` and `isComplete`.
   - `confirmed` flag on each `active_tournament` player — hydrated from Supabase and used to suppress the confirmation popup.
-- Monthly overview rows are derived from date-scoped canonical matches and ELO snapshots:
+- Monthly overview rows are derived from date-scoped canonical matches and runtime ELO:
   `{ name, totalPoints, wins, losses, average, elo }`.
 - `overviewToStats()` converts monthly rows to table rows: `{ name, wins, losses, points, average, winRate, elo, eloChange }`.
 - `calculatePlayerStatistics()` returns table-compatible rows from raw matches, including `{ rank, name, wins, losses, points, wl, average, winRate, ... }`.

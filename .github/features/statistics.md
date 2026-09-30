@@ -10,7 +10,7 @@ Each filter uses a pre-computed or once-per-hydration projection.
 | Filter | Source file | Store key | Notes |
 |--------|------------|-----------|-------|
 | **All Time** | `players.json` | `players_summary` | Authoritative all-time stats; generated after every tournament |
-| **Monthly** (pick month) | Supabase hydration projection | `monthly_YYYY-MM` | Built once from canonical matches plus persisted ELO snapshots |
+| **Monthly** (pick month) | Supabase hydration projection | `monthly_YYYY-MM` | Built once from canonical matches; ELO calculated at runtime |
 | **Latest** / **per-date** | `YYYY/YYYY-MM/YYYY-MM-DD.json` | in-memory `allMatches` | Computed on the fly from raw match data for that day |
 
 ---
@@ -34,7 +34,7 @@ Each monthly projection contains stats only for players who were active during t
 - Contains: `[{ name, totalPoints, wins, losses, average, elo }]`
 - Built once when canonical Supabase rows hydrate the browser cache
 - Month selection reads the cache and never reloads the full dataset
-- ELO comes from persisted `elo_snapshots`; the browser does not replay all historical matches
+- ELO is calculated at runtime from all Supabase matches during hydration (no stored ELO table)
 - ELO delta shown as change vs. the previous month's ELO
 
 ---

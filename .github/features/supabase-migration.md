@@ -56,7 +56,7 @@ Raw matches remain canonical. Derived records carry an ELO calculation version a
 - `push_subscriptions`
 - `audit_events`
 - `notification_outbox`
-- `elo_snapshots` (PK `tournament_id, player_id`; single unversioned projection, fully replaced on rebuild)
+- No stored ELO: ELO and ELO change are calculated at runtime from matches (`js/services/elo.js`).
 
 Removed in `20260930100000_schema_cleanup`: `player_aliases`, `app_settings`,
 `elo_calculation_versions`, `projection_runs`, `backup_runs`, all `source_path`, `legacy_id`,
@@ -94,8 +94,8 @@ Pages use a domain backend facade, not GitHub or Supabase directly. During migra
   Shared round/order values must never define match page boundaries by themselves because that
   can skip or duplicate rows between pages.
 - Hydration builds and caches monthly statistics plus attendance-date compatibility projections
-  once from canonical matches and persisted ELO snapshots. Selecting a month must not replay the
-  complete ELO history or trigger another full hydration.
+  once from canonical matches, with ELO calculated at runtime during hydration. Selecting a month
+  must not trigger another full hydration.
 - Legacy GitHub adapter is read-only and may be used for shadow comparison.
 - localStorage/IndexedDB are caches, not canonical domain storage.
 - Mutations use explicit backend methods and optimistic version checks.
@@ -107,11 +107,10 @@ Pages use a domain backend facade, not GitHub or Supabase directly. During migra
 - One hydration batch => six logical PostgREST resources; nested tournament/match/attendance
   children are returned with their parent rows.
 - Tournament route `#/tournament/2026-09-24` => load active players, tournament metadata, and
-  only matches belonging to `2026-09-24`; do not load ELO snapshots, doodle availability, or
-  attendance records.
-- Home route on `2026-09-25` => load players, lightweight tournament metadata, and match/ELO
-  details only for August 2026, September 2026, and the latest completed tournament; do not load
-  doodle availability, attendance records, or complete match/ELO history.
+  only matches belonging to `2026-09-24`; do not load doodle availability or attendance records.
+- Home route on `2026-09-25` => load players, lightweight tournament metadata, and the full
+  match history (needed for runtime ELO); Home stats use only August 2026, September 2026, and
+  the latest completed tournament; do not load doodle availability or attendance records.
 - Home startup monthly consumers => join the in-flight Home route hydration instead of starting
   a concurrent full-history hydration.
 - Home tournament metadata => do not embed historical match rows.
@@ -123,7 +122,7 @@ Pages use a domain backend facade, not GitHub or Supabase directly. During migra
   hydration during app startup.
 - More than 1,000 matches with repeated round/order values => pagination orders by tournament,
   round, match order, then match ID, so every canonical match is hydrated exactly once.
-- Hydrated January matches + persisted January ELO snapshots => `monthly_2026-01` is ready before
+- Hydrated January matches (ELO calculated at runtime) => `monthly_2026-01` is ready before
   a month is selected.
 - Hydrated match participation => raw attendance dates are ready without reading legacy
   `players_overview.json`.
@@ -196,11 +195,11 @@ Rollback requires exporting current Supabase data first. Old GitHub mutation cod
 - DataHub inventory with 316 tournament files => importer reports all 316 files and every contained match.
 - Missing required match field => importer reports a validation error; it does not coerce the field to `0`.
 - Same import run twice => second run creates no duplicate canonical identities, tournaments, matches, or participants.
-- DataHub sync containing a new completed tournament => canonical rows and end-of-tournament
-  ELO snapshots are both replaced before the workflow reports success.
 - Exact player name => match references that player UUID.
 - Ambiguous/unmapped name => import fails with the name.
-- Raw matches => deterministic ELO snapshots (no version tag).
+- Supabase matches up to 2026-05-12 (`tests/fixtures/elo-matches.json`) => runtime ELO equals the C# reference values.
+- `save_tournament` with fewer matches than stored => missing (round, order) matches are deleted;
+  an empty matches payload never deletes anything.
 - Anonymous session without access grant => protected read/write denied.
 - Approved email user using a magic link => same Auth user ID and active member grant.
 - Unapproved email => no public signup and no protected access.

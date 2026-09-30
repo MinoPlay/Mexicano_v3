@@ -54,6 +54,7 @@ async function saveTournament(client: any, userId: string, grant: Grant, payload
     doodle_availability: [],
     attendance_records: [],
     attendance_players: [],
+    replace_matches: true,
   };
   const { data, error } = await client.rpc('import_legacy_dataset', { payload: dataset });
   if (error) throw error;
