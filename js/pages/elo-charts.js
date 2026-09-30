@@ -4,6 +4,7 @@ import {
   getEloHistoryForDateRange,
 } from '../services/elo.js';
 import { Store } from '../store.js';
+import { fontPx } from '../components/chart.js';
 import { getMembers } from '../services/members.js';
 import { pullEloHistoryForPlayerIds, getCachedEloHistoryForPlayerIds } from '../services/backend.js';
 
@@ -72,7 +73,7 @@ function drawLineChart(canvas, datasets, options = {}) {
   const yRange = yMax - yMin || 1;
 
   // Padding: left space for Y-axis labels, bottom space for X-axis labels when shown
-  const pad = { top: title ? 28 : 10, right: 10, bottom: showXLabels ? 22 : 10, left: 40 };
+  const pad = { top: title ? fontPx(28) : 10, right: 10, bottom: showXLabels ? fontPx(22) : 10, left: fontPx(40) };
   const plotW = W - pad.left - pad.right;
   const plotH = H - pad.top - pad.bottom;
 
@@ -88,7 +89,7 @@ function drawLineChart(canvas, datasets, options = {}) {
 
   if (title) {
     ctx.fillStyle = cssVar('--text-primary') || '#0f172a';
-    ctx.font = `600 13px ${cssVar('--font-family') || 'sans-serif'}`;
+    ctx.font = `600 ${fontPx(13)}px ${cssVar('--font-family') || 'sans-serif'}`;
     ctx.textAlign = 'center';
     ctx.fillText(title, W / 2, 18);
   }
@@ -98,7 +99,7 @@ function drawLineChart(canvas, datasets, options = {}) {
   ctx.strokeStyle = gridColor;
   ctx.lineWidth = 1;
   ctx.fillStyle = textColor;
-  ctx.font = `10px ${cssVar('--font-family') || 'sans-serif'}`;
+  ctx.font = `${fontPx(10)}px ${cssVar('--font-family') || 'sans-serif'}`;
   ctx.textAlign = 'right';
   ctx.textBaseline = 'middle';
   for (let i = 0; i <= gridLines; i++) {
@@ -167,7 +168,7 @@ function drawLineChart(canvas, datasets, options = {}) {
         ctx.fillStyle = d < 0
           ? (cssVar('--color-danger') || '#ef4444')
           : (cssVar('--color-success') || '#22c55e');
-        ctx.font = `600 9px ${cssVar('--font-family') || 'sans-serif'}`;
+        ctx.font = `600 ${fontPx(9)}px ${cssVar('--font-family') || 'sans-serif'}`;
         // Keep edge labels inside the chart (align at the edges).
         const isLast = pt.x >= xCount - 1;
         const isFirst = pt.x === 0;
@@ -182,7 +183,7 @@ function drawLineChart(canvas, datasets, options = {}) {
   // X-axis labels (round numbers for Latest Tournament)
   if (showXLabels && xLabels.length) {
     ctx.fillStyle = textColor;
-    ctx.font = `10px ${cssVar('--font-family') || 'sans-serif'}`;
+    ctx.font = `${fontPx(10)}px ${cssVar('--font-family') || 'sans-serif'}`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'top';
     xLabels.forEach((label, xi) => {
@@ -210,7 +211,7 @@ function drawEmptyChart(canvas, message) {
   ctx.fillStyle = bgColor;
   ctx.fillRect(0, 0, W, H);
   ctx.fillStyle = textColor;
-  ctx.font = `500 12px ${cssVar('--font-family') || 'sans-serif'}`;
+  ctx.font = `500 ${fontPx(12)}px ${cssVar('--font-family') || 'sans-serif'}`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillText(message, W / 2, H / 2);
@@ -684,7 +685,7 @@ function buildChartSection({ container, title, metaText, controls, canvasHeight 
   const canvas = document.createElement('canvas');
   canvas.className = 'chart-canvas';
   canvas.style.width = '100%';
-  canvas.style.height = `${canvasHeight}px`;
+  canvas.style.height = `${canvasHeight / 15}rem`;
   box.appendChild(canvas);
   body.appendChild(box);
 

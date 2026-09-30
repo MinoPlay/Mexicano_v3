@@ -1,3 +1,9 @@
+/** Canvas font size scaled with the root font size (desktop fluid type; base 14px). */
+export function fontPx(n) {
+  const root = typeof document !== 'undefined' ? parseFloat(getComputedStyle(document.documentElement).fontSize) : 14;
+  return Math.round(n * Math.max(1, (root || 14) / 14));
+}
+
 /**
  * Simple line chart using HTML Canvas.
  * @param {HTMLCanvasElement} canvas
@@ -28,7 +34,7 @@ export function drawLineChart(canvas, datasets, options = {}) {
 
   if (xCount === 0 || allY.length === 0) {
     ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--text-secondary').trim();
-    ctx.font = '14px sans-serif';
+    ctx.font = `${fontPx(14)}px sans-serif`;
     ctx.textAlign = 'center';
     ctx.fillText('No data available', width / 2, height / 2);
     return;
@@ -44,7 +50,7 @@ export function drawLineChart(canvas, datasets, options = {}) {
   const ySteps = 5;
   const yRange = yMax - yMin;
   ctx.fillStyle = textColor;
-  ctx.font = '11px sans-serif';
+  ctx.font = `${fontPx(11)}px sans-serif`;
   ctx.textAlign = 'right';
 
   for (let i = 0; i <= ySteps; i++) {
@@ -63,7 +69,7 @@ export function drawLineChart(canvas, datasets, options = {}) {
 
   // X-axis labels
   ctx.textAlign = 'center';
-  ctx.font = '10px sans-serif';
+  ctx.font = `${fontPx(10)}px sans-serif`;
   const maxLabels = Math.floor(chartW / 50);
   const labelStep = Math.max(1, Math.ceil(xCount / maxLabels));
 
@@ -115,7 +121,7 @@ export function drawLineChart(canvas, datasets, options = {}) {
   if (options.showLegend !== false && datasets.length > 0) {
     const legendY = height - 5;
     let legendX = padding.left;
-    ctx.font = '10px sans-serif';
+    ctx.font = `${fontPx(10)}px sans-serif`;
 
     datasets.forEach(ds => {
       ctx.fillStyle = ds.color;
@@ -160,7 +166,7 @@ export function drawBarChart(canvas, items, options = {}) {
 
   if (!items || items.length === 0 || width === 0) {
     ctx.fillStyle = textColor;
-    ctx.font = '14px sans-serif';
+    ctx.font = `${fontPx(14)}px sans-serif`;
     ctx.textAlign = 'center';
     ctx.fillText('No data available', width / 2 || 0, height / 2 || 0);
     return;
@@ -171,7 +177,7 @@ export function drawBarChart(canvas, items, options = {}) {
 
   // Horizontal grid lines + integer Y ticks
   ctx.fillStyle = textColor;
-  ctx.font = '11px sans-serif';
+  ctx.font = `${fontPx(11)}px sans-serif`;
   ctx.textAlign = 'right';
   for (let i = 0; i <= ySteps; i++) {
     const yVal = (maxVal / ySteps) * i;
@@ -200,7 +206,7 @@ export function drawBarChart(canvas, items, options = {}) {
     ctx.fillRect(x, y, barW, h);
 
     ctx.fillStyle = textColor;
-    ctx.font = '10px sans-serif';
+    ctx.font = `${fontPx(10)}px sans-serif`;
     ctx.textAlign = 'center';
     ctx.fillText(String(item.value), x + barW / 2, y - 4);
 
@@ -297,7 +303,7 @@ export function createLineChart(container, cfg) {
 
   container.classList.add('line-chart');
   container.innerHTML = `
-    <div class="line-chart-canvas-wrap" style="height:${height}px">
+    <div class="line-chart-canvas-wrap" style="height:${height / 15}rem">
       <canvas></canvas>
       <div class="chart-tooltip hidden"></div>
     </div>
@@ -329,12 +335,12 @@ export function createLineChart(container, cfg) {
     const font = cssVar('--font-family', 'sans-serif');
     const visible = series.filter(s => !hidden.has(s.label));
     const ys = visible.flatMap(s => s.values.filter(v => Number.isFinite(v)));
-    const pad = { top: 12, right: 16, bottom: 28, left: 48 };
+    const pad = { top: 12, right: 16, bottom: fontPx(28), left: fontPx(48) };
     const pw = W - pad.left - pad.right;
     const ph = H - pad.top - pad.bottom;
     if (!ys.length || !xLabels.length) {
       ctx.fillStyle = text;
-      ctx.font = `13px ${font}`;
+      ctx.font = `${fontPx(13)}px ${font}`;
       ctx.textAlign = 'center';
       ctx.fillText('No data', W / 2, H / 2);
       meta = null;
@@ -346,7 +352,7 @@ export function createLineChart(container, cfg) {
     const sy = linearScale([y0, y1], [pad.top + ph, pad.top]);
     const sx = linearScale([0, Math.max(1, xLabels.length - 1)], [pad.left, pad.left + pw]);
 
-    ctx.font = `11px ${font}`;
+    ctx.font = `${fontPx(11)}px ${font}`;
     ctx.fillStyle = text;
     ctx.textAlign = 'right';
     ctx.textBaseline = 'middle';
