@@ -21,6 +21,16 @@ Mobile layout NOT supported on this branch.
 - Page header (`.page-header`) = sticky top bar inside main column.
 - Device-type (iPhone padding) setting removed from Settings UI (Store API kept, unused).
 
+## Fluid scaling
+- Root font `clamp(14px, 9px + 0.42vw, 20px)`; spacing vars, sidebar width, paddings, side-column widths in rem/em
+  → whole UI scales with viewport. No content max-width (fills screen). `body` min-width 1024px.
+- Side columns use `minmax(<rem>, <%>)`; Players split = `minmax(0, max-content) | minmax(26rem, 1fr)`
+  (grid takes its natural width, detail gets the rest; grid scrolls inside its panel if too narrow).
+- Heatmaps `width:100%` — cells stretch to fill panel; header labels not truncated.
+- Canvas text/padding via `fontPx(n)` (`chart.js`) = `round(n · max(1, rootFontPx/14))`;
+  chart heights set in rem.
+- <1400px: dash-grid span-4/5/7/8 panels go full width.
+
 ## Layout primitives (desktop.css)
 - `.dash-grid` — 12-col grid. `.span-3|4|5|6|7|8|12` children.
 - `.panel` — card with `.panel-header` (title + actions) and `.panel-body`.
