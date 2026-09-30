@@ -1,6 +1,7 @@
 import { createTournament, startTournament, triggerNewTournamentDayFile, triggerTournamentIndexEntry, getActiveTournament, loadTournamentByDate, deleteTournament } from '../services/tournament.js';
 import { getRecentMembers } from '../services/members.js';
 import { showToast } from '../components/toast.js';
+import { Store } from '../store.js';
 
 const PLAYER_COUNTS = [4, 8, 12, 16];
 
@@ -26,7 +27,8 @@ export function renderCreateTournament(container, params = {}) {
     <div class="page-header">
       <h1>New Tournament</h1>
     </div>
-    <div class="page-content">
+    <div class="page-content create-desktop">
+      <section class="panel"><div class="panel-header"><span class="panel-title">Setup</span></div><div class="panel-body">
       <div class="form-group">
         <label class="form-label" for="tournament-date">Date</label>
         <input type="date" id="tournament-date" value="${todayStr()}">
@@ -60,6 +62,13 @@ export function renderCreateTournament(container, params = {}) {
         <div id="count-error" class="text-danger text-xs mt-xs hidden"></div>
       </div>
 
+      <button class="btn btn-primary btn-block mt-lg" id="start-btn" disabled>
+        Start Tournament
+      </button>
+      </div></section>
+
+      <section class="panel"><div class="panel-header"><span class="panel-title">Lineup</span><span class="panel-subtitle">type a name or pick from the member pool</span></div><div class="panel-body">
+
       <div class="form-group">
         <label class="form-label">Players</label>
         <div class="player-slots" id="player-slots"></div>
@@ -67,10 +76,10 @@ export function renderCreateTournament(container, params = {}) {
       </div>
 
       <datalist id="member-suggestions"></datalist>
+      </div></section>
 
-      <button class="btn btn-primary btn-block mt-lg" id="start-btn" disabled>
-        Start Tournament
-      </button>
+      <section class="panel"><div class="panel-header"><span class="panel-title">Member pool</span><span class="panel-subtitle">recent players · click to add / remove</span></div>
+        <div class="panel-body"><div class="member-pool" id="member-pool"></div></div></section>
     </div>
   `;
 
@@ -89,6 +98,7 @@ export function renderCreateTournament(container, params = {}) {
   const members = getRecentMembers();
 
   function updateSuggestions() {
+    renderPool();
     const taken = new Set(
       playerInputs
         .map(inp => inp.value.trim().toLowerCase())
@@ -101,6 +111,39 @@ export function renderCreateTournament(container, params = {}) {
   }
 
   datalist.innerHTML = members.map(m => `<option value="${m}">`).join('');
+
+  const poolEl = container.querySelector('#member-pool');
+  const eloByName = new Map(Store.getPlayersSummary().map(p => [String(p.name || '').toLowerCase(), p.elo]));
+  const poolMembers = [...members].sort((a, b) => (eloByName.get(b.toLowerCase()) ?? 0) - (eloByName.get(a.toLowerCase()) ?? 0) || a.localeCompare(b));
+
+  function renderPool() {
+    if (!poolEl) return;
+    if (!poolMembers.length) { poolEl.innerHTML = '<p class="text-sm text-secondary">No recent members</p>'; return; }
+    const taken = new Set(playerInputs.map(inp => inp.value.trim().toLowerCase()).filter(Boolean));
+    poolEl.innerHTML = poolMembers.map(m => {
+      const elo = eloByName.get(m.toLowerCase());
+      const isTaken = taken.has(m.toLowerCase());
+      return `<button class="chip${isTaken ? ' selected' : ''}" data-member="${esc(m)}" ${isTaken ? 'title="Already in lineup"' : ''}>${esc(m)}${elo != null ? ` <span class="text-xs text-secondary">${Math.round(elo)}</span>` : ''}</button>`;
+    }).join('');
+  }
+
+  poolEl?.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-member]');
+    if (!btn) return;
+    const name = btn.dataset.member;
+    const existing = playerInputs.find(inp => inp.value.trim().toLowerCase() === name.toLowerCase());
+    if (existing) { existing.value = ''; }
+    else {
+      if (!playerInputs.length) { showToast('Choose number of players first'); return; }
+      const slot = playerInputs.find(inp => !inp.value.trim());
+      if (!slot) { showToast('Lineup is full'); return; }
+      slot.value = name;
+    }
+    refreshShiftButtons();
+    updateSuggestions();
+  });
+
+  renderPool();
 
   // Player count selection
   countSelector.addEventListener('click', (e) => {

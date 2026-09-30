@@ -27,14 +27,15 @@ One reference skill per page/route. Each documents purpose, rules/logic, key fil
 data (store/state/services), sub-tabs, related feature docs, and an update protocol. Normal prose
 (not caveman). Read the matching tab skill first when working on a page.
 
-- `tab-home` — `/` (js/pages/home.js): latest tournament + current-month tables.
-- `tab-tournaments` — `/tournaments` (js/pages/tournaments.js): tournaments list.
-- `tab-tournament` — `/tournament/:date` (js/pages/tournament.js): Matches / Leaderboard sub-tabs.
-- `tab-create-tournament` — `/create-tournament` (js/pages/create-tournament.js).
-- `tab-statistics` — `/statistics` (js/pages/statistics.js): Statistics/Attendance + profile Overview/Head-to-Head/Partners.
-- `tab-elo-charts` — `/elo-charts` (js/pages/elo-charts.js).
-- `tab-attendance` — `/attendance` (js/pages/attendance.js): Calendar / Statistics sub-tabs.
-- `tab-doodle` — `/doodle` (js/pages/doodle.js): scheduling + Telegram alerts.
+- `tab-home` — `/` (js/pages/home.js): desktop dashboard with KPIs, latest/current tables, ELO movers, explore links.
+- `tab-tournaments` — `/tournaments` (js/pages/tournaments.js): data-grid results browser + leaderboard preview.
+- `tab-tournament` — `/tournament/:date` (js/pages/tournament.js): side-by-side Matches + Leaderboard.
+- `tab-create-tournament` — `/create-tournament` (js/pages/create-tournament.js): Setup / Lineup / Member pool.
+- `tab-players` — `/players` + `/players/compare` (js/pages/players.js, js/pages/player-compare.js): player hub master-detail + compare.
+- `tab-statistics` — `/statistics` (js/pages/statistics.js): stats panel + attendance panel + pair matrix.
+- `tab-elo-charts` — `/elo-charts` (js/pages/elo-charts.js): charts + Members picker + Ranking side panel.
+- `tab-attendance` — `/attendance` (js/pages/attendance.js): Calendar + Statistics + Year overview.
+- `tab-doodle` — `/doodle` (js/pages/doodle.js): availability calendar, matrix, player overview, changelog.
 - `tab-logs` — `/logs` admin-gated (js/pages/git-logs.js).
 - `tab-settings` — `/settings` (js/pages/settings.js).
 

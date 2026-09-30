@@ -70,8 +70,10 @@
   /* Layout */
   --nav-height: 64px;
   --header-height: 56px;
-  --max-width: 480px;
-  --tap-target: 44px;
+  --max-width: 1600px;
+  --tap-target: 32px;
+  --sidebar-width: 208px;
+  --sidebar-collapsed-width: 60px;
 
   /* Transitions */
   --transition-fast: 150ms ease;

@@ -1,5 +1,8 @@
 # Feature: Device Type (Android / iPhone) Top Padding
 
+> **Branch `feature/desktop-ui`:** Settings UI and `applyDeviceType()` call on init removed
+> (desktop-only). `Store` device-type API kept and still tested. See `desktop-ui.md`.
+
 Settings option to tell the app which device it runs on, so iPhone users get
 extra top padding to clear the iOS status bar / notch.
 

@@ -1,20 +1,4 @@
-/* ─── Bottom Navigation ─── */
-.bottom-nav {
-  position: fixed;
-  bottom: 0;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 100%;
-  max-width: var(--max-width);
-  background: var(--bg-nav);
-  border-top: 1px solid var(--border);
-  display: flex;
-  justify-content: space-around;
-  padding-bottom: env(safe-area-inset-bottom, 0px);
-  z-index: 100;
-  box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.05);
-}
-
+/* ─── Navigation items (sidebar layout in desktop.css) ─── */
 .nav-item {
   display: flex;
   flex-direction: column;

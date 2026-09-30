@@ -739,6 +739,21 @@ function getLatestTournamentDateForSelection(allMatches, selectedNames = []) {
 
 // ─── Main Render ───
 
+function renderRankingTable(summary) {
+  const esc = (v) => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const rows = (summary || [])
+    .filter(p => p && p.name && Number.isFinite(Number(p.elo)))
+    .map(p => ({ name: p.name, elo: Number(p.elo), delta: p.previousElo != null ? Number(p.elo) - Number(p.previousElo) : null }))
+    .sort((a, b) => b.elo - a.elo);
+  if (!rows.length) return '<p class="text-sm text-secondary" style="padding:var(--space-md)">No ranking data</p>';
+  return `<div class="data-grid"><div class="data-grid-scroll" style="max-height:calc(100vh - 420px);min-height:240px"><table>
+    <thead><tr><th class="text-right">#</th><th>Player</th><th class="text-right">ELO</th><th class="text-right">Δ</th></tr></thead>
+    <tbody>${rows.map((r, i) => {
+      const d = r.delta == null || Math.round(r.delta) === 0 ? '' : `<span class="${r.delta > 0 ? 'text-success' : 'text-danger'}">${r.delta > 0 ? '+' : ''}${Math.round(r.delta)}</span>`;
+      return `<tr><td class="text-right">${i + 1}</td><td><a href="#/players?p=${encodeURIComponent(r.name)}">${esc(r.name)}</a></td><td class="text-right">${Math.round(r.elo)}</td><td class="text-right">${d}</td></tr>`;
+    }).join('')}</tbody></table></div></div>`;
+}
+
 export function renderEloCharts(container, params = {}) {
   container.innerHTML = '';
 
@@ -889,10 +904,27 @@ export function renderEloCharts(container, params = {}) {
     }
 
     // ── Combined row: cache toggle chips (+ Add lives in the page header) ──
+    content.classList.add('elo-desktop');
+    const chartsCol = document.createElement('section');
+    chartsCol.className = 'elo-main';
+    const sideCol = document.createElement('aside');
+    sideCol.className = 'elo-side';
+    content.appendChild(chartsCol);
+    content.appendChild(sideCol);
+
+    const pickerPanel = document.createElement('div');
+    pickerPanel.className = 'panel';
+    pickerPanel.innerHTML = '<div class="panel-header"><span class="panel-title">Members</span><span class="panel-subtitle">toggle lines</span></div>';
     const sharedPickerEl = document.createElement('div');
-    sharedPickerEl.className = 'elo-member-picker elo-cache-picker';
-    sharedPickerEl.style.cssText = 'padding:var(--space-sm) var(--space-md);';
-    content.appendChild(sharedPickerEl);
+    sharedPickerEl.className = 'elo-member-picker elo-cache-picker panel-body';
+    pickerPanel.appendChild(sharedPickerEl);
+    sideCol.appendChild(pickerPanel);
+
+    const moversPanel = document.createElement('div');
+    moversPanel.className = 'panel';
+    moversPanel.innerHTML = `<div class="panel-header"><span class="panel-title">Ranking</span><span class="panel-subtitle">Δ = latest tournament</span></div>
+      <div class="panel-body flush">${renderRankingTable(playersSummary)}</div>`;
+    sideCol.appendChild(moversPanel);
 
     function toggleMember(name) {
       if (selectedMembers.has(name)) {
@@ -1053,11 +1085,11 @@ export function renderEloCharts(container, params = {}) {
     // ═══════════════════════════════════════════
 
     const { canvas: tCanvas, setMetaText: setTournamentMeta } = buildChartSection({
-      container: content,
+      container: chartsCol,
       title: 'Latest Tournament',
       metaText: '',
       controls: null,
-      canvasHeight: 220,
+      canvasHeight: 320,
       storageKey: 'tournament',
     });
 
@@ -1115,10 +1147,10 @@ export function renderEloCharts(container, params = {}) {
     // ═══════════════════════════════════════════
 
     const { canvas: hCanvas } = buildChartSection({
-      container: content,
+      container: chartsCol,
       title: 'ELO History',
       controls: historyControlsWrap,
-      canvasHeight: 260,
+      canvasHeight: 460,
       storageKey: 'history',
     });
 

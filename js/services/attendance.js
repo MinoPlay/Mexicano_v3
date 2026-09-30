@@ -130,3 +130,38 @@ export function getAttendanceStatistics(matches, cutoffDate = null, manualEntrie
     }))
     .sort((a, b) => b.attendanceCount - a.attendanceCount || a.playerName.localeCompare(b.playerName));
 }
+
+/**
+ * Per-player attendance counts by month for one year (distinct dates per player).
+ * @returns {{ years:number[], sessions:number[], players:{name,months:number[],total}[] }}
+ */
+export function buildYearMatrix(rows, year) {
+  const years = new Set();
+  const dates = new Set();
+  const byPlayer = new Map();
+  const seen = new Set();
+  for (const r of rows || []) {
+    if (!r?.date) continue;
+    const y = Number(r.date.slice(0, 4));
+    years.add(y);
+    if (y !== Number(year)) continue;
+    dates.add(r.date);
+    const mi = Number(r.date.slice(5, 7)) - 1;
+    for (const name of r.players || []) {
+      const k = `${name}|${r.date}`;
+      if (seen.has(k)) continue;
+      seen.add(k);
+      if (!byPlayer.has(name)) byPlayer.set(name, { name, months: new Array(12).fill(0), total: 0 });
+      const p = byPlayer.get(name);
+      p.months[mi]++;
+      p.total++;
+    }
+  }
+  const sessions = new Array(12).fill(0);
+  for (const d of dates) sessions[Number(d.slice(5, 7)) - 1]++;
+  return {
+    years: [...years].sort((a, b) => b - a),
+    sessions,
+    players: [...byPlayer.values()].sort((a, b) => b.total - a.total || a.name.localeCompare(b.name)),
+  };
+}

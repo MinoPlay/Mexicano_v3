@@ -3,6 +3,7 @@ import { calculateAllEloRankings, getEloSnapshots, getEloForDate, getEloForMonth
 import { Store } from '../store.js';
 import { getLatestCompleteTournamentDate } from '../services/tournament.js';
 import { drawBarChart } from '../components/chart.js';
+import { renderPairHeatmap } from '../components/pair-heatmap.js';
 
 // ─── Text measurement helper for column auto-fit ───
 let _measureCanvas;
@@ -628,6 +629,8 @@ export async function renderDayStatsInto(container, matches, targetDate, isLates
 
 // ─── Main Render ───
 
+const openPlayerInHub = (name) => { window.location.hash = `/players?p=${encodeURIComponent(name)}`; };
+
 export function renderStatistics(container, params = {}) {
   container.innerHTML = '';
 
@@ -639,8 +642,6 @@ export function renderStatistics(container, params = {}) {
 
   const content = document.createElement('div');
   content.className = 'page-content';
-  content.style.paddingLeft = '0';
-  content.style.paddingRight = '0';
   container.appendChild(content);
 
   const allMatches = Store.getMatches();
@@ -676,60 +677,36 @@ export function renderStatistics(container, params = {}) {
   const savedFilter = localStorage.getItem(LS_KEY);
   let activeFilter = savedFilter || 'latest';
 
-  // ─── Tabs ───
-  const tabsEl = document.createElement('div');
-  tabsEl.className = 'tabs';
-  tabsEl.style.padding = '0 var(--space-md)';
-  tabsEl.style.marginBottom = 'var(--space-md)';
-  content.appendChild(tabsEl);
+  // ─── Desktop layout: stats | attendance side by side, heatmap below ───
+  content.classList.add('dash-grid');
+  const mkPanel = (cls, title, sub = '') => {
+    const p = document.createElement('div');
+    p.className = `panel ${cls}`;
+    p.innerHTML = `<div class="panel-header"><span class="panel-title">${title}</span><span class="panel-subtitle">${sub}</span></div>`;
+    const body = document.createElement('div');
+    body.className = 'panel-body';
+    p.appendChild(body);
+    content.appendChild(p);
+    return body;
+  };
 
-  const statsPanel = document.createElement('div');
-  const attendancePanel = document.createElement('div');
-  attendancePanel.style.padding = '0 var(--space-md)';
-  content.appendChild(statsPanel);
-  content.appendChild(attendancePanel);
+  const statsPanel = mkPanel('span-7', 'Player statistics', 'click a name for the full profile');
+  const attendancePanel = mkPanel('span-5', 'Attendance');
+  const heatPanel = mkPanel('span-12', 'Pair matrix', 'win% by partner / opponent');
 
   // Filter bar
   const filterBar = document.createElement('div');
   filterBar.className = 'stats-filter-bar';
-  filterBar.style.padding = '0 var(--space-md) var(--space-xs)';
   statsPanel.appendChild(filterBar);
 
   // Table container
   const tableContainer = document.createElement('div');
   tableContainer.className = 'mt-md';
-  tableContainer.style.padding = '0 2px';
   statsPanel.appendChild(tableContainer);
 
   const attendanceCtl = renderAttendanceSection(attendancePanel);
-
-  const TABS = [
-    { label: 'Statistics', panel: statsPanel },
-    { label: 'Attendance', panel: attendancePanel },
-  ];
-  const TAB_LS = 'stats_active_tab';
-  let activeStatsTab = localStorage.getItem(TAB_LS) || 'Statistics';
-  if (!TABS.some(t => t.label === activeStatsTab)) activeStatsTab = 'Statistics';
-
-  function renderStatsTabs() {
-    tabsEl.innerHTML = '';
-    TABS.forEach(({ label, panel }) => {
-      const t = document.createElement('button');
-      t.className = 'tab' + (activeStatsTab === label ? ' active' : '');
-      t.style.flex = '1';
-      t.style.justifyContent = 'center';
-      t.textContent = label;
-      t.addEventListener('click', () => {
-        activeStatsTab = label;
-        localStorage.setItem(TAB_LS, label);
-        renderStatsTabs();
-      });
-      tabsEl.appendChild(t);
-      panel.style.display = activeStatsTab === label ? '' : 'none';
-    });
-    if (activeStatsTab === 'Attendance') attendanceCtl.redrawChart();
-  }
-  renderStatsTabs();
+  requestAnimationFrame(() => attendanceCtl.redrawChart());
+  renderPairHeatmap(heatPanel);
 
   function renderFilterBar() {
     filterBar.innerHTML = '';
@@ -819,7 +796,7 @@ export function renderStatistics(container, params = {}) {
           tableContainer.innerHTML = '<p class="text-secondary text-center mt-lg">No data for this filter</p>';
           return;
         }
-        renderSortableTable(tableContainer, stats, name => showPlayerProfile(name));
+        renderSortableTable(tableContainer, stats, openPlayerInHub);
         return;
       }
       // Fallback: no players.json data — calculate from local matches
@@ -835,7 +812,7 @@ export function renderStatistics(container, params = {}) {
         eloMap[r.name] = { elo: r.elo, eloChange: Math.round((r.elo - 1000) * 100) / 100 };
       });
       attachEloFromSnapshots(stats, eloMap);
-      renderSortableTable(tableContainer, stats, name => showPlayerProfile(name));
+      renderSortableTable(tableContainer, stats, openPlayerInHub);
       return;
     }
 
@@ -878,7 +855,7 @@ export function renderStatistics(container, params = {}) {
         tableContainer.innerHTML = '<p class="text-secondary text-center mt-lg">No data for this month</p>';
         return;
       }
-      renderSortableTable(tableContainer, stats, name => showPlayerProfile(name));
+      renderSortableTable(tableContainer, stats, openPlayerInHub);
       return;
     }
 
@@ -894,7 +871,7 @@ export function renderStatistics(container, params = {}) {
     // Check locally cached matches first
     let dayMatches = allMatches.filter(m => m.date === targetDate);
     if (dayMatches.length > 0) {
-      await renderDayStatsInto(tableContainer, dayMatches, targetDate, isLatest, name => showPlayerProfile(name));
+      await renderDayStatsInto(tableContainer, dayMatches, targetDate, isLatest, openPlayerInHub);
       return;
     }
 
@@ -905,7 +882,7 @@ export function renderStatistics(container, params = {}) {
         ensureDayMatchesLoaded(targetDate)
       ).then(async matches => {
         if (matches.length > 0) {
-          await renderDayStatsInto(tableContainer, matches, targetDate, isLatest, name => showPlayerProfile(name));
+          await renderDayStatsInto(tableContainer, matches, targetDate, isLatest, openPlayerInHub);
         } else {
           tableContainer.innerHTML = '<p class="text-secondary text-center mt-lg">No data for this date</p>';
         }
