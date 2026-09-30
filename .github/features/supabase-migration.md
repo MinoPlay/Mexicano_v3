@@ -135,6 +135,9 @@ Pages use a domain backend facade, not GitHub or Supabase directly. During migra
   dated file whose date is later than the latest indexed completed tournament.
 - Active snapshot rounds are normalized into canonical matches and match-player rows; opening an
   imported active tournament must not produce “No tournament found”.
+- A successful DataHub-to-Supabase sync refreshes the `mexicano-v1` ELO projection after the
+  canonical import, so the newest tournament is immediately available to Home, Statistics, and
+  ELO consumers without a separate projection job.
 
 ## Notifications
 
@@ -190,6 +193,8 @@ Rollback requires exporting current Supabase data first. Old GitHub mutation cod
 - DataHub inventory with 316 tournament files => importer reports all 316 files and every contained match.
 - Missing required match field => importer reports a validation error; it does not coerce the field to `0`.
 - Same import run twice => second run creates no duplicate canonical identities, tournaments, matches, or participants.
+- DataHub sync containing a new completed tournament => canonical rows and end-of-tournament
+  `mexicano-v1` ELO snapshots are both replaced before the workflow reports success.
 - Historical name alias with one reviewed target => match references the target player UUID.
 - Ambiguous/unmapped name => import fails with source path and name.
 - Raw matches + calculation version => deterministic ELO snapshots tagged with that version.
