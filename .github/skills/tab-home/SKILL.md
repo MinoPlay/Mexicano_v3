@@ -25,11 +25,12 @@ The Home tab is the landing page for route `/`. It is available to all users and
   - current month: `sortCol2`, `sortDir2`, initially `avg` / `desc`.
 - Sortable columns are `name`, `wl`, `pts`, `avg`, `win`, `elo`, and `change`. Clicking the active sort column toggles direction; clicking a new column sorts names ascending and other columns descending.
 - Current-month sorting has an additional tie-breaker: wins descending, then name ascending.
-- With Supabase configured, `pullForRoute('#/')` fetches players and lightweight tournament
-  metadata, then the full match history. ELO/ELO change are calculated at runtime from all
-  matches; Home stats use only the current month, previous month, and latest completed tournament.
-- Home-specific partial matches and player summary are stored in `Cache` as `home_matches` and
-  `home_players_summary`. They do not overwrite full-history `Store.getMatches()`.
+- With Supabase configured, `pullForRoute('#/')` (`loadHomeRoute`) fetches players ∥
+  `tournament_index` ∥ active tournament, then only the matches of the current month, previous
+  month and latest completed tournament ∥ `get_player_elo` for those dates (server-side ELO).
+  Never the full match history. See `.github/features/route-data-loading.md`.
+- Home-specific matches and player summary are stored in `Cache` as `home_matches` and
+  `home_players_summary`; the loaded days are merged into `Store.getMatches()`.
 - Missing latest-day matches can still be loaded through `ensureDayMatchesLoaded(latestDate)`.
   Current and previous monthly projections are reused through `pullMonthlyOverview()`.
 - The title `#home-title` renders `🎾 Mexicano v<APP_VERSION>` and is clickable. After confirmation, it clears the in-memory `matches`, `matches_fully_loaded` and `active_tournament` cache entries, then reloads the page (which re-pulls everything from Supabase).

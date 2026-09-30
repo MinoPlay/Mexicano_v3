@@ -4,7 +4,7 @@ import { networkFirst, shouldHandleRequest } from './js/sw-fetch.js';
 import { addNotification } from './js/services/notification-store.js';
 import { currentDeployId, getCacheName, isOwnCache } from './js/deploy-env.js';
 
-export const APP_VERSION = 113;
+export const APP_VERSION = 114;
 
 // Main: mexicano-v<N>; preview: mexicano-<slug>-v<N> (see js/deploy-env.js).
 const DEPLOY_ID = currentDeployId();

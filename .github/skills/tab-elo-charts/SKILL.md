@@ -65,6 +65,8 @@ Empty and warning states:
 - `js/components/chart.js` — generic canvas chart helpers exist here, but the ELO Charts page currently uses its own local canvas line chart implementation instead.
 
 ## Data
+
+Route load (`pullForRoute('#/elo-charts')`): `tournament_index` + latest completed day's matches (Latest Tournament chart) and the player summary. Per-player history comes from `pullEloHistoryForPlayerIds(ids)` → `get_player_elo(p_player_ids)` RPC, cached per player. See `.github/features/route-data-loading.md`.
 The page reads matches from `Store.getMatches()` and player summaries from `Store.getPlayersSummary()`. Summary player objects are expected to expose lower-case normalized fields such as `name`, `id`, and `previousElo` after GitHub data is loaded and cached.
 
 Selected player names are mapped to player IDs through `playerByName`, a lower-case name map built from `playersSummary`. Selected IDs are passed to GitHub history loading. Cached history payloads are merged into:

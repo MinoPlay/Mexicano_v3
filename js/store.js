@@ -325,6 +325,19 @@ export const Store = {
     return Cache.get(`monthly_${yearMonth}`) || [];
   },
 
+  /** Loaded tournament participation: [{ date, players: [names] }], by date. */
+  getParticipation() {
+    return Cache.keys('participation_')
+      .filter(k => /^participation_\d{4}-\d{2}$/.test(k))
+      .sort()
+      .flatMap(k => Cache.get(k) || []);
+  },
+
+  /** True once participation for all history is loaded (not just some months). */
+  isParticipationComplete() {
+    return Cache.has('supabase_res_participation_all') || Cache.has('supabase_snapshot_loaded');
+  },
+
   getMonthlyOverviewMonths() {
     return Cache.keys('monthly_')
       .map(k => k.replace('monthly_', ''))

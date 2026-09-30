@@ -5,12 +5,12 @@
 import { Store } from '../store.js';
 import { getMembers } from '../services/members.js';
 import { upsertManualEntry } from '../services/attendance.js';
-import { saveManualAttendance } from '../services/backend.js';
+import { saveManualAttendance, ensureAttendanceEditData } from '../services/backend.js';
 import { showToast } from './toast.js';
 
-/** All dates in the store that already have a tournament (matches). */
+/** All dates that already have a tournament (index + any loaded matches). */
 function tournamentDates() {
-  const set = new Set();
+  const set = new Set(Store.getTournamentDates());
   for (const m of Store.getMatches()) {
     if (m.date) set.add(m.date);
   }
@@ -22,7 +22,13 @@ function todayISO() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
-export function showManualAttendanceDialog() {
+export async function showManualAttendanceDialog() {
+  try {
+    await ensureAttendanceEditData();
+  } catch (e) {
+    showToast(`Could not load attendance: ${e.message || e}`);
+    return;
+  }
   const overlay = document.createElement('div');
   Object.assign(overlay.style, {
     position: 'fixed', inset: '0', zIndex: '9999',

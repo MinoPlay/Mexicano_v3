@@ -30,9 +30,9 @@ The page is the live tournament workspace and the historical tournament viewer. 
 Loading rules:
 
 - If `getActiveTournament()` matches the route date, use it first.
-- With Supabase configured, app startup calls `pullForRoute('#/tournament/:date')`. This route
-  hydrates active players, tournament metadata, and matches for only the requested date; it does
-  not fetch ELO snapshots, doodle availability, or attendance records.
+- With Supabase configured, startup and navigation call `pullForRoute('#/tournament/:date')`. This
+  route loads `tournament_index`, the active tournament, matches for only the requested date and
+  the player summary (`player_totals` + `get_current_elo`); no doodle or attendance data.
 - The completed route hydration is cached for the page session. The page's background
   `fetchActiveTournamentJson()` / `ensureDayMatchesLoaded(date)` calls reuse it instead of
   starting a second PostgREST batch.

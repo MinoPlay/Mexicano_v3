@@ -7,6 +7,9 @@ All app data lives in two places simultaneously:
 `Store` (localStorage wrapper) and `github.js` (GitHub Contents API) are the two layers.
 Every `Store.set()` call automatically schedules a debounced push to GitHub (1.5 s delay).
 
+> **Current read path:** Supabase, route-scoped. See `route-data-loading.md` for what each
+> route loads. The per-window GitHub-era notes below are historical.
+
 ---
 
 ## Repository File Layout

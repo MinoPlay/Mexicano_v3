@@ -54,9 +54,11 @@ describe('backend selection', () => {
     const supabase = await import('../../js/services/supabase.js');
     const pullSpy = vi.spyOn(supabase, 'pullForRoute').mockResolvedValue(true);
 
+    const monthSpy = vi.spyOn(supabase, 'loadMonth').mockResolvedValue(true);
+
     await backend.pullMonthlyOverview('2099-12', { route: '#/' });
 
-    expect(pullSpy).toHaveBeenCalledWith('#/', { force: false });
-    expect(pullSpy).not.toHaveBeenCalledWith('#/__full__', { force: false });
+    expect(monthSpy).toHaveBeenCalledWith('2099-12');
+    expect(pullSpy).not.toHaveBeenCalled();
   });
 });

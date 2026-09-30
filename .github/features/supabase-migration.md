@@ -93,9 +93,9 @@ Pages use a domain backend facade, not GitHub or Supabase directly. During migra
 - Every paginated PostgREST resource uses a deterministic total order ending in a unique key.
   Shared round/order values must never define match page boundaries by themselves because that
   can skip or duplicate rows between pages.
-- Hydration builds and caches monthly statistics plus attendance-date compatibility projections
-  once from canonical matches, with ELO calculated at runtime during hydration. Selecting a month
-  must not trigger another full hydration.
+- Routes load only their own resources (see `route-data-loading.md`); the full snapshot is an
+  explicit fallback (`#/__full__`, or when the read RPCs/views are missing). ELO comes from the
+  `get_player_elo` / `get_current_elo` RPCs, not a client-side replay of all matches.
 - Legacy GitHub adapter is read-only and may be used for shadow comparison.
 - localStorage/IndexedDB are caches, not canonical domain storage.
 - Mutations use explicit backend methods and optimistic version checks.
@@ -108,14 +108,14 @@ Pages use a domain backend facade, not GitHub or Supabase directly. During migra
   children are returned with their parent rows.
 - Tournament route `#/tournament/2026-09-24` => load active players, tournament metadata, and
   only matches belonging to `2026-09-24`; do not load doodle availability or attendance records.
-- Home route on `2026-09-25` => load players, lightweight tournament metadata, and the full
-  match history (needed for runtime ELO); Home stats use only August 2026, September 2026, and
-  the latest completed tournament; do not load doodle availability or attendance records.
-- Home startup monthly consumers => join the in-flight Home route hydration instead of starting
-  a concurrent full-history hydration.
-- Home tournament metadata => do not embed historical match rows.
-- Partial Home hydration => use Home-specific in-memory match/summary caches and leave the
-  full-history Store match cache unchanged.
+- Home route on `2026-09-25` => load players, `tournament_index`, the active tournament, only the
+  matches of August 2026, September 2026 and the latest completed tournament, and
+  `get_player_elo` for those dates; never the full match history, doodle availability or
+  attendance records.
+- Home startup monthly consumers => reuse the cached month resources (no extra requests).
+- Home tournament metadata => `tournament_index` view, no embedded historical match rows.
+- Partial Home hydration => merge the loaded days into the Store match cache without dropping
+  already loaded days.
 - Re-rendering the same tournament route after its route hydration completes => no second
   PostgREST batch unless an explicit mutation refresh invalidates it.
 - Routes whose pages own their data request (`#/logs`, `#/settings`) => no canonical snapshot
@@ -161,8 +161,9 @@ Rules:
 - Preserve current sequential player update order and two-decimal rounding.
 - Incomplete `0-0` matches do not affect ELO.
 - Calculation rules have an immutable version identifier.
-- Normal UI reads use persisted projections.
-- Full replay must reproduce projections from canonical matches.
+- Normal UI reads use the server-side replay RPCs (`get_player_elo`, `get_current_elo`) that
+  return only the requested rows; nothing is persisted, so there is no staleness.
+- The SQL replay must match `js/services/elo.js` (PGlite parity test over full history).
 - Embedded legacy match ELO is export compatibility data, not canonical match data.
 
 ## DataHub backup

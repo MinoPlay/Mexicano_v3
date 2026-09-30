@@ -9,7 +9,7 @@ describe('manual attendance persistence', () => {
       'utf8',
     );
 
-    expect(source).toContain("import { saveManualAttendance } from '../services/backend.js'");
+    expect(source).toMatch(/import \{[^}]*\bsaveManualAttendance\b[^}]*\} from '\.\.\/services\/backend\.js'/);
     expect(source).toContain('await saveManualAttendance(next)');
     expect(source).not.toContain('Store.setManualAttendance(next)');
   });

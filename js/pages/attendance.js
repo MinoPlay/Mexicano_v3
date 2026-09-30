@@ -1,4 +1,4 @@
-import { getMonthlyAttendance, getAttendanceStatistics } from '../services/attendance.js';
+import { getMonthlyAttendance, getAttendanceStatistics, getParticipationRows } from '../services/attendance.js';
 import { Store } from '../store.js';
 
 // ─── Helpers ───
@@ -218,7 +218,7 @@ function renderStatsTable(el, allMatches) {
 export function renderAttendance(container, params = {}) {
   container.innerHTML = '';
 
-  let allMatches = Store.getMatches();
+  let allMatches = getParticipationRows();
   const init = getInitialMonth(allMatches);
   let currentYear = init.year;
   let currentMonth = init.month;
@@ -235,20 +235,19 @@ export function renderAttendance(container, params = {}) {
   content.className = 'page-content';
   container.appendChild(content);
 
-  if (!allMatches.length) {
-    const hasSummaryData = Store.getPlayersSummary().length > 0;
-
-    if (hasSummaryData && Store.getSupabaseConfig()) {
+  const needsFullHistory = !!Store.getSupabaseConfig() && !Store.isParticipationComplete();
+  if (!allMatches.length || needsFullHistory) {
+    if (Store.getSupabaseConfig()) {
       content.innerHTML = `<div class="empty-state">
         <div class="empty-state-icon">⏳</div>
         <div class="empty-state-text">Loading match history…</div>
         <p class="text-secondary text-sm">This may take a moment</p>
       </div>`;
 
-      import('../services/backend.js').then(({ ensureAllMatchesLoaded }) =>
-        ensureAllMatchesLoaded()
-      ).then(matches => {
-        allMatches = matches;
+      import('../services/backend.js').then(({ ensureParticipationLoaded }) =>
+        ensureParticipationLoaded()
+      ).then(() => {
+        allMatches = getParticipationRows();
         const newInit = getInitialMonth(allMatches);
         currentYear = newInit.year;
         currentMonth = newInit.month;

@@ -3,6 +3,7 @@ import { Cache } from '../cache.js';
 import { calculatePlayerStatistics } from './statistics.js';
 import { buildTournamentFromRows } from './tournament-shape.js';
 import { getEloSnapshots } from './elo.js';
+import { perfStart } from './perf.js';
 
 const EXPIRY_SKEW_SECONDS = 30;
 const snapshotPromises = new Map();
@@ -24,6 +25,16 @@ function sessionIsUsable(session) {
 async function parseError(response, fallback) {
   const body = await response.json().catch(() => null);
   return body?.message || body?.error_description || body?.error || fallback;
+}
+
+// Error carrying the HTTP status and PostgREST/Postgres code, so callers can
+// detect a missing view/function (migration not applied yet).
+async function requestError(response, fallback) {
+  const body = await response.json().catch(() => null);
+  const error = new Error(body?.message || body?.error_description || body?.error || fallback);
+  error.status = response.status;
+  error.code = body?.code ?? null;
+  return error;
 }
 
 function normalizeEmail(email) {
@@ -182,11 +193,18 @@ async function refreshSession(session) {
   return refreshed;
 }
 
+let sessionPromise = null;
+
+// Parallel route reads share one refresh/sign-in instead of racing on the
+// same refresh token.
 export async function ensureAnonymousSession() {
   const session = Store.getSupabaseSession();
   if (sessionIsUsable(session)) return session;
-  if (session?.refresh_token) return refreshSession(session);
-  return createAnonymousSession();
+  if (!sessionPromise) {
+    sessionPromise = (session?.refresh_token ? refreshSession(session) : createAnonymousSession())
+      .finally(() => { sessionPromise = null; });
+  }
+  return sessionPromise;
 }
 
 async function authenticatedFetch(url, options = {}, retry = true) {
@@ -223,16 +241,19 @@ export async function invokeFunction(name, payload = {}) {
 
 export async function rpc(name, payload = {}) {
   const config = getConfig();
+  const done = perfStart(`rpc ${name}`);
   const response = await authenticatedFetch(`${config.url}/rest/v1/rpc/${name}`, {
     method: 'POST',
     body: JSON.stringify(payload),
   });
   if (!response.ok) {
-    throw new Error(await parseError(response, `${name} failed (${response.status})`));
+    throw await requestError(response, `${name} failed (${response.status})`);
   }
   if (response.status === 204) return null;
   const text = await response.text();
-  return text ? JSON.parse(text) : null;
+  const result = text ? JSON.parse(text) : null;
+  done({ rows: Array.isArray(result) ? result.length : null, bytes: text.length });
+  return result;
 }
 
 export async function claimAccess(code) {
@@ -533,18 +554,35 @@ function hydrateMonthlyProjections(appMatches, eloByName) {
       elo: eloByPlayer.get(row.name)?.elo ?? null,
     }));
     Cache.set(`monthly_${month}`, overview);
-
-    const rawAttendance = [...(attendanceByMonth.get(month) || new Map()).entries()]
-      .map(([name, dates]) => ({
-        Name: name,
-        ELO: [...dates].sort().map((date) => ({ Date: date })),
-      }))
-      .sort((a, b) => a.Name.localeCompare(b.Name));
-    Cache.set(`monthly_raw_${month}`, rawAttendance);
   }
+  for (const key of Cache.keys('participation_')) Cache.del(key);
+  for (const [month, attendance] of attendanceByMonth) setMonthParticipation(month, attendance);
 }
 
-function hydrateDoodleChangelog(dataset, playersById) {
+// Month attendance (name -> Set<date>) as both the attendance-page rows
+// (`participation_YYYY-MM`: [{ date, players }]) and the statistics raw shape
+// (`monthly_raw_YYYY-MM`: [{ Name, ELO: [{ Date }] }]).
+function setMonthParticipation(month, attendance) {
+  const namesByDate = new Map();
+  for (const [name, dates] of attendance) {
+    for (const date of dates) {
+      const names = namesByDate.get(date) || [];
+      names.push(name);
+      namesByDate.set(date, names);
+    }
+  }
+  Cache.set(`participation_${month}`, [...namesByDate.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([date, players]) => ({ date, players: players.sort() })));
+  Cache.set(`monthly_raw_${month}`, [...attendance.entries()]
+    .map(([name, dates]) => ({
+      Name: name,
+      ELO: [...dates].sort().map((date) => ({ Date: date })),
+    }))
+    .sort((a, b) => a.Name.localeCompare(b.Name)));
+}
+
+function hydrateDoodleChangelog(dataset, playersById, onlyMonth = null) {
   const byMonth = new Map();
   for (const row of dataset.doodle_changelog || []) {
     const entries = byMonth.get(row.year_month) || [];
@@ -559,7 +597,11 @@ function hydrateDoodleChangelog(dataset, playersById) {
     });
     byMonth.set(row.year_month, entries);
   }
-  for (const key of Cache.keys('doodle_changelog_')) Cache.del(key);
+  if (onlyMonth) {
+    Store.setDoodleChangelog(onlyMonth, []);
+  } else {
+    for (const key of Cache.keys('doodle_changelog_')) Cache.del(key);
+  }
   for (const [month, entries] of byMonth) {
     Store.setDoodleChangelog(
       month,
@@ -627,22 +669,57 @@ export function hydrateSupabaseDataset(dataset) {
   return { matches: appMatches, players: summary };
 }
 
-async function selectAll(table, query = 'select=*') {
-  const config = getConfig();
-  const pageSize = 1000;
-  const rows = [];
-  for (let start = 0; ; start += pageSize) {
-    const response = await authenticatedFetch(`${config.url}/rest/v1/${table}?${query}`, {
-      headers: { Range: `${start}-${start + pageSize - 1}` },
-    });
-    if (!response.ok) {
-      throw new Error(await parseError(response, `${table} load failed (${response.status})`));
-    }
-    const page = await response.json();
-    rows.push(...page);
-    if (page.length < pageSize) return rows;
+const PAGE_SIZE = 1000;
+
+async function fetchPage(table, url, start, withCount) {
+  const response = await authenticatedFetch(url, {
+    headers: {
+      Range: `${start}-${start + PAGE_SIZE - 1}`,
+      ...(withCount ? { Prefer: 'count=exact' } : {}),
+    },
+  });
+  if (!response.ok) {
+    throw await requestError(response, `${table} load failed (${response.status})`);
   }
+  const rows = await response.json();
+  const contentRange = withCount ? response.headers?.get?.('content-range') : null;
+  const total = Number(String(contentRange || '').split('/')[1]);
+  return { rows, total: Number.isFinite(total) && contentRange ? total : null };
 }
+
+/**
+ * Read every row of a PostgREST query. The first page asks for an exact count;
+ * when more pages are needed they are fetched in parallel (sequentially only if
+ * the server did not report a total).
+ */
+export async function selectAll(table, query = 'select=*') {
+  const config = getConfig();
+  const url = `${config.url}/rest/v1/${table}?${query}`;
+  const done = perfStart(`select ${table}`);
+  const first = await fetchPage(table, url, 0, true);
+  let rows = first.rows;
+  if (rows.length >= PAGE_SIZE) {
+    if (first.total != null) {
+      const starts = [];
+      for (let start = PAGE_SIZE; start < first.total; start += PAGE_SIZE) starts.push(start);
+      const pages = await Promise.all(starts.map((start) => fetchPage(table, url, start, false)));
+      rows = rows.concat(...pages.map((page) => page.rows));
+    } else {
+      for (let start = PAGE_SIZE; ; start += PAGE_SIZE) {
+        const page = await fetchPage(table, url, start, false);
+        rows = rows.concat(page.rows);
+        if (page.rows.length < PAGE_SIZE) break;
+      }
+    }
+  }
+  done({ rows: rows.length });
+  return rows;
+}
+
+const PLAYER_QUERY = 'select=id,name,email,match_padel_id&active=eq.true&order=name.asc,id.asc';
+const TOURNAMENT_SELECT = 'id,tournament_date,status,current_round_number,completed_at,access_code,courts,tournament_players(player_id,seed_position,confirmed)';
+const MATCH_SELECT = 'id,tournament_id,round_number,match_order,score_team_1,score_team_2,match_players(player_id,team,position)';
+const MATCH_ORDER = 'order=tournament_id.asc,round_number.asc,match_order.asc,id.asc';
 
 async function loadSnapshot() {
   const [
@@ -653,40 +730,25 @@ async function loadSnapshot() {
     doodleChangelog,
     attendanceRecords,
   ] = await Promise.all([
-    selectAll('players', 'select=id,name,email,match_padel_id&active=eq.true&order=name.asc,id.asc'),
-    selectAll('tournaments', 'select=id,tournament_date,status,current_round_number,completed_at,access_code,courts,tournament_players(player_id,seed_position,confirmed)&order=tournament_date.asc,id.asc'),
-    selectAll('matches', 'select=id,tournament_id,round_number,match_order,score_team_1,score_team_2,match_players(player_id,team,position)&order=tournament_id.asc,round_number.asc,match_order.asc,id.asc'),
+    selectAll('players', PLAYER_QUERY),
+    selectAll('tournaments', `select=${TOURNAMENT_SELECT}&order=tournament_date.asc,id.asc`),
+    selectAll('matches', `select=${MATCH_SELECT}&${MATCH_ORDER}`),
     selectAll('doodle_availability', 'select=availability_date,player_id&order=availability_date.asc,player_id.asc'),
     selectAll('doodle_changelog', 'select=year_month,player_id,selected_added,selected_removed,created_at&order=created_at.desc'),
     selectAll('attendance_records', 'select=id,attendance_date,note,attendance_players(player_id)&order=attendance_date.asc,id.asc'),
   ]);
 
-  const tournamentPlayers = tournaments.flatMap((tournament) =>
-    (tournament.tournament_players || []).map((row) => ({
-      ...row,
-      tournament_id: tournament.id,
-    })));
-  const matchPlayers = matches.flatMap((match) =>
-    (match.match_players || []).map((row) => ({
-      ...row,
-      match_id: match.id,
-    })));
-  const attendancePlayers = attendanceRecords.flatMap((record) =>
-    (record.attendance_players || []).map((row) => ({
-      ...row,
-      attendance_id: record.id,
-    })));
-
+  Cache.set('supabase_players_rows', players);
   hydrateSupabaseDataset({
     players,
     tournaments,
-    tournament_players: tournamentPlayers,
+    tournament_players: flattenEmbeddedRows(tournaments, 'tournament_players', 'tournament_id'),
     matches,
-    match_players: matchPlayers,
+    match_players: flattenEmbeddedRows(matches, 'match_players', 'match_id'),
     doodle_availability: doodleAvailability,
     doodle_changelog: doodleChangelog,
     attendance_records: attendanceRecords,
-    attendance_players: attendancePlayers,
+    attendance_players: flattenEmbeddedRows(attendanceRecords, 'attendance_players', 'attendance_id'),
   });
   return true;
 }
@@ -699,11 +761,10 @@ function flattenEmbeddedRows(rows, relationName, foreignKey) {
     })));
 }
 
-function previousYearMonth(yearMonth) {
+function yearMonthOffset(yearMonth, delta) {
   const [year, month] = yearMonth.split('-').map(Number);
-  return month === 1
-    ? `${year - 1}-12`
-    : `${year}-${String(month - 1).padStart(2, '0')}`;
+  const date = new Date(year, month - 1 + delta, 1);
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
 }
 
 function currentYearMonth() {
@@ -711,136 +772,436 @@ function currentYearMonth() {
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
 }
 
-function buildHomeTournamentIndex(tournaments) {
-  return tournaments.map((tournament) => {
-    const matches = tournament.matches || [];
-    return {
-      date: tournament.tournament_date,
-      playerCount: (tournament.tournament_players || []).length,
-      roundCount: new Set(matches.map((match) => match.round_number)).size,
-      matchCount: matches.length,
-      completedCount: matches.filter(
-        (match) => match.score_team_1 !== 0 || match.score_team_2 !== 0,
-      ).length,
-      isComplete: tournament.status === 'completed',
-    };
-  }).sort((a, b) => a.date.localeCompare(b.date));
+// ─── Route-scoped resources ─────────────────────────────────────────────────
+// Each page loads only what it renders. Resources are cached in memory for the
+// session (flag `supabase_res_<key>`), shared between routes, deduped while in
+// flight, and invalidated after any mutation.
+
+const RESOURCE_PREFIX = 'supabase_res_';
+const MISSING_SCHEMA_CODES = new Set(['PGRST202', 'PGRST205', '42P01', '42883']);
+const resourcePromises = new Map();
+
+function isMissingSchemaError(error) {
+  return error?.status === 404 || MISSING_SCHEMA_CODES.has(error?.code);
 }
 
-async function loadHomeSnapshot() {
-  const [players, tournaments] = await Promise.all([
-    selectAll('players', 'select=id,name,email,match_padel_id&active=eq.true&order=name.asc,id.asc'),
-    selectAll('tournaments', 'select=id,tournament_date,status,current_round_number,completed_at,access_code,courts,tournament_players(player_id,seed_position,confirmed)&order=tournament_date.asc,id.asc'),
-  ]);
+function snapshotLoaded() {
+  return Cache.has('supabase_snapshot_loaded');
+}
+
+function loadResource(key, loader, { force = false } = {}) {
+  const flag = RESOURCE_PREFIX + key;
+  if (!force && (snapshotLoaded() || Cache.has(flag))) return Promise.resolve(false);
+  if (resourcePromises.has(key)) return resourcePromises.get(key);
+  const promise = loader()
+    .then(() => {
+      Cache.set(flag, true);
+      return true;
+    })
+    .catch(async (error) => {
+      // Migration with the read views/RPCs not applied yet: keep the app
+      // working with the legacy full snapshot.
+      if (!isMissingSchemaError(error)) throw error;
+      console.warn(`[supabase] ${key} unavailable (${error.code || error.status}); loading full snapshot`);
+      await pullForRoute('#/__full__');
+      return true;
+    })
+    .finally(() => resourcePromises.delete(key));
+  resourcePromises.set(key, promise);
+  return promise;
+}
+
+function playersById() {
+  return new Map((Cache.get('supabase_players_rows') || []).map((player) => [player.id, player]));
+}
+
+export function loadPlayers() {
+  return loadResource('players', async () => {
+    const players = await selectAll('players', PLAYER_QUERY);
+    Cache.set('supabase_players_rows', players);
+    Store.setMembers(players.map((player) => player.name).sort());
+  });
+}
+
+export function loadTournamentIndex() {
+  return loadResource('tournament_index', async () => {
+    const rows = await selectAll(
+      'tournament_index',
+      'select=id,tournament_date,status,player_count,round_count,match_count,completed_count&order=tournament_date.asc,id.asc',
+    );
+    Store.setTournamentsIndex(rows.map((row) => ({
+      date: row.tournament_date,
+      playerCount: row.player_count,
+      roundCount: row.round_count,
+      matchCount: row.match_count,
+      completedCount: row.completed_count,
+      isComplete: row.status === 'completed',
+    })));
+  });
+}
+
+/** The single planned/active tournament with its roster and matches. */
+export function loadActiveTournament({ force = false } = {}) {
+  return loadResource('active_tournament', async () => {
+    const [rows] = await Promise.all([
+      selectAll(
+        'tournaments',
+        `select=${TOURNAMENT_SELECT},matches(${MATCH_SELECT})&status=in.(planned,active)&order=tournament_date.desc,id.desc&limit=1`,
+      ),
+      loadPlayers(),
+    ]);
+    const active = rows[0];
+    if (!active) {
+      Store.clearActiveTournament();
+      return;
+    }
+    const matches = active.matches || [];
+    Store.setActiveTournament(buildTournamentFromRows({
+      tournament: active,
+      tournamentPlayers: flattenEmbeddedRows([active], 'tournament_players', 'tournament_id'),
+      matches,
+      matchPlayers: flattenEmbeddedRows(matches, 'match_players', 'match_id'),
+      playersById: playersById(),
+    }));
+  }, { force });
+}
+
+function uniqueSorted(values) {
+  return [...new Set((values || []).filter(Boolean))].sort();
+}
+
+/** Matches of the given tournament days, merged into Store.getMatches(). */
+export async function loadDayMatches(dates) {
+  const wanted = uniqueSorted(dates);
+  const missing = wanted.filter((date) => !Cache.has(`${RESOURCE_PREFIX}day_${date}`));
+  if (missing.length) {
+    await loadResource(`days_${missing.join(',')}`, async () => {
+      const [rows] = await Promise.all([
+        selectAll(
+          'matches',
+          `select=${MATCH_SELECT},tournaments!inner(tournament_date)&tournaments.tournament_date=in.(${missing.join(',')})&${MATCH_ORDER}`,
+        ),
+        loadPlayers(),
+      ]);
+      const tournamentsById = new Map(rows.map((row) => [row.tournament_id, row.tournaments]));
+      const dayMatches = buildAppMatches({
+        matches: rows,
+        match_players: flattenEmbeddedRows(rows, 'match_players', 'match_id'),
+      }, playersById(), tournamentsById);
+      const missingSet = new Set(missing);
+      Store.setMatches([
+        ...Store.getMatches().filter((match) => !missingSet.has(match.date)),
+        ...dayMatches,
+      ].sort((a, b) => a.date.localeCompare(b.date) || a.roundNumber - b.roundNumber));
+      for (const date of missing) Cache.set(`${RESOURCE_PREFIX}day_${date}`, true);
+    });
+  }
+  const wantedSet = new Set(wanted);
+  return Store.getMatches().filter((match) => wantedSet.has(match.date));
+}
+
+/** End-of-day ELO per player for the given dates: { date: { name: { elo, previousElo } } }. */
+export async function loadEloForDates(dates) {
+  const wanted = uniqueSorted(dates);
+  const missing = wanted.filter((date) => !Cache.has(`elo_day_${date}`));
+  if (missing.length) {
+    await loadResource(`elo_days_${missing.join(',')}`, async () => {
+      const [rows] = await Promise.all([
+        rpc('get_player_elo', { p_dates: missing }),
+        loadPlayers(),
+      ]);
+      const byId = playersById();
+      const byDate = new Map(missing.map((date) => [date, {}]));
+      for (const row of rows || []) {
+        const name = byId.get(row.player_id)?.name;
+        const day = byDate.get(row.tournament_date);
+        if (name && day) {
+          day[name] = { elo: Number(row.elo), previousElo: Number(row.previous_elo) };
+        }
+      }
+      for (const [date, eloByName] of byDate) Cache.set(`elo_day_${date}`, eloByName);
+    });
+  }
+  return Object.fromEntries(wanted.map((date) => [date, Cache.get(`elo_day_${date}`) || {}]));
+}
+
+function tournamentDatesIn(yearMonth) {
+  return Store.getTournamentsIndex()
+    .map((entry) => entry.date)
+    .filter((date) => date?.startsWith(yearMonth));
+}
+
+function latestCompletedDate() {
+  return Store.getTournamentsIndex()
+    .filter((entry) => entry.isComplete)
+    .map((entry) => entry.date)
+    .sort()
+    .at(-1) || null;
+}
+
+/** Monthly overview (stats + month-end ELO) and attendance for one month. */
+export function loadMonth(yearMonth) {
+  return loadResource(`month_${yearMonth}`, async () => {
+    await loadTournamentIndex();
+    const dates = tournamentDatesIn(yearMonth);
+    if (!dates.length || snapshotLoaded()) return;
+    const [matches, eloByDate] = await Promise.all([
+      loadDayMatches(dates),
+      loadEloForDates(dates),
+    ]);
+    if (snapshotLoaded()) return;
+
+    const monthElo = {};
+    for (const date of [...dates].sort()) Object.assign(monthElo, eloByDate[date]);
+    Cache.set(`monthly_${yearMonth}`, calculatePlayerStatistics(matches).map((row) => ({
+      name: row.name,
+      wins: row.wins,
+      losses: row.losses,
+      totalPoints: row.points,
+      average: row.average,
+      elo: monthElo[row.name]?.elo ?? null,
+    })));
+
+    const attendance = new Map();
+    for (const match of matches) {
+      for (const name of [
+        match.team1Player1Name, match.team1Player2Name,
+        match.team2Player1Name, match.team2Player2Name,
+      ]) {
+        if (!name) continue;
+        const played = attendance.get(name) || new Set();
+        played.add(match.date);
+        attendance.set(name, played);
+      }
+    }
+    setMonthParticipation(yearMonth, attendance);
+  });
+}
+
+/** Who played on which date, for the given months (null = all history). */
+export async function loadParticipation(months = null) {
+  if (Cache.has(`${RESOURCE_PREFIX}participation_all`)) return false;
+  const missing = months
+    ? uniqueSorted(months).filter((month) => !Cache.has(`participation_${month}`))
+    : null;
+  if (missing && !missing.length) return false;
+  const key = missing ? `participation_${missing.join(',')}` : 'participation_all';
+  return loadResource(key, async () => {
+    let query = 'select=tournament_date,player_id&order=tournament_date.asc,player_id.asc';
+    if (missing) {
+      query += `&tournament_date=gte.${missing[0]}-01&tournament_date=lt.${yearMonthOffset(missing.at(-1), 1)}-01`;
+    }
+    const [rows] = await Promise.all([selectAll('player_attendance', query), loadPlayers()]);
+    const byId = playersById();
+    const byMonth = new Map((missing || []).map((month) => [month, new Map()]));
+    for (const row of rows) {
+      const name = byId.get(row.player_id)?.name;
+      if (!name) continue;
+      const month = row.tournament_date.slice(0, 7);
+      const attendance = byMonth.get(month) || new Map();
+      const dates = attendance.get(name) || new Set();
+      dates.add(row.tournament_date);
+      attendance.set(name, dates);
+      byMonth.set(month, attendance);
+    }
+    for (const [month, attendance] of byMonth) setMonthParticipation(month, attendance);
+  });
+}
+
+export function loadManualAttendance() {
+  return loadResource('attendance_records', async () => {
+    const [records] = await Promise.all([
+      selectAll('attendance_records', 'select=id,attendance_date,note,attendance_players(player_id)&order=attendance_date.asc,id.asc'),
+      loadPlayers(),
+    ]);
+    hydrateAttendance({
+      attendance_records: records,
+      attendance_players: flattenEmbeddedRows(records, 'attendance_players', 'attendance_id'),
+    }, playersById());
+  });
+}
+
+export function loadDoodleMonth(yearMonth = currentYearMonth()) {
+  return loadResource(`doodle_${yearMonth}`, async () => {
+    const [availability, changelog] = await Promise.all([
+      selectAll(
+        'doodle_availability',
+        `select=availability_date,player_id&availability_date=gte.${yearMonth}-01&availability_date=lt.${yearMonthOffset(yearMonth, 1)}-01&order=availability_date.asc,player_id.asc`,
+      ),
+      selectAll(
+        'doodle_changelog',
+        `select=year_month,player_id,selected_added,selected_removed,created_at&year_month=eq.${yearMonth}&order=created_at.desc`,
+      ),
+      loadPlayers(),
+    ]);
+    const byId = playersById();
+    Store.setDoodle(yearMonth, []);
+    hydrateDoodles({ doodle_availability: availability }, byId);
+    hydrateDoodleChangelog({ doodle_changelog: changelog }, byId, yearMonth);
+  });
+}
+
+/** All-time rankings: totals and current ELO aggregated server-side. */
+export function loadPlayerSummary() {
+  return loadResource('player_summary', async () => {
+    const [totals, currentElo] = await Promise.all([
+      selectAll('player_totals', 'select=player_id,wins,losses,points,games,tournaments'),
+      rpc('get_current_elo', {}),
+      loadPlayers(),
+    ]);
+    const totalsById = new Map(totals.map((row) => [row.player_id, row]));
+    const eloById = new Map((currentElo || []).map((row) => [row.player_id, row]));
+    Store.setPlayersSummaryCache((Cache.get('supabase_players_rows') || []).map((player) => {
+      const total = totalsById.get(player.id) || {};
+      const elo = eloById.get(player.id);
+      const games = total.games || 0;
+      return {
+        id: player.id,
+        name: player.name,
+        email: player.email ?? null,
+        matchPadelId: player.match_padel_id ?? null,
+        elo: Number(elo?.elo ?? 1000),
+        previousElo: Number(elo?.previous_elo ?? 1000),
+        wins: total.wins || 0,
+        losses: total.losses || 0,
+        points: total.points || 0,
+        average: games ? Math.round(((total.points || 0) / games) * 100) / 100 : 0,
+        tournaments: total.tournaments || 0,
+      };
+    }));
+  });
+}
+
+/** Per-date ELO history for the selected players only. */
+export async function loadEloHistory(playerIds = []) {
+  const missing = uniqueSorted(playerIds.map(String))
+    .filter((id) => !Cache.has(`elo_history_player_${id}`)
+      && !Cache.has(`${RESOURCE_PREFIX}elo_history_${id}`));
+  if (!missing.length) return false;
+  return loadResource(`elo_histories_${missing.join(',')}`, async () => {
+    const [rows] = await Promise.all([
+      rpc('get_player_elo', { p_player_ids: missing }),
+      loadPlayers(),
+    ]);
+    const byId = playersById();
+    const pointsById = new Map();
+    for (const row of rows || []) {
+      const points = pointsById.get(row.player_id) || [];
+      points.push({
+        date: row.tournament_date,
+        elo: Number(row.elo),
+        delta: Math.round((Number(row.elo) - Number(row.previous_elo)) * 10) / 10,
+      });
+      pointsById.set(row.player_id, points);
+    }
+    for (const id of missing) {
+      Cache.set(`${RESOURCE_PREFIX}elo_history_${id}`, true);
+      const points = pointsById.get(id);
+      if (!points?.length) continue;
+      Cache.set(`elo_history_player_${id}`, {
+        playerId: id,
+        playerName: byId.get(id)?.name || '',
+        points: points.sort((a, b) => a.date.localeCompare(b.date)),
+      });
+    }
+  });
+}
+
+/** Drop every cached read so the next route visit reloads fresh data. */
+export function invalidateReadCache() {
+  for (const prefix of [RESOURCE_PREFIX, 'supabase_route_', 'elo_day_', 'elo_history_player_']) {
+    for (const key of Cache.keys(prefix)) Cache.del(key);
+  }
+  Cache.del('supabase_snapshot_loaded');
+}
+
+async function loadLatestDay() {
+  await loadTournamentIndex();
+  const latest = latestCompletedDate();
+  if (latest) await loadDayMatches([latest]);
+}
+
+async function loadHomeRoute() {
+  await Promise.all([loadPlayers(), loadTournamentIndex(), loadActiveTournament()]);
+  if (snapshotLoaded()) return;
   const month = currentYearMonth();
-  const previousMonth = previousYearMonth(month);
-  const latestCompleted = [...tournaments]
-    .filter((tournament) => tournament.status === 'completed')
-    .sort((a, b) => b.tournament_date.localeCompare(a.tournament_date))[0];
-  const relevantTournaments = tournaments.filter((tournament) =>
-    tournament.tournament_date.startsWith(month)
-    || tournament.tournament_date.startsWith(previousMonth)
-    || tournament.id === latestCompleted?.id);
-  const relevantIds = relevantTournaments.map((tournament) => tournament.id);
-  const relevantIdSet = new Set(relevantIds);
-  // Full match history is needed to calculate ELO at runtime.
-  const allMatches = await selectAll(
-    'matches',
-    'select=id,tournament_id,round_number,match_order,score_team_1,score_team_2,match_players(player_id,team,position)&order=tournament_id.asc,round_number.asc,match_order.asc,id.asc',
-  );
-  const matches = allMatches.filter((match) => relevantIdSet.has(match.tournament_id));
-
-  const dataset = {
-    players,
-    tournaments: relevantTournaments,
-    tournament_players: flattenEmbeddedRows(
-      relevantTournaments,
-      'tournament_players',
-      'tournament_id',
-    ),
-    matches,
-    match_players: flattenEmbeddedRows(matches, 'match_players', 'match_id'),
-  };
-  const playersById = new Map(players.map((player) => [player.id, player]));
-  const allTournamentsById = new Map(tournaments.map((tournament) => [tournament.id, tournament]));
-  const allAppMatches = buildAppMatches({
-    matches: allMatches,
-    match_players: flattenEmbeddedRows(allMatches, 'match_players', 'match_id'),
-  }, playersById, allTournamentsById);
-  const relevantDates = new Set(relevantTournaments.map((tournament) => tournament.tournament_date));
-  const appMatches = allAppMatches.filter((match) => relevantDates.has(match.date));
-  const eloByName = buildRuntimeElo(allAppMatches);
-  const summary = buildPlayerSummary(dataset, appMatches, eloByName);
-
-  Cache.set('home_matches', appMatches);
-  Cache.set('home_players_summary', summary);
-  Store.setMembers(players.map((player) => player.name).sort());
-  Store.setTournamentsIndex(buildHomeTournamentIndex(tournaments));
-  hydrateMonthlyProjections(appMatches, eloByName);
-  hydrateActiveTournament(dataset, playersById, relevantIdSet);
-  Cache.set(`home_month_${month}_loaded`, true);
-  Cache.set(`home_month_${previousMonth}_loaded`, true);
-  return true;
-}
-
-async function loadTournamentSnapshot(date) {
-  const encodedDate = encodeURIComponent(date);
-  const [players, tournaments, matches] = await Promise.all([
-    selectAll('players', 'select=id,name,email,match_padel_id&active=eq.true&order=name.asc,id.asc'),
-    selectAll('tournaments', 'select=id,tournament_date,status,current_round_number,completed_at,access_code,courts,tournament_players(player_id,seed_position,confirmed)&order=tournament_date.asc,id.asc'),
-    selectAll(
-      'matches',
-      `select=id,tournament_id,round_number,match_order,score_team_1,score_team_2,match_players(player_id,team,position),tournaments!inner(tournament_date)&tournaments.tournament_date=eq.${encodedDate}&order=tournament_id.asc,round_number.asc,match_order.asc,id.asc`,
-    ),
+  const previousMonth = yearMonthOffset(month, -1);
+  const latest = latestCompletedDate();
+  const dates = uniqueSorted([
+    ...tournamentDatesIn(month),
+    ...tournamentDatesIn(previousMonth),
+    latest,
   ]);
+  // One matches request + one ELO RPC for every date Home shows; the month
+  // projections below then build from cache.
+  const [, eloByDate] = await Promise.all([loadDayMatches(dates), loadEloForDates(dates)]);
+  await Promise.all([loadMonth(month), loadMonth(previousMonth)]);
+  if (snapshotLoaded()) return;
 
-  const dataset = {
-    players,
-    tournaments,
-    tournament_players: flattenEmbeddedRows(tournaments, 'tournament_players', 'tournament_id'),
-    matches,
-    match_players: flattenEmbeddedRows(matches, 'match_players', 'match_id'),
-  };
-  const playersById = new Map(players.map((player) => [player.id, player]));
-  const tournamentsById = new Map(tournaments.map((tournament) => [tournament.id, tournament]));
-  const dayMatches = buildAppMatches(dataset, playersById, tournamentsById);
-  const retainedMatches = Store.getMatches().filter((match) => match.date !== date);
-  const loadedIds = new Set(tournaments
-    .filter((tournament) => tournament.tournament_date === date)
-    .map((tournament) => tournament.id));
-
-  Store.setMatches([...retainedMatches, ...dayMatches]);
-  Store.setMembers(players.map((player) => player.name).sort());
-  Store.setTournamentsIndex(buildTournamentIndex(dataset, dayMatches, playersById));
-  hydrateActiveTournament(dataset, playersById, loadedIds);
-  return true;
+  const dateSet = new Set(dates);
+  Cache.set('home_matches', Store.getMatches().filter((match) => dateSet.has(match.date)));
+  const byName = new Map((Cache.get('supabase_players_rows') || []).map((p) => [p.name, p]));
+  Cache.set('home_players_summary', Object.entries(eloByDate[latest] || {})
+    .map(([name, { elo, previousElo }]) => ({ id: byName.get(name)?.id ?? null, name, elo, previousElo }))
+    .sort((a, b) => a.name.localeCompare(b.name)));
 }
 
 function routeScope(hash) {
   const path = String(hash || '').replace(/^#/, '').split('?')[0] || '/';
   if (path === '/logs' || path === '/settings') return { key: `skip:${path}`, load: null };
-  if (path === '/') return { key: 'home', load: loadHomeSnapshot };
+  if (path === '/__full__') return { key: 'full', load: loadSnapshot };
   const tournamentMatch = path.match(/^\/tournament\/(\d{4}-\d{2}-\d{2})$/);
   if (tournamentMatch) {
     const date = tournamentMatch[1];
-    return { key: `tournament:${date}`, load: () => loadTournamentSnapshot(date) };
+    return {
+      key: `tournament:${date}`,
+      load: () => Promise.all([
+        loadTournamentIndex(),
+        loadActiveTournament(),
+        loadDayMatches([date]),
+        loadPlayerSummary(),
+      ]),
+    };
   }
-  return { key: 'full', load: loadSnapshot };
+  const month = currentYearMonth();
+  const routes = {
+    '/tournaments': () => loadTournamentIndex(),
+    '/create-tournament': () => Promise.all([
+      loadActiveTournament(),
+      loadParticipation([yearMonthOffset(month, -1), month]),
+    ]),
+    '/statistics': () => Promise.all([loadLatestDay(), loadPlayerSummary(), loadManualAttendance()]),
+    '/elo-charts': () => Promise.all([loadLatestDay(), loadPlayerSummary()]),
+    '/attendance': () => Promise.all([loadParticipation(), loadManualAttendance()]),
+    '/doodle': () => Promise.all([
+      loadDoodleMonth(month),
+      loadMonth(month),
+      loadPlayerSummary(),
+      loadManualAttendance(),
+    ]),
+  };
+  if (routes[path]) return { key: path.slice(1), load: routes[path] };
+  return { key: 'home', load: loadHomeRoute };
 }
 
 export async function pullForRoute(hash, { force = false } = {}) {
   const scope = routeScope(hash);
   if (!scope.load) return false;
   if (!force && (
-    Cache.has('supabase_snapshot_loaded')
+    snapshotLoaded()
     || Cache.has(`supabase_route_${scope.key}_loaded`)
   )) return false;
   if (snapshotPromises.has(scope.key)) return snapshotPromises.get(scope.key);
+  if (force && scope.key !== 'full') invalidateReadCache();
 
-  const promise = scope.load()
-    .then((result) => {
+  const done = perfStart(`route ${scope.key}`);
+  const promise = Promise.resolve()
+    .then(() => scope.load())
+    .then(() => {
       Cache.set(`supabase_route_${scope.key}_loaded`, true);
-      return result;
+      if (scope.key === 'full') Cache.set('supabase_snapshot_loaded', true);
+      done();
+      return true;
     })
     .finally(() => {
       snapshotPromises.delete(scope.key);

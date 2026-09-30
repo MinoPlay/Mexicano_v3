@@ -10,6 +10,8 @@ import { pullForRoute } from './services/backend.js';
 import { showOnboardingDialog } from './components/onboarding-dialog.js';
 import { captureAuthSessionFromUrl } from './services/supabase.js';
 import { currentDeployId, nsPrefix } from './deploy-env.js';
+import { createRouteLoader } from './services/route-loader.js';
+import { perfStart } from './services/perf.js';
 
 // Pages
 import { renderHome } from './pages/home.js';
@@ -76,6 +78,26 @@ async function loadLocalData() {
   } catch { /* not running on dev server, or no local data */ }
 }
 
+// Each route loads only its own data (see js/services/supabase.js routeScope).
+// In-memory Cache is empty on every page refresh, so the first pull runs fresh;
+// later visits to a route reuse cached resources.
+const loadRoute = createRouteLoader({
+  pull: (hash) => pullForRoute(hash),
+  render: () => router.resolve(),
+  currentHash: () => window.location.hash,
+  onError: (e) => {
+    console.warn('Supabase auto-pull failed:', e);
+    showToast(`⚠️ Sync failed: ${e.message}`);
+  },
+});
+
+async function loadFromBackend() {
+  if (!Store.getSupabaseConfig()) return;
+  await loadRoute(window.location.hash);
+}
+
+window.addEventListener('hashchange', () => { loadFromBackend(); });
+
 captureAuthSessionFromUrl();
 
 async function init() {
@@ -85,14 +107,21 @@ async function init() {
   Store.purgeNonPersistedKeys();
 
   Store.applyDeviceType();
+  const startupDone = perfStart('startup');
 
-  await loadAdministrators();
-  await loadDevSecrets();
+  // Returning users already have config + session + role: start the route's
+  // data load immediately instead of waiting for the serial init below.
+  const returningUser = !!(Store.getSupabaseConfig()
+    && Store.getSupabaseSession()?.access_token
+    && Store.getAccessRole());
+  const earlyLoad = returningUser ? loadFromBackend() : null;
+
+  await Promise.all([loadAdministrators(), loadDevSecrets()]);
 
   await showOnboardingDialog();
 
   await loadLocalData();
-  loadFromBackend();
+  (earlyLoad || loadFromBackend()).then(() => startupDone({ earlyLoad: returningUser }));
 
   // Back-fill the `user` tag on an already-granted push subscription so targeted
   // sends can reach this device without the user re-enabling push. Fire-and-forget.
@@ -115,18 +144,6 @@ window.addEventListener('storage', (e) => {
   }
 });
 
-// Auto-pull from Supabase on every page open/refresh if configured.
-// In-memory Cache is empty on every page refresh, so pull always runs fresh.
-async function loadFromBackend() {
-  if (!Store.getSupabaseConfig()) return;
-  try {
-    const updated = await pullForRoute(window.location.hash);
-    if (updated) router.resolve();
-  } catch (e) {
-    console.warn('Supabase auto-pull failed:', e);
-    showToast(`⚠️ Sync failed: ${e.message}`);
-  }
-}
 
 // Mount bottom nav
 const app = document.getElementById('app');

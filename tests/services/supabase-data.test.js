@@ -146,12 +146,13 @@ describe('Supabase domain hydration', () => {
       ok: true,
       status: 200,
       json: async () => [],
+      text: async () => '[]',
     })));
 
     await Promise.all([
-      supabase.pullForRoute('#/statistics', { force: true }),
-      supabase.pullForRoute('#/statistics', { force: true }),
-      supabase.pullForRoute('#/statistics', { force: true }),
+      supabase.pullForRoute('#/__full__', { force: true }),
+      supabase.pullForRoute('#/__full__', { force: true }),
+      supabase.pullForRoute('#/__full__', { force: true }),
     ]);
 
     expect(fetch).toHaveBeenCalledTimes(6);
@@ -178,12 +179,14 @@ describe('Supabase domain hydration', () => {
       json: async () => url.includes('/rest/v1/players?') ? [
         { id: 'p1', name: 'A', email: null, match_padel_id: null },
       ] : [],
+      text: async () => '[]',
     })));
 
     await supabase.pullForRoute('#/tournament/2026-09-24');
+    const firstVisitCalls = fetch.mock.calls.length;
     await supabase.pullForRoute('#/tournament/2026-09-24');
 
-    expect(fetch).toHaveBeenCalledTimes(3);
+    expect(fetch).toHaveBeenCalledTimes(firstVisitCalls);
     const urls = fetch.mock.calls.map(([url]) => url);
     expect(urls.filter((url) => url.includes('/rest/v1/players?'))).toHaveLength(1);
     expect(urls.filter((url) => url.includes('/rest/v1/tournaments?'))).toHaveLength(1);
@@ -191,119 +194,10 @@ describe('Supabase domain hydration', () => {
     expect(urls.find((url) => url.includes('/rest/v1/matches?')))
       .toContain('tournaments!inner(tournament_date)');
     expect(urls.find((url) => url.includes('/rest/v1/matches?')))
-      .toContain('tournaments.tournament_date=eq.2026-09-24');
+      .toMatch(/tournaments\.tournament_date=(eq\.2026-09-24|in\.\(2026-09-24\))/);
     expect(urls.some((url) => url.includes('/rest/v1/elo_snapshots?'))).toBe(false);
     expect(urls.some((url) => url.includes('/rest/v1/doodle_availability?'))).toBe(false);
     expect(urls.some((url) => url.includes('/rest/v1/attendance_records?'))).toBe(false);
-  });
-
-  it('hydrates Home from relevant months without overwriting full match history', async () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date('2026-09-25T08:00:00'));
-    Store.setSupabaseConfig({ url: 'https://example.supabase.co', anonKey: 'anon' });
-    Store.setSupabaseSession({
-      access_token: 'access-token',
-      refresh_token: 'refresh-token',
-      expires_at: 9999999999,
-    });
-    const existingMatches = [{ date: '2025-01-01', roundNumber: 1 }];
-    Store.setMatches(existingMatches);
-
-    vi.stubGlobal('fetch', vi.fn().mockImplementation(async (url) => {
-      let rows = [];
-      if (url.includes('/rest/v1/players?')) {
-        rows = [
-          { id: 'p1', name: 'A', email: null, match_padel_id: null },
-          { id: 'p2', name: 'B', email: null, match_padel_id: null },
-          { id: 'p3', name: 'C', email: null, match_padel_id: null },
-          { id: 'p4', name: 'D', email: null, match_padel_id: null },
-        ];
-      } else if (url.includes('/rest/v1/tournaments?')) {
-        rows = [
-          {
-            id: 't-aug',
-            tournament_date: '2026-08-27',
-            status: 'completed',
-                tournament_players: [],
-            matches: [{ id: 'summary-aug', round_number: 1, score_team_1: 13, score_team_2: 12 }],
-          },
-          {
-            id: 't-sep',
-            tournament_date: '2026-09-24',
-            status: 'completed',
-                tournament_players: [],
-            matches: [{ id: 'summary-sep', round_number: 1, score_team_1: 13, score_team_2: 10 }],
-          },
-          {
-            id: 't-old',
-            tournament_date: '2026-07-30',
-            status: 'completed',
-                tournament_players: [],
-            matches: [],
-          },
-        ];
-      } else if (url.includes('/rest/v1/matches?')) {
-        rows = [{
-          id: 'm-old',
-          tournament_id: 't-old',
-          round_number: 1,
-          match_order: 1,
-          score_team_1: 13,
-          score_team_2: 10,
-          match_players: [
-            { player_id: 'p1', team: 1, position: 1 },
-            { player_id: 'p2', team: 1, position: 2 },
-            { player_id: 'p3', team: 2, position: 1 },
-            { player_id: 'p4', team: 2, position: 2 },
-          ],
-        }, {
-          id: 'm1',
-          tournament_id: 't-sep',
-          round_number: 1,
-          match_order: 1,
-          score_team_1: 13,
-          score_team_2: 10,
-          match_players: [
-            { player_id: 'p1', team: 1, position: 1 },
-            { player_id: 'p2', team: 1, position: 2 },
-            { player_id: 'p3', team: 2, position: 1 },
-            { player_id: 'p4', team: 2, position: 2 },
-          ],
-        }];
-      }
-      return { ok: true, status: 200, json: async () => rows };
-    }));
-
-    await supabase.pullForRoute('#/');
-    await supabase.pullForRoute('#/');
-    const backend = await import('../../js/services/backend.js');
-    await backend.pullMonthlyOverview('2026-09');
-    await backend.pullMonthlyOverview('2026-08');
-
-    expect(fetch).toHaveBeenCalledTimes(3);
-    const urls = fetch.mock.calls.map(([url]) => url);
-    expect(urls.find((url) => url.includes('/rest/v1/tournaments?')))
-      .not.toContain('matches(');
-    // Runtime ELO needs the full match history, so matches are not filtered by tournament.
-    expect(urls.find((url) => url.includes('/rest/v1/matches?')))
-      .not.toContain('tournament_id=in.');
-    expect(urls.some((url) => url.includes('/rest/v1/elo_snapshots?'))).toBe(false);
-    expect(urls.some((url) => url.includes('/rest/v1/doodle_availability?'))).toBe(false);
-    expect(urls.some((url) => url.includes('/rest/v1/attendance_records?'))).toBe(false);
-    expect(Cache.get('home_matches')).toEqual([
-      expect.objectContaining({ date: '2026-09-24', scoreTeam1: 13, scoreTeam2: 10 }),
-    ]);
-    expect(Cache.get('home_players_summary')).toEqual([
-      expect.objectContaining({ name: 'A', elo: 1030.56, previousElo: 1016, wins: 1 }),
-      expect.objectContaining({ name: 'B' }),
-      expect.objectContaining({ name: 'C' }),
-      expect.objectContaining({ name: 'D' }),
-    ]);
-    expect(Store.getMonthlyOverview('2026-09')).toEqual(expect.arrayContaining([
-      expect.objectContaining({ name: 'A', wins: 1, elo: 1030.56 }),
-      expect.objectContaining({ name: 'C', wins: 0, elo: 970.84 }),
-    ]));
-    expect(Store.getMatches()).toEqual(existingMatches);
   });
 
   it('full hydration calculates ELO at runtime without reading elo_snapshots', async () => {

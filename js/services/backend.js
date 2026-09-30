@@ -25,6 +25,8 @@ async function mutate(operation, payload) {
   setSyncStatus('syncing');
   try {
     const result = await supabase.invokeFunction('domain-mutation', { operation, payload });
+    // Cached route data may now be stale; the next visit reloads only its own slice.
+    supabase.invalidateReadCache();
     setSyncStatus('success');
     setTimeout(() => setSyncStatus('idle'), 3000);
     return result;
@@ -98,27 +100,25 @@ export async function pullForRoute(hash, options) {
   return supabase.pullForRoute(hash, options);
 }
 
-export async function pullDoodleMonth() {
-  if (!Cache.has('supabase_snapshot_loaded')) {
-    await supabase.pullForRoute(FULL_SNAPSHOT_ROUTE, { force: false });
-  }
+export async function pullDoodleMonth(yearMonth) {
+  await supabase.loadDoodleMonth(yearMonth || undefined);
   return true;
 }
 
-export async function pullMonthlyOverview(yearMonth = null, { route = FULL_SNAPSHOT_ROUTE } = {}) {
-  if (yearMonth && Store.getMonthlyOverview(yearMonth)?.length) return Store.getMonthlyOverview(yearMonth);
-  if (yearMonth && Cache.has(`home_month_${yearMonth}_loaded`)) {
-    return Store.getMonthlyOverview(yearMonth);
-  }
-  if (!Cache.has('supabase_snapshot_loaded')) {
-    await supabase.pullForRoute(route, { force: false });
-  }
-  return yearMonth ? Store.getMonthlyOverview(yearMonth) : true;
+export async function pullMonthlyOverview(yearMonth = null) {
+  if (!yearMonth) return true;
+  await supabase.loadMonth(yearMonth);
+  return Store.getMonthlyOverview(yearMonth);
 }
 
 export async function ensureDayMatchesLoaded(date) {
-  await supabase.pullForRoute(`#/tournament/${date}`, { force: false });
-  return Store.getMatches().filter((match) => match.date === date);
+  return supabase.loadDayMatches([date]);
+}
+
+/** Who played on which date: all history, or only the given months. */
+export async function ensureParticipationLoaded(months = null) {
+  await Promise.all([supabase.loadParticipation(months), supabase.loadManualAttendance()]);
+  return Store.getParticipation();
 }
 
 export async function readDayMatches(date) {
@@ -178,7 +178,19 @@ export async function pushDoodleNow(yearMonth, changes = []) {
 
 export async function addPlayerToPlayersJson(name) {
   await mutate('add_player', { name });
-  await supabase.pullForRoute(FULL_SNAPSHOT_ROUTE, { force: true });
+  await supabase.loadPlayers();
+}
+
+/**
+ * Everything the manual-attendance editor needs. The save replaces the whole
+ * list server-side, so existing entries must be loaded before editing.
+ */
+export async function ensureAttendanceEditData() {
+  await Promise.all([
+    supabase.loadPlayers(),
+    supabase.loadManualAttendance(),
+    supabase.loadTournamentIndex(),
+  ]);
 }
 
 export async function saveManualAttendance(entries) {
@@ -213,7 +225,8 @@ export function flushPush() {
 }
 
 export async function updateTournamentIndexEntry() {
-  await supabase.pullForRoute(FULL_SNAPSHOT_ROUTE, { force: true });
+  supabase.invalidateReadCache();
+  await supabase.loadTournamentIndex();
 }
 
 export async function removeTournamentIndexEntry(date) {
@@ -231,21 +244,18 @@ export async function readPlayerSummary() {
 export async function pullMonthlyOverviewRaw(yearMonth) {
   const cached = Cache.get(`monthly_raw_${yearMonth}`);
   if (cached) return cached;
-  if (!Cache.has('supabase_snapshot_loaded')) {
-    await supabase.pullForRoute(FULL_SNAPSHOT_ROUTE, { force: false });
-  }
+  await supabase.loadParticipation([yearMonth]);
   return Cache.get(`monthly_raw_${yearMonth}`) || [];
 }
 
 export async function fetchTournamentsIndexPublic() {
-  await supabase.pullForRoute(FULL_SNAPSHOT_ROUTE, { force: true });
+  await supabase.loadTournamentIndex();
   return Store.getTournamentsIndex();
 }
 
+/** Always re-reads the in-progress tournament (one small request). */
 export async function fetchActiveTournamentJson() {
-  const activeDate = Store.getActiveTournament()?.tournamentDate;
-  const hash = activeDate ? `#/tournament/${activeDate}` : globalThis.location?.hash || '';
-  await supabase.pullForRoute(hash, { force: false });
+  await supabase.loadActiveTournament({ force: true });
   return Store.getActiveTournament();
 }
 
@@ -254,9 +264,7 @@ function eloHistoryCacheKey(playerId) {
 }
 
 export async function pullEloHistoryForPlayerIds(playerIds = []) {
-  await supabase.pullForRoute(FULL_SNAPSHOT_ROUTE, {
-    force: !Cache.has('supabase_snapshot_loaded'),
-  });
+  await supabase.loadEloHistory(playerIds);
   const loadedPlayerIds = [];
   const missingPlayerIds = [];
   for (const playerId of playerIds) {

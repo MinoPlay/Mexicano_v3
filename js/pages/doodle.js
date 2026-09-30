@@ -4,7 +4,7 @@ import { Store } from '../store.js';
 import { State } from '../state.js';
 import { showToast } from '../components/toast.js';
 import { calculateAllEloRankings } from '../services/elo.js';
-import { pushDoodleNow, cancelPendingSync, pullDoodleMonth, clearSessionTTL, pullMonthlyOverview, ensureDayMatchesLoaded } from '../services/backend.js';
+import { pushDoodleNow, cancelPendingSync, pullDoodleMonth, clearSessionTTL, pullMonthlyOverview } from '../services/backend.js';
 import { sendDoodleAlert } from '../services/telegram.js';
 
 const WEEKDAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -946,15 +946,9 @@ export function renderDoodle(container, params = {}) {
         State.emit('doodle-changed', { year: currentYear, month: currentMonth });
       }).catch(() => {});
 
-      // Pull players_overview.json + day match files for the viewed month
-      pullMonthlyOverview(ym).then(({ updated: overviewUpdated }) => {
-        const tournamentDates = Store.getTournamentDates().filter(d => d.startsWith(ym));
-        const cached = Store.getMatches();
-        const missingDates = tournamentDates.filter(d => !cached.some(m => m.date === d));
-        const fetches = missingDates.map(d => ensureDayMatchesLoaded(d).catch(() => {}));
-        if (overviewUpdated || missingDates.length > 0) {
-          Promise.allSettled(fetches).then(() => renderPlayerOverview());
-        }
+      // Monthly overview + that month's matches (one scoped load per month).
+      pullMonthlyOverview(ym).then(() => {
+        if (ym === `${currentYear}-${String(currentMonth).padStart(2, '0')}`) renderPlayerOverview();
       }).catch(() => {});
     }
   }

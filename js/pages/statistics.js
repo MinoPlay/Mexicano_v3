@@ -1104,13 +1104,11 @@ function renderAttendanceSection(panel) {
     try {
       ({ pullMonthlyOverviewRaw: pull } = await import('../services/backend.js'));
     } catch { pull = null; }
-    for (const ym of months) {
-      let arr = null;
-      if (pull) {
-        try { arr = await pull(ym); } catch { arr = null; }
-      }
-      if (Array.isArray(arr)) raw[ym] = arr;
-    }
+    const arrays = await Promise.all(months.map(ym =>
+      pull ? pull(ym).catch(() => null) : null));
+    months.forEach((ym, i) => {
+      if (Array.isArray(arrays[i])) raw[ym] = arrays[i];
+    });
     lastRaw = raw;
     lastToday = today;
     lastResult = computeAttendance(raw, attFilter, today, Store.getManualAttendance());

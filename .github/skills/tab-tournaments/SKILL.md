@@ -30,7 +30,7 @@ The first render includes a floating action button (`.fab`) linking to `#/create
 - `js/pages/tournaments.js` — exports `renderTournaments(container, params)`; helper symbols: `formatDate(dateStr)`, `statusBadge(entry)`, nested `renderList()`.
 - `js/store.js` — `Store.getTournamentsIndex()` reads the in-memory `tournaments_index` cache; `Store.getGitHubConfig()` controls whether the lazy GitHub fetch runs; `Store.setTournamentsIndex(entries)` is used by GitHub services.
 - `js/services/backend.js` — `fetchTournamentsIndexPublic()` calls `fetchTournamentsIndex({ create: true })`, populates `Store.setTournamentsIndex(entries)`, and updates cached tournament dates.
-- `js/app.js` — imports `renderTournaments`, maps `'/tournaments'` to it, and calls `pullForRoute(window.location.hash)` on GitHub-backed loads.
+- `js/app.js` — imports `renderTournaments`, maps `'/tournaments'` to it, and runs `pullForRoute(hash)` on startup and every hashchange. With Supabase this route makes one request: the `tournament_index` view (`fetchTournamentsIndexPublic()` → `loadTournamentIndex()`, cached).
 - `js/components/nav.js` — bottom nav includes `{ path: '/tournaments', icon: '📋', label: 'Tournaments' }`.
 - `css/pages.css` and `css/components.css` — define `.tournament-list-item`, `.fab`, `.empty-state`, and badge classes used by this page.
 
