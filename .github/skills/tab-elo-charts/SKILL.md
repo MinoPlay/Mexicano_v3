@@ -2,125 +2,96 @@
 name: tab-elo-charts
 description: >
   Reference skill for the ELO Charts tab (route /elo-charts) of the Mexicano PWA. Covers purpose,
-  ELO computation rules, key files, data flow, chart rendering. Use when working on the elo-charts page.
+  ELO computation rules, key files, data flow, chart rendering, and desktop layout. Use when working on the elo-charts page.
 ---
 
 # ELO Charts tab
 
 ## Purpose
-The ELO Charts tab renders player ELO movement for the Mexicano PWA route `/elo-charts` with nav label "ELO". It gives users a combined view of the latest relevant tournament and longer-term per-player ELO history.
+The ELO Charts tab renders player ELO movement for route `/elo-charts` with nav label "ELO Charts". The desktop page has two columns: chart content on the left and a side panel on the right with the Members picker and Ranking table.
 
-The page is implemented by `renderEloCharts(container, params = {})` in `js/pages/elo-charts.js`. It builds the full DOM imperatively, including header controls, player cache chips, collapsible chart sections, canvas charts, tooltips, and date-range filters.
+`renderEloCharts(container, params = {})` in `js/pages/elo-charts.js` builds the page imperatively, including chart sections, member cache controls, delta-label toggles, date filters, and side-panel ranking.
 
 ## Rules / Logic
-ELO math lives in `js/services/elo.js`: `K = 32`, initial ELO is `1000`, opponent strength is the RMS of the two opposing player ELOs, expected score is `1 / (1 + 10^((opponent_elo - player_elo) / 400))`, and results are rounded to two decimals. `processMatchElo(match, players)` ignores no data validation here and updates the four 2v2 players sequentially: team 1 players first, then team 2 players using the updated team 1 ELOs.
+ELO math lives in `js/services/elo.js`: `K = 32`, initial ELO is `1000`, expected score uses the opposing team's combined ELO, and match updates process the four players sequentially.
 
-`renderEloCharts` uses two different ELO sources:
+Layout and selection:
 
-- Latest Tournament chart: calls `getEloHistoryForLatestTournament(allMatches, [...selectedMembers], seedElos)`. `allMatches` comes from `Store.getMatches()`. `seedElos` is built from `Store.getPlayersSummary()` using each player's `previousElo`, so Round 0 is the pre-tournament ELO from `players.json`. The service then processes only the latest tournament involving the selected players when seed ELOs are available.
-- ELO History chart: loads precomputed per-player history files through `pullEloHistoryForPlayerIds(selectedIds)` and `getCachedEloHistoryForPlayerIds(selectedIds)`, then merges them with `mergePlayerHistoryFiles(files)`. The legacy single `elo_history.json` is not read by this tab.
+- `.elo-desktop` contains `.elo-main` chart column and `.elo-side` panel column.
+- Selected player names are stored under localStorage `elo-charts-prefs.selected-members`.
+- If no saved selection exists, the current user is selected when valid; otherwise all members are selected.
+- The quick-toggle cache is stored as `elo-charts-prefs.elo-cache`.
+- `renderMemberPicker()` renders cache chips into the Members panel and uses the page header slot for add/remove controls.
+- `updateEloCache`, `removeFromEloCache`, and `filterMemberSuggestions` manage cache membership and typeahead.
 
-Per-player history files have points shaped like `{ date, elo, delta }`. `mergePlayerHistoryFiles(files)` builds `{ players, dates }`, where `players` is a name-keyed map and `dates` is the sorted union of all selected player point dates.
+Charts:
 
-History filters are local to the page:
+- Latest Tournament chart uses `getEloHistoryForLatestTournament(allMatches, [...selectedMembers], seedElos)`. Seed ELOs come from `Store.getPlayersSummary().previousElo`.
+- ELO History chart loads per-player files through `pullEloHistoryForPlayerIds(selectedIds)` and `getCachedEloHistoryForPlayerIds(selectedIds)`, then merges with `mergePlayerHistoryFiles(files)`.
+- History intervals are `1m`, `3m`, `6m`, `all`, and `custom`; `3m` is default. Filters call `eloHistoryForPeriod()` or `eloHistoryForDateRange()`.
+- The page still uses its local `drawLineChart()` implementation for these two ELO canvases, not the shared `createLineChart`.
+- `Δᴸ` and `Δᴴ` toggle delta labels for Latest Tournament and ELO History separately.
+- Tooltips are installed by `setupTooltip(canvas)`.
 
-- `eloHistoryForPeriod(eloData, months)` keeps points whose date is at or after the month cutoff.
-- `eloHistoryForDateRange(eloData, fromStr, toStr)` keeps points in the inclusive string range.
-- The UI intervals are `1m`, `3m`, `6m`, `all`, and `custom`; the default is `3m`.
+Ranking side panel:
 
-Player selection is a persisted set under localStorage key `elo-charts-prefs.selected-members`. If saved selection exists, it is restored against current members. Otherwise the current user is selected when present; if not, all members are selected.
+- `renderRankingTable(playersSummary)` builds the side-panel ranking from `Store.getPlayersSummary()`.
+- Ranking rows sort by ELO descending and link names to `#/players?p=<name>`.
+- The Ranking subtitle states `Δ = latest tournament`; delta is computed as `elo - previousElo`.
 
-The rolling cache of quick-toggle player chips is persisted under `elo-charts-prefs.elo-cache`. `updateEloCache(cache, name)` returns a new array, ignores empty names and duplicates, and appends without eviction. `removeFromEloCache(cache, name)` returns a filtered copy. Cache chips can be active or greyed out, but stay visible until removed in remove mode.
+Empty states:
 
-The `+` add control opens a typeahead in the page header. `filterMemberSuggestions(allMembers, selectedMembers, query)` excludes names already in the cache, filters case-insensitively by substring, and sorts A to Z. Arrow keys move the active suggestion, Enter picks the active or first match, and Escape or blur closes the input.
-
-Colors are based on selection entry order, not player name. `ELO_ENTRY_COLORS` defines the first 10 colors. `colorForEntryIndex(i)` returns the fixed color for indices 0-9 and a deterministic golden-angle HSL color after that. `buildEntryColorMap(orderedNames)` maps first-seen selected names to those colors. Because the map is rebuilt after selection changes, a player's color can change when its entry order changes.
-
-`buildDatasets(history, colorMap, labelFn)` adapts history into canvas datasets shaped as `{ label, color, data }`, with each point shaped as `{ x, y, delta, label }`. `x` is the index of the point's date or round in `history.dates` or `history.rounds`; `y` is ELO.
-
-Chart rendering is local to `js/pages/elo-charts.js`. Although `js/components/chart.js` exports generic `drawLineChart`, this page does not import it. The page's internal `drawLineChart(canvas, datasets, options)` draws the chart background, Y-grid, optional title, line paths, dots, optional delta labels, and optional X labels. Lines are always smoothed by `smooth = true`.
-
-Delta labels are controlled separately:
-
-- `Δᴸ` toggles Latest Tournament deltas and persists `delta-labels-tournament`.
-- `Δᴴ` toggles ELO History deltas and persists `delta-labels-history`.
-- History first-point delta labels are shown when the interval is not `all`.
-
-Tooltips are installed by `setupTooltip(canvas)`. Click or touch finds the closest point within 24 pixels, shows a sticky tooltip with player label, point label, rounded ELO, and delta, and dismisses on the next document click or touch.
-
-Empty and warning states:
-
-- No player summary and no matches: "No ELO data yet".
-- GitHub PAT exists but no player summary: route data is pulled with `pullForRoute('#/elo-charts')`.
-- Latest Tournament with no datasets: chart says "No tournament data".
-- Missing selected per-player files: notice says `No ELO history file for: <name>`.
-- Selected history with no datasets: notice says "No ELO history data for selected player(s). Generate history in Settings." and the chart says "No ELO history data".
+- If players summary is missing but Supabase is configured, the page calls `pullForRoute('#/elo-charts')`.
+- With no player summary and no matches, it shows "No ELO data yet".
+- Missing selected per-player history files show `No ELO history file for: <name>`.
+- Empty selected history shows "No ELO history data for selected player(s). Generate history in Settings."
 
 ## Key Files & Symbols
-- `js/pages/elo-charts.js` — exported `renderEloCharts(container, params = {})`; exported helpers `ELO_ENTRY_COLORS`, `colorForEntryIndex`, `buildEntryColorMap`, `updateEloCache`, `removeFromEloCache`, and `filterMemberSuggestions`; internal helpers `drawLineChart`, `drawEmptyChart`, `setupTooltip`, `buildDatasets`, `mergePlayerHistoryFiles`, `eloHistoryForPeriod`, and `eloHistoryForDateRange`.
-- `js/services/elo.js` — ELO math and latest tournament history, especially `calculateCombinedOpponentElo`, `calculateExpectedScore`, `calculateClassicElo`, `processMatchElo`, and `getEloHistoryForLatestTournament`.
-- `js/services/backend.js` — per-player history file loading through `pullEloHistoryForPlayerIds` and `getCachedEloHistoryForPlayerIds`; files resolve to `elo_history/elo_history_{playerId}.json` under the configured backup data root.
-- `js/store.js` — `Store.getMatches()`, `Store.getPlayersSummary()`, `Store.getCurrentUser()`, and `Store.getGitHubConfig()`.
-- `js/services/members.js` — `getMembers()` supplies the selectable member names used by the cache chips and typeahead.
-- `js/components/chart.js` — generic canvas chart helpers exist here, but the ELO Charts page currently uses its own local canvas line chart implementation instead.
+- `js/pages/elo-charts.js` — exports `renderEloCharts`, `ELO_ENTRY_COLORS`, `colorForEntryIndex`, `buildEntryColorMap`, `updateEloCache`, `removeFromEloCache`, and `filterMemberSuggestions`; local helpers include `renderRankingTable`, `renderMemberPicker`, `drawLineChart`, `drawEmptyChart`, `setupTooltip`, `buildDatasets`, `mergePlayerHistoryFiles`, `eloHistoryForPeriod`, and `eloHistoryForDateRange`.
+- `js/services/elo.js` — `calculateCombinedOpponentElo`, `calculateExpectedScore`, `calculateClassicElo`, `processMatchElo`, `getEloHistoryForLatestTournament`, `getEloHistoryForPeriod`, and `getEloHistoryForDateRange`.
+- `js/services/backend.js` — `pullEloHistoryForPlayerIds`, `getCachedEloHistoryForPlayerIds`, and route-scoped `pullForRoute('#/elo-charts')`.
+- `js/services/members.js` — `getMembers`.
+- `js/store.js` — matches, players summary, current user, and Supabase config.
+- `js/components/chart.js` — shared helpers exist (`createLineChart`, `paletteColor`, etc.), but this page's main canvases use local drawing.
+- `js/app.js` — registers `/elo-charts`.
+- `css/desktop.css` — `elo-desktop`, `elo-main`, `elo-side`, `panel`, and taller chart layout.
 
 ## Data
+Route load for ELO Charts hydrates the latest completed day's matches and player summary. Per-player history is loaded separately for selected player IDs.
 
-Route load (`pullForRoute('#/elo-charts')`): `tournament_index` + latest completed day's matches (Latest Tournament chart) and the player summary. Per-player history comes from `pullEloHistoryForPlayerIds(ids)` → `get_player_elo(p_player_ids)` RPC, cached per player. See `.github/features/route-data-loading.md`.
-The page reads matches from `Store.getMatches()` and player summaries from `Store.getPlayersSummary()`. Summary player objects are expected to expose lower-case normalized fields such as `name`, `id`, and `previousElo` after GitHub data is loaded and cached.
-
-Selected player names are mapped to player IDs through `playerByName`, a lower-case name map built from `playersSummary`. Selected IDs are passed to GitHub history loading. Cached history payloads are merged into:
+Player summary rows need `id`, `name`, `elo`, and `previousElo`. Per-player history files are merged into:
 
 ```js
 {
-  players: {
-    [playerName]: [
-      { date: 'YYYY-MM-DD', elo: 1000, delta: 0 }
-    ]
-  },
+  players: { [playerName]: [{ date, elo, delta }] },
   dates: ['YYYY-MM-DD']
 }
 ```
 
-Latest tournament history from `getEloHistoryForLatestTournament` is shaped as:
+Latest tournament history is shaped as:
 
 ```js
 {
-  players: {
-    [playerName]: [
-      { round: 0, elo: 1000, delta: 0 },
-      { round: 1, elo: 1016, delta: 16 }
-    ]
-  },
+  players: { [playerName]: [{ round, elo, delta }] },
   rounds: [0, 1]
 }
 ```
 
-Canvas datasets produced by `buildDatasets` are shaped as:
-
-```js
-{
-  label: playerName,
-  color: colorMap[playerName],
-  data: [
-    { x: 0, y: 1000, delta: 0, label: 'Round 0' }
-  ]
-}
-```
-
-Preferences are stored in raw localStorage under `elo-charts-prefs`, not through `Store`. Keys include `selected-members`, `elo-cache`, `interval`, `custom-from`, `custom-to`, `delta-labels-tournament`, `delta-labels-history`, `tournament-collapsed`, and `history-collapsed`.
+Preferences live in raw localStorage under `elo-charts-prefs`.
 
 ## Sub-tabs / Sections
-The page is flat; it has no nested route sub-tabs. It contains:
+There are no sub-tabs. Sections are:
 
-- Header: title "ELO Charts", `Δᴸ` and `Δᴴ` delta toggles, `+` add player button, and `−` / `✓` remove-mode button.
-- Player cache row: wrapping cache chips that toggle selected players or remove cached players in remove mode.
-- Latest Tournament section: collapsible canvas chart with date metadata and Round 0 through tournament rounds.
-- ELO History section: collapsible canvas chart with interval buttons, optional custom date inputs, history notices, and per-player history lines.
+- Header — title, delta toggles, add player, and remove-mode controls.
+- Latest Tournament — collapsible taller canvas chart with round labels.
+- ELO History — collapsible taller canvas chart with interval/custom-date controls and notices.
+- Members side panel — cached player chips that toggle lines.
+- Ranking side panel — ELO ranking table with latest-tournament delta.
 
 ## Related Feature Docs
-- `.github/features/elo-rating-system.md` — defines the ELO math contract, latest-tournament live recomputation behavior, Round 0 seed meaning, and the service symbols that feed this tab.
-- `.github/features/per-player-elo-history.md` — defines per-player history file storage, the ELO tab read flow, cache chip behavior, colors, add/remove controls, missing-file behavior, and the rule that legacy `elo_history.json` is not used.
+- `.github/features/elo-rating-system.md` — ELO math and latest-tournament history behavior.
+- `.github/features/per-player-elo-history.md` — per-player ELO history storage and selection behavior.
+- `.github/features/desktop-ui.md` — two-column ELO layout and side-panel ranking.
 
 ## Update Protocol
-Update this skill whenever js/pages/elo-charts.js ELO calculation, chart rendering, filters, data shape, or routing changes, or when the linked feature MDs change.
+Update this skill whenever `js/pages/elo-charts.js` layout, selection, chart rendering, filters, ranking table, data shape, or route hydration changes, or when the linked feature MDs change.

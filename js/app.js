@@ -24,6 +24,8 @@ import { renderAttendance } from './pages/attendance.js';
 import { renderDoodle } from './pages/doodle.js';
 import { renderSettings } from './pages/settings.js';
 import { renderLogs } from './pages/git-logs.js';
+import { renderPlayers } from './pages/players.js';
+import { renderPlayerCompare } from './pages/player-compare.js';
 
 // ─── Load administrator names from static JSON ───
 async function loadAdministrators() {
@@ -106,7 +108,6 @@ async function init() {
   localStorage.removeItem('mexicano_azure_conn_str');
   Store.purgeNonPersistedKeys();
 
-  Store.applyDeviceType();
   const startupDone = perfStart('startup');
 
   // Returning users already have config + session + role: start the route's
@@ -145,7 +146,7 @@ window.addEventListener('storage', (e) => {
 });
 
 
-// Mount bottom nav
+// Mount sidebar nav
 const app = document.getElementById('app');
 app.appendChild(renderNav());
 
@@ -158,6 +159,8 @@ const routes = {
   '/tournaments': renderTournaments,
   '/tournament/:date': renderTournament,
   '/create-tournament': renderCreateTournament,
+  '/players': renderPlayers,
+  '/players/compare': renderPlayerCompare,
   '/statistics': renderStatistics,
   '/elo-charts': renderEloCharts,
   '/attendance': renderAttendance,
@@ -174,6 +177,8 @@ function getPageName(hash) {
   const names = {
     '/': 'Home',
     '/tournaments': 'Tournaments',
+    '/players': 'Players',
+    '/players/compare': 'Compare',
     '/statistics': 'Statistics',
     '/elo-charts': 'ELO Charts',
     '/attendance': 'Attendance',

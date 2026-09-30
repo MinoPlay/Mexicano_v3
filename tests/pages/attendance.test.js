@@ -46,11 +46,7 @@ describe('Attendance page rendering', () => {
   it('maps attendance statistics into visible table columns', () => {
     const container = document.createElement('div');
     renderAttendance(container);
-    [...container.querySelectorAll('.tab')]
-      .find((button) => button.textContent === 'Statistics')
-      .click();
-
-    const rows = [...container.querySelectorAll('tbody tr')]
+    const rows = [...container.querySelectorAll('.data-table tbody tr')]
       .map((row) => [...row.children].map((cell) => cell.textContent));
     expect(rows[0]).toEqual(['1', 'A', '2', '2', '100.0%']);
     expect(rows.find((row) => row[1] === 'E')).toEqual(['5', 'E', '1', '2', '50.0%']);
@@ -67,10 +63,7 @@ describe('Attendance page rendering', () => {
       '10 4 🏸',
       '12 2 🏸',
     ]);
-    [...container.querySelectorAll('.tab')]
-      .find((button) => button.textContent === 'Statistics')
-      .click();
-    const rows = [...container.querySelectorAll('tbody tr')]
+    const rows = [...container.querySelectorAll('.data-table tbody tr')]
       .map((row) => [...row.children].map((cell) => cell.textContent));
     expect(rows[0]).toEqual(['1', 'A', '2', '2', '100.0%']);
   });
@@ -83,12 +76,9 @@ describe('Attendance page rendering', () => {
     renderAttendance(container);
 
     expect(container.textContent).toContain('Loading');
-    await vi.waitFor(() => expect(container.querySelector('.tab')).not.toBeNull());
+    await vi.waitFor(() => expect(container.querySelector('.data-table')).not.toBeNull());
     expect(ensureParticipationLoaded).toHaveBeenCalled();
-    [...container.querySelectorAll('.tab')]
-      .find((button) => button.textContent === 'Statistics')
-      .click();
-    const names = [...container.querySelectorAll('tbody tr')].map((row) => row.children[1].textContent);
+    const names = [...container.querySelectorAll('.data-table tbody tr')].map((row) => row.children[1].textContent);
     expect(names).toContain('Z');
   });
 });

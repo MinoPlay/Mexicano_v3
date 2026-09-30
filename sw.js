@@ -4,7 +4,7 @@ import { networkFirst, shouldHandleRequest } from './js/sw-fetch.js';
 import { addNotification } from './js/services/notification-store.js';
 import { currentDeployId, getCacheName, isOwnCache } from './js/deploy-env.js';
 
-export const APP_VERSION = 114;
+export const APP_VERSION = 115;
 
 // Main: mexicano-v<N>; preview: mexicano-<slug>-v<N> (see js/deploy-env.js).
 const DEPLOY_ID = currentDeployId();
@@ -18,6 +18,7 @@ const ASSETS = [
   './css/base.css',
   './css/components.css',
   './css/pages.css',
+  './css/desktop.css',
   './js/app.js',
   './js/router.js',
   './js/store.js',
@@ -25,6 +26,7 @@ const ASSETS = [
   './js/services/tournament.js',
   './js/services/elo.js',
   './js/services/statistics.js',
+  './js/services/player-insights.js',
   './js/services/ranking.js',
   './js/services/attendance.js',
   './js/services/doodle.js',
@@ -41,6 +43,8 @@ const ASSETS = [
   './js/components/player-profile.js',
   './js/components/leaderboard.js',
   './js/components/chart.js',
+  './js/components/data-grid.js',
+  './js/components/pair-heatmap.js',
   './js/components/install-prompt.js',
   './js/components/manual-attendance-dialog.js',
   './js/pages/home.js',
@@ -51,7 +55,9 @@ const ASSETS = [
   './js/pages/elo-charts.js',
   './js/pages/attendance.js',
   './js/pages/doodle.js',
-  './js/pages/settings.js'
+  './js/pages/settings.js',
+  './js/pages/players.js',
+  './js/pages/player-compare.js'
 ];
 
 const isServiceWorker = typeof ServiceWorkerGlobalScope !== 'undefined'

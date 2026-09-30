@@ -2,130 +2,106 @@
 name: tab-doodle
 description: >
   Reference skill for the Doodle tab (route /doodle) of the Mexicano PWA — scheduling and
-  availability with Telegram alerts. Covers purpose, rules, key files, data flow. Use when working on the doodle page.
+  availability with Telegram alerts. Covers purpose, rules, key files, data flow, and desktop sections.
+  Use when working on the doodle page.
 ---
 
 # Doodle tab
 
 ## Purpose
-The Doodle tab is the month-by-month scheduling page for player availability. It lets the current user mark which playable dates they can attend, see aggregate availability for all players, inspect actual tournament participation for the viewed month, and review recent availability changes.
+The Doodle tab is the month-by-month scheduling page at `#/doodle`. It lets the current user mark playable dates, inspect overall availability, view monthly participation, and review recent availability changes.
 
-The route is `/doodle`, wired in `js/app.js` to `renderDoodle()` from `js/pages/doodle.js`.
+The desktop layout is two columns in a `dash-grid`: left `span-4` for My availability and Recent Changes, right `span-8` for Overall availability and Player Overview. Overall availability and Player Overview are both open by default.
 
 ## Rules / Logic
-`renderDoodle(container, params = {})` builds the page. If `Store.getCurrentUser()` is empty, it shows a "No user selected" empty state and does not render scheduling controls.
+`renderDoodle(container, params = {})` builds the page. If `Store.getCurrentUser()` is empty, it shows a "No user selected" empty state.
 
-Scheduling is monthly. The viewed month starts at the current month and is changed with previous/next buttons. Month switches discard any active `DoodleEditSession` after cleanup.
+Scheduling:
 
-Valid scheduling dates are hardcoded to Tuesdays and Thursdays:
-- `getAllDatesInMonth(year, month)` in `js/services/doodle.js` returns only dates where `Date.getDay()` is `2` or `4`.
-- Dates use zero-padded `YYYY-MM-DD`.
-- Month keys use `YYYY-MM`.
+- The viewed month starts at the current month and changes with previous/next buttons in `renderNav()`.
+- Valid dates are Tuesdays and Thursdays from `getAllDatesInMonth(year, month)`.
+- Only playable future dates can be clicked. Past dates and other players' matrix cells are read-only.
+- Availability toggles from `renderUserCalendar()` or the current user's row in `renderMatrix()`.
 
-Availability can be toggled from two places:
-- the personal calendar grid in `renderUserCalendar()`;
-- the current user's row in the overall availability matrix in `renderMatrix()`.
+Edits:
 
-Only playable future dates can be clicked. The page compares ISO date strings against `new Date().toISOString().slice(0, 10)`; past dates are styled as past/read-only. Non-Tuesday/Thursday calendar cells are inactive. Other players' matrix cells are always read-only.
+- Edits are staged in `DoodleEditSession`, not written immediately.
+- Dirty cells get `doodle-pending`.
+- A fixed save bar appears when the session is dirty. Save calls `DoodleEditSession.save()`; Cancel reverts and re-renders.
+- Route changes and browser unload are blocked while dirty through `State.addRouteBlocker()` and `beforeunload`.
 
-Toggles are staged in `DoodleEditSession`, not written immediately. The session captures `originalState` from `getDoodle()`, keeps `currentEdits` as player-to-`Set<date>` maps, exposes `isDirty()`, and marks changed cells with `doodle-pending`. A fixed bottom save bar appears only when the session is dirty.
+Saving:
 
-Saving runs through `DoodleEditSession.save()`:
-1. Prevent concurrent saves with `isSaving`.
-2. Re-pull the latest month via `pullDoodleMonth(ym)` so edits are applied on top of the current Supabase state.
-3. Apply the edited selections with `saveDoodle(playerName, year, month, selectedDates)`.
-4. Collect the returned changelog entries as pending Telegram alerts.
-5. Push the month immediately with `pushDoodleNow(ym, changes)` — one batched `save_doodle` mutation carrying the availability entries plus the new changelog entries.
-6. Fire `sendDoodleAlert()` for each changed player after the write succeeds.
-7. Call `cancelPendingSync()` and show `Doodle saved`.
+1. Re-pull the latest month with `pullDoodleMonth(ym)`.
+2. Apply edited selections with `saveDoodle(playerName, year, month, selectedDates)`.
+3. Push availability and changelog entries in one mutation with `pushDoodleNow(ym, pendingAlerts)`.
+4. Fire `sendDoodleAlert()` for each changed player after the write succeeds.
+5. Call `cancelPendingSync()` and show a toast.
 
-`saveDoodle()` validates every selected date against `getAllDatesInMonth()`, writes the normalized sorted `selectedDates` array to `Store.setDoodle()`, attempts a dev-server `writeDoodle()`, computes `selectedAdded` and `selectedRemoved`, appends a changelog entry through `logDoodleChange()` when the diff is non-empty, and emits `State.emit('doodle-changed', { year, month })`.
+Overall availability:
 
-Cancel reverts the edit session to the captured Store state and re-renders the calendar/matrix. Route changes and browser unload are guarded while dirty with `State.addRouteBlocker()` and `beforeunload`; the unsaved-changes modal lets the user save or discard.
+- `renderMatrix()` builds one row per current user or player with future availability.
+- Per-date totals highlight best dates with `doodle-best`.
+- Clicking a future total cell with at least one available player routes to `#/create-tournament?date=<date>&names=<names>`.
+- Names for create-tournament are sorted by ELO from `buildEloMap()`.
 
-`renderMatrix()` aggregates all visible upcoming dates in the month. It builds one row per current user or player with future availability, computes per-date totals, highlights best dates with `doodle-best`, and makes a future total cell clickable when at least one player is available. Clicking a total routes to `#/create-tournament?date=<date>&names=<names>`, with available players sorted by ELO from `buildEloMap()`.
+Player Overview:
 
-`renderPlayerOverview()` is separate from availability. It shows actual played counts for the viewed month using `Store.getMonthlyOverview(ym)`, `Store.getMatches()`, `Store.getManualAttendance()`, and `buildMonthParticipation()`. The route loads only the viewed month: availability (date range), changelog (`year_month=eq.`), that month's matches + ELO (`loadMonth`), player summary and manual attendance. Changing month calls `pullDoodleMonth(ym)` and `pullMonthlyOverview(ym)` (cached per month) and re-renders the overview when the month is still shown. It also shows `MatchPadelId` from `Store.getPlayersSummary()`; players with `matchPadelId === 0` get a money badge and a `playedCount * 90kr` cost.
+- `renderPlayerOverview()` shows actual monthly participation, MatchPadel IDs, and no-account costs.
+- It combines `Store.getMonthlyOverview(ym)`, `Store.getMatches()`, `Store.getManualAttendance()`, and `buildMonthParticipation()`.
+- Players with `matchPadelId === 0` show a money badge and `playedCount * 90kr`.
 
-`renderChangelog()` displays recent entries from `getChangelog(currentYear, currentMonth)`: five collapsed rows, up to twenty expanded rows, and a dialog with full added/removed dates and timestamp.
+Changelog:
 
-Telegram alerts are fire-and-forget after successful GitHub commit. `sendDoodleAlert(playerName, yearMonth, selectedAdded, selectedRemoved)` skips empty diffs, formats the doodle update message, and relays it through a GitHub `repository_dispatch` event handled by the data repo workflow. Alert failures are logged with `[telegram] alert error:` and do not block the UI.
+- `renderChangelog()` shows recent entries from `getChangelog(currentYear, currentMonth)`.
+- It renders up to five rows collapsed and up to twenty expanded, with a details dialog for added/removed dates.
+
+Route/month loading:
+
+- `renderAll()` clears doodle session TTL, calls `pullDoodleMonth(ym)`, and emits `doodle-changed`.
+- It also calls `pullMonthlyOverview(ym)` so Player Overview can refresh for the selected month.
 
 ## Key Files & Symbols
-- `js/pages/doodle.js` — exports `renderDoodle()`; defines `DoodleEditSession`, `buildEloMap()`, `formatDay()`, `renderUserCalendar()`, `renderMatrix()`, `renderPlayerOverview()`, `renderChangelog()`, save bar, unsaved-change modal, route blocker, and GitHub pull-on-render logic.
-- `js/services/doodle.js` — `getAllDatesInMonth()`, `getDoodle()`, `saveDoodle()`, `deleteDoodle()`, `logDoodleChange()`, `getChangelog()`.
-- `js/services/backend.js` — `pullDoodleMonth()`, `pushDoodleNow()`, `cancelPendingSync()`, `clearSessionTTL()`, `pullMonthlyOverview()`, `ensureDayMatchesLoaded()`.
-- `js/services/telegram.js` — `sendDoodleAlert()`, `buildDoodleAlertText()`, `dispatchTelegramAlert()`.
-- `js/services/attendance.js` — `buildMonthParticipation()` for the Player Overview section.
-- `js/store.js` — `Store.getDoodle()`, `Store.setDoodle()`, `Store.getDoodleChangelog()`, `Store.setDoodleChangelog()`, `Store.getCurrentUser()`, `Store.getGitHubConfig()`, `Store.getPlayersSummary()`, `Store.getMonthlyOverview()`, `Store.getManualAttendance()`, `Store.getMatches()`, `Store.getTournamentDates()`.
-- `js/state.js` — `State.emit('doodle-changed')`, `State.on('doodle-changed')`, `State.addRouteBlocker()`.
-- `js/app.js` — maps `/doodle` to `renderDoodle()`.
+- `js/pages/doodle.js` — exports `renderDoodle`; defines `DoodleEditSession`, `buildEloMap`, `formatDay`, `renderNav`, `renderUserCalendar`, `renderMatrix`, `renderPlayerOverview`, `renderChangelog`, save bar, unsaved-change modal, and route-blocking cleanup.
+- `js/services/doodle.js` — `getAllDatesInMonth`, `getDoodle`, `saveDoodle`, `deleteDoodle`, `logDoodleChange`, and `getChangelog`.
+- `js/services/attendance.js` — `buildMonthParticipation` for Player Overview.
+- `js/services/backend.js` — `pullDoodleMonth`, `pushDoodleNow`, `cancelPendingSync`, `clearSessionTTL`, and `pullMonthlyOverview`.
+- `js/services/telegram.js` — `sendDoodleAlert`.
+- `js/services/elo.js` — `calculateAllEloRankings` fallback for availability sorting.
+- `js/store.js` — current user, doodle data/changelog, players summary, monthly overview, matches, manual attendance, and Supabase config.
+- `js/state.js` — `State.emit('doodle-changed')`, `State.on('doodle-changed')`, and `State.addRouteBlocker`.
+- `js/app.js` — registers `/doodle`.
+- `css/desktop.css` — `doodle-desktop`, `dash-grid`, `span-4`, `span-8`, `stack`, and panel styles.
 
 ## Data
-In-memory `Cache` keys (hydrated from Supabase on every pull, never persisted):
-- `doodle_<YYYY-MM>` — monthly doodle entries (from `doodle_availability`).
-- `doodle_changelog_<YYYY-MM>` — monthly changelog entries (from `doodle_changelog`).
-- `attendance_manual` — manual no-tournament attendance used by Player Overview.
+Monthly doodle availability is stored under `doodle_<YYYY-MM>` and shaped as:
 
-Persisted `localStorage` keys:
-- `current_user` — active player name.
-- `github_config` — `{ owner, repo, pat }`, legacy backend config.
-- cached/read-only data used by this page includes `players_summary`, `monthly_<YYYY-MM>`, `tournament_dates`, and `matches`.
-
-Raw monthly doodle JSON shape:
 ```json
 [
-  {
-    "name": "Player Name",
-    "selectedDates": ["2026-08-11", "2026-08-13"]
-  }
+  { "name": "Player Name", "selectedDates": ["2026-08-11"] }
 ]
 ```
 
-`getDoodle(year, month)` transforms each raw entry for UI use:
-```json
-{
-  "name": "Player Name",
-  "selected": {
-    "2026-08-11": true,
-    "2026-08-13": true
-  },
-  "allowEdit": true
-}
-```
+`getDoodle(year, month)` adapts it to UI entries with `selected` date maps.
 
-Monthly changelog shape:
-```json
-{
-  "playerName": "Player Name",
-  "yearMonth": "2026-08",
-  "year": 2026,
-  "month": 8,
-  "selectedAdded": ["2026-08-11"],
-  "selectedRemoved": ["2026-08-13"],
-  "timestamp": "2026-08-11T11:51:25.386Z"
-}
-```
+Monthly changelog entries contain `playerName`, `yearMonth`, `selectedAdded`, `selectedRemoved`, and `timestamp`.
 
-GitHub paths are derived from Store keys:
-- `YYYY/YYYY-MM/doodle_YYYY-MM.json`
-- `YYYY/YYYY-MM/doodle_changelog_YYYY-MM.json`
-- `YYYY/YYYY-MM/players_overview.json`
-
-Telegram does not store bot tokens or chat ids in the client. The client sends `repository_dispatch` to `https://api.github.com/repos/{owner}/{repo}/dispatches` with `event_type: "telegram_alert"` and `client_payload: { text, kind }`. The data repo workflow maps that to the actual Telegram Bot API call using repo secrets.
+Player Overview uses monthly overview rows, match rows, and manual attendance entries. Create Tournament shortcuts pass selected names through the URL query string.
 
 ## Sub-tabs / Sections
-There are no route-level sub-tabs. The page is a flat Doodle view with these main sections:
-- Current user header and month navigation.
-- Personal availability calendar grid.
-- Collapsible "Overall availability" matrix with per-date totals and create-tournament shortcut.
-- Collapsible "Player Overview" showing actual played counts, MatchPadel IDs, and no-account costs.
-- Fixed dirty-state save bar with Save and Cancel.
-- "Recent Changes" changelog with expandable rows and a details dialog.
+There are no route-level sub-tabs. Sections are:
+
+- Header — current user identity.
+- My availability — month nav and personal calendar.
+- Recent Changes — collapsed/expanded changelog and details dialog.
+- Overall availability — open-by-default matrix with create-tournament shortcut.
+- Player Overview — open-by-default monthly participation table.
+- Save bar and unsaved-changes modal — dirty edit controls.
 
 ## Related Feature Docs
-- `.github/features/doodle-scheduling.md` — canonical scheduling rules, data schema, date validation, UI behavior, GitHub paths, and edge cases for doodle availability.
-- `.github/features/telegram-alerts.md` — explains the GitHub Actions relay architecture, doodle trigger point, message format, dispatch payload, and fire-and-forget alert behavior.
+- `.github/features/doodle-scheduling.md` — canonical doodle scheduling rules, data schema, and edge cases.
+- `.github/features/telegram-alerts.md` — Telegram relay architecture and doodle alert behavior.
+- `.github/features/desktop-ui.md` — Doodle two-column desktop layout.
 
 ## Update Protocol
-Update this skill whenever js/pages/doodle.js scheduling logic, alerts, data shape, or routing changes, or when the linked feature MDs change.
+Update this skill whenever `js/pages/doodle.js` scheduling logic, desktop sections, alerts, data shape, dirty-state handling, or routing changes, or when the linked feature MDs change.

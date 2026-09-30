@@ -1,92 +1,71 @@
 ---
 name: tab-home
 description: >
-  Reference skill for the Home tab (route /) of the Mexicano PWA. Covers purpose,
-  rules, key files, data flow, and sub-sections. Use when working on the home page.
+  Reference skill for the Home dashboard (route /) of the Mexicano PWA. Covers purpose,
+  rules, key files, data flow, and dashboard sections. Use when working on the home page.
 ---
 
 # Home tab
 
 ## Purpose
-The Home tab is the landing page for route `/`. It is available to all users and gives a quick overview of the current app state: an active tournament link when one exists, the latest completed tournament table, and the current calendar month table. If the current user is registered for an active tournament and has not confirmed attendance, the page can also show a confirmation popup.
+The Home tab is the desktop dashboard for route `/`. It is available to all users and summarizes the current state in a `dash-grid`: KPI row, active tournament, latest tournament, current month, ELO movers, and Explore links.
+
+The page is implemented by `renderHome(container, params)` in `js/pages/home.js` and registered in `js/app.js` as `'/'`. Player names in dashboard tables link to the Players hub with `#/players?p=<name>`.
 
 ## Rules / Logic
-- Routing is registered in `js/app.js`: route `'/'` maps to `renderHome`.
-- `renderHome(container, params)` is the exported page renderer. `params` is not used.
-- The page reads the active tournament with `getActiveTournament()`, then suppresses it if `Store.getTournamentsIndex()` already marks the same `tournamentDate` as complete. This prevents stale `active_tournament` localStorage data from appearing as live.
-- Latest tournament selection uses `getLatestCompleteTournamentDate()`. That function prefers complete entries from the tournaments index and falls back to locally cached match dates, excluding an in-progress active tournament date.
-- Latest tournament stats are built from `Store.getMatches().filter(m => m.date === latestDate)` and `calculatePlayerStatistics(dayMatches)`.
-- Latest tournament ELO is attached by `attachEloToStats(stats)`. It prefers `Store.getPlayersSummary()` (`elo` and `previousElo`) and falls back to `getEloSnapshots(Store.getMatches())` plus `getEloForDate(snapshots, latestDate)`.
-- Current month is calculated from the browser date as `YYYY-MM`; previous month is derived with `getPrevYearMonth(yearMonth)`.
-- Current-month stats are resolved by `resolveCurrentMonthStats()`. Primary source is `Store.getMonthlyOverview(currentYearMonth)`, converted by `overviewToStats(overview, prevOverview)`. Fallback source is local matches whose `date` starts with the current `YYYY-MM`.
-- `overviewToStats()` maps monthly overview rows to table stats and computes month-over-month `eloChange` by comparing current and previous monthly overview ELO values by player name.
-- Both tables have independent client-side sort state:
-  - latest tournament: `sortCol`, `sortDir`, initially `average` / `desc`. The rendered column key is `avg`, so the first render keeps the `calculatePlayerStatistics()` order until the user clicks a sortable header;
-  - current month: `sortCol2`, `sortDir2`, initially `avg` / `desc`.
-- Sortable columns are `name`, `wl`, `pts`, `avg`, `win`, `elo`, and `change`. Clicking the active sort column toggles direction; clicking a new column sorts names ascending and other columns descending.
-- Current-month sorting has an additional tie-breaker: wins descending, then name ascending.
-- With Supabase configured, `pullForRoute('#/')` (`loadHomeRoute`) fetches players ∥
-  `tournament_index` ∥ active tournament, then only the matches of the current month, previous
-  month and latest completed tournament ∥ `get_player_elo` for those dates (server-side ELO).
-  Never the full match history. See `.github/features/route-data-loading.md`.
-- Home-specific matches and player summary are stored in `Cache` as `home_matches` and
-  `home_players_summary`; the loaded days are merged into `Store.getMatches()`.
-- Missing latest-day matches can still be loaded through `ensureDayMatchesLoaded(latestDate)`.
-  Current and previous monthly projections are reused through `pullMonthlyOverview()`.
-- The title `#home-title` renders `🎾 Mexicano v<APP_VERSION>` and is clickable. After confirmation, it clears the in-memory `matches`, `matches_fully_loaded` and `active_tournament` cache entries, then reloads the page (which re-pulls everything from Supabase).
-- The title also contains `#app-refresh-btn` (refresh icon `↻`). Its click stops propagation (so the clear-cache handler does not fire) and calls `refreshApp()` from `js/version.js`, which clears all caches and reloads.
-- Tournament attendance confirmation is shown only when `shouldShowConfirmationPopup(activeTournament, currentUser)` returns true and no `#tournament-confirm-overlay` exists. Confirmation calls `confirmAttendanceAndPush(currentUser)` (which persists to Supabase), removes the overlay, and best-effort sends a Telegram alert.
-- `State`, `calculateAllEloRankings`, and `getMembers` are imported in `home.js` but are not used by the current implementation.
+- The dashboard reads a route-scoped match projection from `Cache.get('home_matches')` with `Store.getMatches()` as fallback, and player summary from `Cache.get('home_players_summary')` with `Store.getPlayersSummary()` as fallback.
+- `getActiveTournament()` provides the active tournament card, but it is suppressed when `Store.getTournamentsIndex()` already marks the same date complete.
+- Latest tournament stats use `getLatestCompleteTournamentDate()`, day matches, `calculatePlayerStatistics(dayMatches)`, and `attachEloToStats(stats)`.
+- Current-month stats use the browser current `YYYY-MM`, `Store.getMonthlyOverview(currentYearMonth)`, `Store.getMonthlyOverview(prevYearMonth)`, and `overviewToStats()`. Local matches are a fallback.
+- Latest and current-month tables keep independent local sort state. Sortable columns are name, W/T, points, average, win rate, ELO, and ELO delta.
+- `renderKpis()` fills `#home-kpis` with latest winner, latest player count, month average leader, tournaments this month, and active players this month.
+- `renderMovers()` fills `#home-movers` with a compact latest-tournament ELO delta bar list.
+- With Supabase configured, the app route loader calls `pullForRoute('#/')`, which loads only Home-scoped data. Missing latest-day matches are fetched through `ensureDayMatchesLoaded(latestDate)`. Monthly overview data is refreshed with `pullMonthlyOverview(currentYearMonth, { route: '#/' })` and previous month.
+- The header title shows `🎾 Mexicano v<APP_VERSION>` plus preview deploy id when present. Clicking the title clears in-memory domain caches and reloads; clicking `#app-refresh-btn` calls `refreshApp()`.
+- `renderNotificationBell()` mounts asynchronously into `#home-header-right`.
+- Attendance confirmation uses `shouldShowConfirmationPopup(activeTournament, currentUser)` and `confirmAttendanceAndPush(currentUser)`, then best-effort sends `sendTournamentConfirmationAlert()`.
 
 ## Key Files & Symbols
-- `js/pages/home.js` — exports `renderHome(container, params)` plus `shouldShowConfirmationPopup(activeTournament, currentUser, alreadyConfirmed)` and `buildConfirmationAlertMessage(playerName, tournamentDate)`. Notable internal helpers: `getCurrentYearMonth()`, `getPrevYearMonth()`, `formatMonth()`, `overviewToStats()`, `formatDate()`, `attachEloToStats()`, `resolveCurrentMonthStats()`, `renderTable()`, and `renderCurrentMonthTable()`.
-- `js/app.js` — imports `renderHome` and registers `'/'` in the route table.
-- `js/cache.js` — holds the partial `home_matches` and `home_players_summary` projections.
-- `js/store.js` — provides localStorage-backed and cache-backed reads used by the page: fallback
-  matches, active tournament, current user, Supabase config, monthly overview, and tournaments
-  index.
-- `js/services/tournament.js` — provides `getActiveTournament()`, `getLatestCompleteTournamentDate()`, and `confirmAttendance(playerName)`.
-- `js/services/statistics.js` — provides `calculatePlayerStatistics(matches)`, which ignores 0–0 matches, totals wins/losses/points, computes averages and win rate, sorts by points then wins, and assigns ranks.
-- `js/services/elo.js` — provides `getEloSnapshots(matches)` and `getEloForDate(snapshots, latestDate)` as fallback ELO data for the latest tournament table.
-- `js/services/backend.js` and `js/services/supabase.js` — route-scoped Home hydration,
-  `ensureDayMatchesLoaded(date)`, and `pullMonthlyOverview(yearMonth)`.
-- `js/services/telegram.js` — dynamically imported for `sendTournamentConfirmationAlert()` after attendance confirmation.
+- `js/pages/home.js` — exports `renderHome`, `shouldShowConfirmationPopup`, and `buildConfirmationAlertMessage`; local helpers include `getCurrentYearMonth`, `getPrevYearMonth`, `formatMonth`, `overviewToStats`, `formatDate`, `renderKpis`, `renderMovers`, `renderTable`, and `renderCurrentMonthTable`.
+- `js/app.js` — registers route `'/'` to `renderHome`.
+- `js/cache.js` — stores `home_matches` and `home_players_summary`.
+- `js/store.js` — supplies matches, active tournament, current user, Supabase config, monthly overview, tournaments index, and cache mutation helpers used by refresh flows.
+- `js/services/tournament.js` — `getActiveTournament`, `getLatestCompleteTournamentDate`, and `confirmAttendanceAndPush`.
+- `js/services/statistics.js` — `calculatePlayerStatistics`.
+- `js/services/elo.js` — fallback ELO helpers `getEloSnapshots` and `getEloForDate`.
+- `js/services/backend.js` — Home route hydration, `ensureDayMatchesLoaded`, and `pullMonthlyOverview`.
+- `js/services/telegram.js` — `sendTournamentConfirmationAlert`.
+- `js/components/notification-bell.js` — `renderNotificationBell`.
+- `js/components/nav.js` — desktop `renderNav()` creates the left `nav.side-nav` shell used around this page.
+- `css/desktop.css` — desktop layout classes used here, including `dash-grid`, `span-6`, `span-12`, `panel`, `kpi-row`, and `kpi`.
 
 ## Data
-- Store/localStorage keys read directly or through helpers:
-  - `matches` — array of match objects. Home uses `date`, player-name fields (`team1Player1Name`, `team1Player2Name`, `team2Player1Name`, `team2Player2Name`), and scores (`scoreTeam1`, `scoreTeam2`).
-  - `active_tournament` — active tournament object. Home uses `tournamentDate`, `isCompleted`, and `players`.
-  - `current_user` — current player name used for attendance confirmation.
-  - `supabase_config` — enables route-scoped Supabase hydration.
-  - cached `home_players_summary` — Home-only player rows with `name`, `elo`, and `previousElo`.
-  - cached `monthly_YYYY-MM` — monthly overview rows derived from canonical matches and runtime ELO.
-  - cached `tournaments_index` — entries with at least `date` and `isComplete`.
-  - `confirmed` flag on each `active_tournament` player — hydrated from Supabase and used to suppress the confirmation popup.
-- Monthly overview rows are derived from date-scoped canonical matches and runtime ELO:
-  `{ name, totalPoints, wins, losses, average, elo }`.
-- `overviewToStats()` converts monthly rows to table rows: `{ name, wins, losses, points, average, winRate, elo, eloChange }`.
-- `calculatePlayerStatistics()` returns table-compatible rows from raw matches, including `{ rank, name, wins, losses, points, wl, average, winRate, ... }`.
-- `ensureDayMatchesLoaded(date)` reuses or fetches the date-scoped Supabase tournament hydration
-  and returns only that day's matches.
+Home reads these data shapes:
+
+- Match rows: `date`, player-name fields, `scoreTeam1`, and `scoreTeam2`.
+- Active tournament: `tournamentDate`, `isCompleted`, `players`, and `players[].confirmed`.
+- Tournament index entries: `date`, `isComplete`, and current-month membership by date prefix.
+- Monthly overview rows: `{ name, totalPoints, wins, losses, average, elo }`.
+- Player summary rows: `name`, `elo`, and `previousElo`.
+
+`overviewToStats()` maps monthly overview rows to `{ name, wins, losses, points, average, winRate, elo, eloChange }`. `calculatePlayerStatistics()` returns match-derived table rows with wins, losses, points, average, win rate, and rank-compatible fields.
 
 ## Sub-tabs / Sections
-Home has no sub-tabs, but it has distinct sections:
+Home has no sub-tabs. It has these dashboard sections:
 
-- **Page header** — shows the clickable `🎾 Mexicano v<APP_VERSION>` title with the `#app-refresh-btn` refresh icon, plus the `#home-header-right` container holding the notification bell (`renderNotificationBell()`, mounted async into that slot after render — see `push-notifications` skill). Clicking the title is a manual cache reset flow; clicking the icon refreshes to the latest version.
-- **Active Tournament card** — renders only when there is a non-completed active tournament that is not marked complete in the tournaments index. It links to `#/tournament/<tournamentDate>` and shows formatted date plus player count.
-- **Latest Tournament table** — shows stats for the latest completed tournament. If route data is
-  missing and Supabase is configured, it temporarily displays `⏳ Loading…`, fetches the date's
-  matches, then replaces the no-data element with the rendered table. If no data exists, it
-  shows `No tournament data available`.
-- **Current Month table** — shows current calendar month aggregate stats. It uses the route-scoped
-  monthly overview first and cached match calculation second. It shows `No data for this month`
-  when no rows are available.
-- **Attendance confirmation popup** — modal overlay for a registered current user in an active tournament who has not already confirmed. The confirm button persists confirmation and triggers tournament save/push behavior through `confirmAttendance()`.
+- Page header — title/version, refresh button, preview deploy id, and notification bell slot.
+- KPI row — `renderKpis()` summary cards.
+- Active Tournament — live tournament card linking to `#/tournament/<date>`.
+- Latest Tournament — sortable table for latest completed day; player names link to `#/players?p=<name>`.
+- Current Month — sortable current-month overview table; player names link to `#/players?p=<name>`.
+- ELO movers — compact latest-tournament ELO gain/loss list with a link to ELO Charts.
+- Explore — cards linking to Players, Statistics, ELO Charts, and Tournaments.
+- Attendance confirmation popup — modal confirmation for a registered current user in an active tournament.
 
 ## Related Feature Docs
-- `.github/features/home-current-month.md` — documents the Home page current-month table, its
-  data sources, columns, sorting, and route-scoped Supabase hydration.
-- `.github/features/player-ranking.md` — documents tournament/player ranking rules that are related to how match-derived player stats and ranks are produced elsewhere in the app.
+- `.github/features/home-current-month.md` — Home current-month table behavior and route-scoped loading.
+- `.github/features/player-ranking.md` — related ranking expectations for match-derived player stats.
+- `.github/features/desktop-ui.md` — desktop dashboard and shell layout changes.
 
 ## Update Protocol
-Update this skill whenever js/pages/home.js render logic, data shape, sorting, sections, or routing changes, or when the linked feature MDs change. Keep it in sync with the page file and linked feature docs.
+Update this skill whenever `js/pages/home.js` dashboard render logic, data shape, sorting, sections, player links, or route hydration changes, or when the linked feature MDs change.

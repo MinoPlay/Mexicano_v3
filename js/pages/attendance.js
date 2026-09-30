@@ -1,4 +1,5 @@
-import { getMonthlyAttendance, getAttendanceStatistics, getParticipationRows } from '../services/attendance.js';
+import { getMonthlyAttendance, getAttendanceStatistics, getParticipationRows, buildYearMatrix } from '../services/attendance.js';
+import { heatColor } from '../components/chart.js';
 import { Store } from '../store.js';
 
 // ─── Helpers ───
@@ -6,6 +7,8 @@ import { Store } from '../store.js';
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June',
   'July', 'August', 'September', 'October', 'November', 'December'];
 const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+const esc = (v) => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 function getInitialMonth(matches) {
   if (!matches.length) return { year: new Date().getFullYear(), month: new Date().getMonth() + 1 };
@@ -273,21 +276,29 @@ export function renderAttendance(container, params = {}) {
   buildContent();
 
   function buildContent() {
+  content.classList.add('dash-grid');
+  const mkPanel = (cls, title) => {
+    const p = document.createElement('section');
+    p.className = `panel ${cls}`;
+    p.innerHTML = `<div class="panel-header"><span class="panel-title">${title}</span></div>`;
+    const bodyEl = document.createElement('div');
+    bodyEl.className = 'panel-body';
+    p.appendChild(bodyEl);
+    content.appendChild(p);
+    return { p, bodyEl };
+  };
+
+  const cal = mkPanel('span-6', 'Calendar');
   const nav = document.createElement('div');
-  nav.className = 'flex items-center justify-between mb-md';
-  content.appendChild(nav);
+  nav.className = 'flex items-center gap-sm';
+  nav.style.marginLeft = 'auto';
+  cal.p.querySelector('.panel-header').appendChild(nav);
+  const body = cal.bodyEl;
 
-  // Tabs
-  const tabsEl = document.createElement('div');
-  tabsEl.className = 'tabs';
-  content.appendChild(tabsEl);
-
-  // Body
-  const body = document.createElement('div');
-  body.className = 'mt-md';
-  content.appendChild(body);
-
-  let activeTab = 'calendar';
+  const stats = mkPanel('span-6 attendance-stats', 'Statistics');
+  const statsBody = stats.bodyEl;
+  const year = mkPanel('span-12', 'Year overview');
+  const yearBody = year.bodyEl;
 
   function renderNav() {
     nav.innerHTML = `
@@ -307,33 +318,44 @@ export function renderAttendance(container, params = {}) {
     });
   }
 
-  function renderTabsBar() {
-    tabsEl.innerHTML = '';
-    [{ id: 'calendar', label: 'Calendar' }, { id: 'statistics', label: 'Statistics' }].forEach(t => {
-      const btn = document.createElement('button');
-      btn.className = 'tab' + (activeTab === t.id ? ' active' : '');
-      btn.textContent = t.label;
-      btn.addEventListener('click', () => { activeTab = t.id; renderTabsBar(); renderBody(); });
-      tabsEl.appendChild(btn);
-    });
-  }
-
   function renderBody() {
     body.innerHTML = '';
-    if (activeTab === 'calendar') {
-      const monthData = getMonthlyAttendance(currentYear, currentMonth);
-      renderCalendar(body, currentYear, currentMonth, monthData);
-    } else {
-      renderStatsTable(body, allMatches);
-    }
+    const monthData = getMonthlyAttendance(currentYear, currentMonth);
+    renderCalendar(body, currentYear, currentMonth, monthData);
+  }
+
+  function renderYear() {
+    const m = buildYearMatrix(allMatches, currentYear);
+    const max = Math.max(1, ...m.players.flatMap(p => p.months));
+    const cell = (v) => v ? `<td style="background:${heatColor(50 + (v / max) * 50)}">${v}</td>` : '<td class="empty">·</td>';
+    const yearOpts = (m.years.length ? m.years : [currentYear]).map(y => `<option value="${y}" ${y === currentYear ? 'selected' : ''}>${y}</option>`).join('');
+    yearBody.innerHTML = `
+      <div class="flex items-center gap-sm mb-sm">
+        <select id="attendance-year" style="width:auto">${yearOpts}</select>
+        <span class="text-xs text-secondary">sessions attended per month · click a month to open it in the calendar</span>
+      </div>
+      <div class="heatmap-wrap"><table class="heatmap year-matrix">
+        <thead><tr><th></th>${MONTHS.map((mo, i) => `<th><button class="linklike" data-month="${i + 1}">${mo.slice(0, 3)}</button></th>`).join('')}<th>Total</th></tr>
+        <tr class="text-secondary"><th class="text-xs">Sessions</th>${m.sessions.map(v => `<th class="text-xs">${v || ''}</th>`).join('')}<th class="text-xs">${m.sessions.reduce((a, b) => a + b, 0)}</th></tr></thead>
+        <tbody>${m.players.map(p => `<tr><th><a href="#/players?p=${encodeURIComponent(p.name)}">${esc(p.name)}</a></th>${p.months.map(cell).join('')}<td><b>${p.total}</b></td></tr>`).join('')}</tbody>
+      </table></div>`;
+    yearBody.querySelector('#attendance-year').addEventListener('change', (e) => {
+      currentYear = Number(e.target.value);
+      renderContent();
+    });
+    yearBody.querySelectorAll('[data-month]').forEach(btn => btn.addEventListener('click', () => {
+      currentMonth = Number(btn.dataset.month);
+      renderContent();
+    }));
   }
 
   function renderContent() {
     renderNav();
-    renderTabsBar();
     renderBody();
+    renderYear();
   }
 
+  renderStatsTable(statsBody, allMatches);
   renderContent();
   } // end buildContent
 }

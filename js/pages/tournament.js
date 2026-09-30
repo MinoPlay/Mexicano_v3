@@ -20,7 +20,7 @@ import { rankPlayers } from '../services/ranking.js';
 import { State } from '../state.js';
 import { Store } from '../store.js';
 import { showToast } from '../components/toast.js';
-import { renderDayStatsInto, showPlayerProfile } from './statistics.js';
+import { renderDayStatsInto } from './statistics.js';
 
 // Shrinks matched elements' font-size so a name plus its confirmation checkmark
 // never exceeds the on-screen width of our longest real player name — keeps
@@ -65,7 +65,6 @@ function getStatusBadge(tournament) {
 export function renderTournament(container, params) {
   const date = params.date;
   let tournament = null;
-  let currentTab = 'matches';
   let viewingRound = -1; // -1 means latest
   let unsubscribe = null;
   let isLoading = false;
@@ -77,7 +76,7 @@ export function renderTournament(container, params) {
     const active = getActiveTournament();
     if (active && active.tournamentDate === date) {
       tournament = active;
-      if (tournament.isCompleted) currentTab = 'leaderboard';
+
       render();
       // Fire a background refresh so we always show the latest round data,
       // bypassing the session-level pull guard that runs only once per page load.
@@ -100,7 +99,7 @@ export function renderTournament(container, params) {
                     Store.setMatches([...withoutDate, ...fetched]);
                   }
                   tournament = loadTournamentByDate(date);
-                  if (tournament?.isCompleted) currentTab = 'leaderboard';
+
                   render();
                 });
               }
@@ -113,7 +112,7 @@ export function renderTournament(container, params) {
 
     tournament = loadTournamentByDate(date);
     if (tournament) {
-      if (tournament.isCompleted) currentTab = 'leaderboard';
+
       render();
       return;
     }
@@ -126,7 +125,7 @@ export function renderTournament(container, params) {
         .then(({ ensureDayMatchesLoaded }) => ensureDayMatchesLoaded(date))
         .then(() => {
           tournament = loadTournamentByDate(date);
-          if (tournament?.isCompleted) currentTab = 'leaderboard';
+
           isLoading = false;
           render();
         })
@@ -220,16 +219,19 @@ export function renderTournament(container, params) {
         </div>
       </div>
 
-      <div class="tabs" id="tournament-tabs">
-        <button class="tab ${currentTab === 'matches' ? 'active' : ''}" data-tab="matches">Matches</button>
-        <button class="tab ${currentTab === 'leaderboard' ? 'active' : ''}" data-tab="leaderboard">Leaderboard</button>
+      <div class="tournament-toolbar">
         <div style="display:flex;align-items:center;gap:var(--space-xs);margin-left:auto" id="access-code-area">
           ${tournament.accessCode ? `<span class="text-sm" style="color:var(--color-primary)"><strong>Code: ${tournament.accessCode}</strong></span>` : ''}
           ${isAdmin ? `<button class="btn btn-ghost btn-xs" id="edit-access-code" title="Edit access code">✎</button>` : ''}
         </div>
       </div>
 
-      <div class="page-content" id="tournament-content"></div>
+      <div class="page-content tournament-desktop">
+        <section class="panel"><div class="panel-header"><span class="panel-title">Matches</span></div>
+          <div class="panel-body" id="tournament-content"></div></section>
+        <aside class="panel tournament-side"><div class="panel-header"><span class="panel-title">Leaderboard</span></div>
+          <div class="panel-body flush" id="tournament-leaderboard"></div></aside>
+      </div>
     `;
 
     // Tournament prev/next navigation
@@ -237,14 +239,6 @@ export function renderTournament(container, params) {
     const nextBtn = container.querySelector('#tournament-next');
     if (prevBtn?.dataset.date) prevBtn.addEventListener('click', () => { window.location.hash = `/tournament/${prevBtn.dataset.date}`; });
     if (nextBtn?.dataset.date) nextBtn.addEventListener('click', () => { window.location.hash = `/tournament/${nextBtn.dataset.date}`; });
-
-    // Tab switching
-    container.querySelector('#tournament-tabs').addEventListener('click', (e) => {
-      const tab = e.target.closest('.tab');
-      if (!tab) return;
-      currentTab = tab.dataset.tab;
-      render();
-    });
 
     // Edit access code (inline editor; prompt() unsupported in PWA)
     const editBtn = container.querySelector('#edit-access-code');
@@ -278,11 +272,8 @@ export function renderTournament(container, params) {
 
     const content = container.querySelector('#tournament-content');
 
-    if (currentTab === 'matches') {
-      renderMatchesTab(content, roundIdx, totalRounds, isLatestRound);
-    } else {
-      renderLeaderboardTab(content).catch(() => {});
-    }
+    renderMatchesTab(content, roundIdx, totalRounds, isLatestRound);
+    renderLeaderboardTab(container.querySelector('#tournament-leaderboard')).catch(() => {});
   }
 
   // ─── Matches Tab ───
@@ -343,6 +334,7 @@ export function renderTournament(container, params) {
     }
 
     // Match cards
+    html += '<div class="round-matches">';
     matches.forEach((match, idx) => {
       const completed = isMatchComplete(match);
       const team1Name1 = match.player1?.name || '?';
@@ -377,6 +369,8 @@ export function renderTournament(container, params) {
         </div>
       `;
     });
+
+    html += '</div>';
 
     // Action buttons (admin only)
     if (Store.isAdministrator() && isLatestRound && !tournament.isCompleted) {
@@ -522,7 +516,7 @@ export function renderTournament(container, params) {
 
     if (dayMatches.length > 0) {
       const isLatest = date === getLatestCompleteTournamentDate();
-      await renderDayStatsInto(content, dayMatches, date, isLatest, name => showPlayerProfile(name));
+      await renderDayStatsInto(content, dayMatches, date, isLatest, name => { window.location.hash = `/players?p=${encodeURIComponent(name)}`; });
       return;
     }
 

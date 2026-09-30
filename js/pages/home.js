@@ -273,9 +273,11 @@ export function renderHome(container, params) {
       // Name
       const tdName = document.createElement('td');
       tdName.className = 'name-cell';
-      tdName.style.cursor = 'default';
-      tdName.style.color = 'var(--text-primary)';
-      tdName.textContent = stat.name;
+      const nameLink = document.createElement('a');
+      nameLink.href = `#/players?p=${encodeURIComponent(stat.name)}`;
+      nameLink.style.color = 'var(--text-primary)';
+      nameLink.textContent = stat.name;
+      tdName.appendChild(nameLink);
       tr.appendChild(tdName);
 
       // W/T
@@ -416,9 +418,11 @@ export function renderHome(container, params) {
 
       const tdName = document.createElement('td');
       tdName.className = 'name-cell';
-      tdName.style.cursor = 'default';
-      tdName.style.color = 'var(--text-primary)';
-      tdName.textContent = stat.name;
+      const nameLink = document.createElement('a');
+      nameLink.href = `#/players?p=${encodeURIComponent(stat.name)}`;
+      nameLink.style.color = 'var(--text-primary)';
+      nameLink.textContent = stat.name;
+      tdName.appendChild(nameLink);
       tr.appendChild(tdName);
 
       const tdWl = document.createElement('td');
@@ -471,47 +475,107 @@ export function renderHome(container, params) {
       <h1 id="home-title" style="cursor:pointer;user-select:none;display:flex;align-items:center;gap:var(--space-xs);" title="Tap to clear cached data">🎾 Mexicano v${APP_VERSION}${currentDeployId() ? ` · preview:${currentDeployId()}` : ''}<button id="app-refresh-btn" type="button" title="Refresh to latest version" style="background:none;border:none;padding:0;color:inherit;font:inherit;cursor:pointer;line-height:1;">↻</button></h1>
       <div class="flex items-center gap-sm" id="home-header-right"></div>
     </header>
-    <div class="page-content" style="padding-left:0;padding-right:0;">
-      ${activeTournament ? `<a href="#/tournament/${activeTournament.tournamentDate}" class="card" style="display:block;margin:0 0 var(--space-md);border-radius:0;border-left:3px solid var(--color-success);border-right:none;text-decoration:none;color:inherit;background:none;border-top:none;border-bottom:none;">
-            <div class="card-header">
-              <span class="card-title">Active Tournament</span>
+    <div class="page-content">
+      <div class="dash-grid">
+        <div class="span-12 kpi-row" id="home-kpis"></div>
+        ${activeTournament ? `<a href="#/tournament/${activeTournament.tournamentDate}" class="panel span-12" style="text-decoration:none;color:inherit;border-left:3px solid var(--color-success);">
+            <div class="panel-header">
+              <span class="panel-title">Active Tournament</span>
               <span class="badge badge-success">Live</span>
             </div>
-            <div class="text-sm text-secondary">
+            <div class="panel-body text-sm text-secondary">
               ${formatDate(activeTournament.tournamentDate)} · ${activeTournament.players?.length || 0} players
             </div>
           </a>` : ''}
 
-      <div class="card" style="margin:0 0 var(--space-md);border-radius:0;padding:0;overflow:hidden;border-left:none;border-right:none;background:none;border-top:none;border-bottom:none;">
-        <div class="card-header" style="padding:var(--space-md);">
-          <span class="card-title">Latest Tournament</span>
-          ${latestDate ? `<span class="text-sm text-secondary">${formatDate(latestDate)}</span>` : ''}
-        </div>
-        ${latestTournamentStats.length === 0 ? `
-          <div id="latest-no-data" class="text-sm text-secondary text-center" style="padding:var(--space-md);">
-            No tournament data available
+        <div class="panel span-6">
+          <div class="panel-header">
+            <span class="panel-title">Latest Tournament</span>
+            ${latestDate ? `<a class="text-sm" href="#/tournament/${latestDate}">${formatDate(latestDate)} →</a>` : ''}
           </div>
-        ` : `
-          <div class="latest-tournament-table" id="latest-tournament-table">
-            <!-- Table rendered by renderTable() -->
+          <div class="panel-body flush">
+          ${latestTournamentStats.length === 0 ? `
+            <div id="latest-no-data" class="text-sm text-secondary text-center" style="padding:var(--space-md);">
+              No tournament data available
+            </div>
+          ` : `
+            <div class="latest-tournament-table" id="latest-tournament-table">
+              <!-- Table rendered by renderTable() -->
+            </div>
+          `}
           </div>
-        `}
-      </div>
-
-      <div class="card" style="margin:0 0 var(--space-md);border-radius:0;padding:0;overflow:hidden;border-left:none;border-right:none;background:none;border-top:none;border-bottom:none;">
-        <div class="card-header" style="padding:var(--space-md);">
-          <span class="card-title">Current Month</span>
-          <span class="text-sm text-secondary">${formatMonth(currentYearMonth)}</span>
         </div>
-        <div id="current-month-table">
-          ${currentMonthStats.length === 0 ? `<p id="current-month-no-data" class="text-sm text-secondary text-center" style="padding:var(--space-md);">No data for this month</p>` : ''}
+
+        <div class="panel span-6">
+          <div class="panel-header">
+            <span class="panel-title">Current Month</span>
+            <span class="text-sm text-secondary">${formatMonth(currentYearMonth)}</span>
+          </div>
+          <div class="panel-body flush" id="current-month-table">
+            ${currentMonthStats.length === 0 ? `<p id="current-month-no-data" class="text-sm text-secondary text-center" style="padding:var(--space-md);">No data for this month</p>` : ''}
+          </div>
+        </div>
+
+        <div class="panel span-6">
+          <div class="panel-header">
+            <span class="panel-title">ELO movers — latest tournament</span>
+            <a class="text-sm" href="#/elo-charts">ELO charts →</a>
+          </div>
+          <div class="panel-body" id="home-movers"></div>
+        </div>
+
+        <div class="panel span-6">
+          <div class="panel-header"><span class="panel-title">Explore</span></div>
+          <div class="panel-body kpi-row">
+            <a class="kpi" href="#/players"><div class="kpi-label">👥 Players</div><div class="kpi-sub">Full profiles, partners, nemesis</div></a>
+            <a class="kpi" href="#/statistics"><div class="kpi-label">📊 Statistics</div><div class="kpi-sub">Periods &amp; pair heatmaps</div></a>
+            <a class="kpi" href="#/elo-charts"><div class="kpi-label">📈 ELO</div><div class="kpi-sub">Rating history</div></a>
+            <a class="kpi" href="#/tournaments"><div class="kpi-label">📋 Tournaments</div><div class="kpi-sub">All results</div></a>
+          </div>
         </div>
       </div>
-
     </div>
   `;
 
+  function renderMovers() {
+    const el = container.querySelector('#home-movers');
+    if (!el) return;
+    const rows = latestTournamentStats
+      .filter(s => s.eloChange != null)
+      .map(s => ({ name: s.name, delta: s.eloChange, elo: s.elo }))
+      .sort((a, b) => b.delta - a.delta);
+    if (!rows.length) { el.innerHTML = '<p class="text-sm text-secondary">No ELO data</p>'; return; }
+    const max = Math.max(...rows.map(r => Math.abs(r.delta)), 1);
+    el.innerHTML = rows.map(r => `
+      <div class="flex items-center gap-sm text-sm" style="margin-bottom:4px">
+        <span style="width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r.name}</span>
+        <span style="flex:1;display:flex;${r.delta >= 0 ? '' : 'justify-content:flex-end;'}">
+          <span style="height:10px;border-radius:3px;width:${(Math.abs(r.delta) / max) * 100}%;background:${r.delta >= 0 ? 'var(--color-success)' : 'var(--color-danger)'};opacity:.75"></span>
+        </span>
+        <span class="num ${r.delta > 0 ? 'pos' : r.delta < 0 ? 'neg' : 'muted'}" style="width:56px;text-align:right">${r.delta > 0 ? '+' : ''}${(Math.round(r.delta * 10) / 10).toFixed(1)}</span>
+        <span class="num muted" style="width:44px;text-align:right">${r.elo != null ? Math.round(r.elo) : ''}</span>
+      </div>`).join('');
+  }
+
+  function renderKpis() {
+    const el = container.querySelector('#home-kpis');
+    if (!el) return;
+    const top = [...latestTournamentStats].sort((a, b) => b.points - a.points)[0];
+    const monthTop = [...currentMonthStats].sort((a, b) => (b.average ?? 0) - (a.average ?? 0))[0];
+    const monthDates = Store.getTournamentsIndex().filter(e => e.date?.startsWith(currentYearMonth)).length;
+    const k = (label, value, sub = '') => `<div class="kpi"><div class="kpi-label">${label}</div><div class="kpi-value">${value}</div>${sub ? `<div class="kpi-sub">${sub}</div>` : ''}</div>`;
+    el.innerHTML = [
+      k('Latest winner', top ? top.name : '—', top ? `${top.points} pts · ${top.wins}/${top.wins + top.losses} wins` : ''),
+      k('Players last time', latestTournamentStats.length || '—', latestDate ? formatDate(latestDate) : ''),
+      k('Month leader (avg)', monthTop ? monthTop.name : '—', monthTop ? `${monthTop.average.toFixed(1)} avg` : ''),
+      k('Tournaments this month', monthDates, formatMonth(currentYearMonth)),
+      k('Active players this month', currentMonthStats.length || '—'),
+    ].join('');
+  }
+
   // Render table after DOM is ready
+  renderKpis();
+  renderMovers();
   if (latestTournamentStats.length > 0) {
     renderTable();
   } else if (latestDate && Store.getSupabaseConfig()) {
@@ -531,6 +595,8 @@ export function renderHome(container, params) {
           noDataEl.removeAttribute('style');
           noDataEl.textContent = '';
           renderTable();
+          renderKpis();
+          renderMovers();
         } else {
           noDataEl.textContent = 'No tournament data available';
         }
@@ -566,6 +632,7 @@ export function renderHome(container, params) {
         currentMonthStats = freshStats;
         tableEl.innerHTML = '';
         renderCurrentMonthTable();
+        renderKpis();
       } else {
         const nd = container.querySelector('#current-month-no-data');
         if (nd) nd.textContent = 'No data for this month';

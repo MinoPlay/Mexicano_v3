@@ -1149,7 +1149,7 @@ async function loadHomeRoute() {
 function routeScope(hash) {
   const path = String(hash || '').replace(/^#/, '').split('?')[0] || '/';
   if (path === '/logs' || path === '/settings') return { key: `skip:${path}`, load: null };
-  if (path === '/__full__') return { key: 'full', load: loadSnapshot };
+  if (path === '/__full__' || path === '/players' || path === '/players/compare') return { key: 'full', load: loadSnapshot };
   const tournamentMatch = path.match(/^\/tournament\/(\d{4}-\d{2}-\d{2})$/);
   if (tournamentMatch) {
     const date = tournamentMatch[1];

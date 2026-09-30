@@ -207,19 +207,36 @@ export function renderDoodle(container, params = {}) {
     return;
   }
 
+  // Desktop layout: [my calendar + changelog] | [overall matrix + player overview]
+  content.classList.add('dash-grid', 'doodle-desktop');
+  const leftCol = document.createElement('div');
+  leftCol.className = 'span-4 stack';
+  const rightCol = document.createElement('div');
+  rightCol.className = 'span-8 stack';
+  content.appendChild(leftCol);
+  content.appendChild(rightCol);
+  const myPanel = document.createElement('section');
+  myPanel.className = 'panel';
+  myPanel.innerHTML = '<div class="panel-header"><span class="panel-title">My availability</span></div>';
+  const myBody = document.createElement('div');
+  myBody.className = 'panel-body';
+  myPanel.appendChild(myBody);
+  leftCol.appendChild(myPanel);
+
   // Month nav
   const nav = document.createElement('div');
   nav.className = 'flex items-center justify-between mb-md';
-  content.appendChild(nav);
+  myBody.appendChild(nav);
 
   // User calendar container
   const calContainer = document.createElement('div');
   calContainer.className = 'mt-sm';
-  content.appendChild(calContainer);
+  myBody.appendChild(calContainer);
 
   // Overall collapsible
   const overallDetails = document.createElement('details');
-  overallDetails.className = 'doodle-overall mt-lg';
+  overallDetails.className = 'doodle-overall panel';
+  overallDetails.open = true;
   const overallSummary = document.createElement('summary');
   overallSummary.className = 'doodle-overall-summary';
   overallSummary.textContent = 'Overall availability';
@@ -227,11 +244,12 @@ export function renderDoodle(container, params = {}) {
   const matrixContainer = document.createElement('div');
   matrixContainer.className = 'mt-sm';
   overallDetails.appendChild(matrixContainer);
-  content.appendChild(overallDetails);
+  rightCol.appendChild(overallDetails);
 
   // Player Overview collapsible
   const playerOverviewDetails = document.createElement('details');
-  playerOverviewDetails.className = 'doodle-overall mt-lg';
+  playerOverviewDetails.className = 'doodle-overall panel';
+  playerOverviewDetails.open = true;
   const playerOverviewSummary = document.createElement('summary');
   playerOverviewSummary.className = 'doodle-overall-summary';
   playerOverviewSummary.textContent = 'Player Overview';
@@ -239,12 +257,12 @@ export function renderDoodle(container, params = {}) {
   const playerOverviewContainer = document.createElement('div');
   playerOverviewContainer.className = 'mt-sm';
   playerOverviewDetails.appendChild(playerOverviewContainer);
-  content.appendChild(playerOverviewDetails);
+  rightCol.appendChild(playerOverviewDetails);
 
   // Fixed top save bar (non-blocking, appears when dirty)
   const saveBar = document.createElement('div');
   saveBar.id = 'doodle-save-bar';
-  saveBar.style.cssText = 'display:none;position:fixed;bottom:calc(var(--nav-height) + 10px);left:50%;transform:translateX(-50%);z-index:1000;background:var(--color-surface);border:1px solid var(--color-border);border-radius:var(--radius-lg);padding:var(--space-sm) var(--space-md);align-items:center;justify-content:center;gap:var(--space-md);box-shadow:var(--shadow-lg);white-space:nowrap;';
+  saveBar.style.cssText = 'display:none;position:fixed;bottom:24px;left:calc(50% + var(--sidebar-width) / 2);transform:translateX(-50%);z-index:1000;background:var(--color-surface);border:1px solid var(--color-border);border-radius:var(--radius-lg);padding:var(--space-sm) var(--space-md);align-items:center;justify-content:center;gap:var(--space-md);box-shadow:var(--shadow-lg);white-space:nowrap;';
   saveBar.innerHTML = `
     <button class="btn btn-danger" id="doodle-cancel-btn">Cancel</button>
     <button class="btn btn-success" id="doodle-save-btn">Save</button>
@@ -253,8 +271,8 @@ export function renderDoodle(container, params = {}) {
 
   // Changelog container
   const changelogSection = document.createElement('div');
-  changelogSection.className = 'mt-lg';
-  content.appendChild(changelogSection);
+  changelogSection.className = 'panel panel-body';
+  leftCol.appendChild(changelogSection);
 
   function renderNav() {
     nav.innerHTML = `

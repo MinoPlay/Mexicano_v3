@@ -2,71 +2,94 @@
 name: tab-attendance
 description: >
   Reference skill for the Attendance tab (route /attendance) of the Mexicano PWA, including the
-  Calendar and Statistics sub-tabs. Covers purpose, rules, key files, data flow. Use when working on the attendance page.
+  side-by-side Calendar and Statistics panels plus the Year overview heatmap. Covers purpose,
+  rules, key files, data flow. Use when working on the attendance page.
 ---
 
 # Attendance tab
 
 ## Purpose
-The Attendance tab is the route `#/attendance` registered in `js/app.js` and rendered by `renderAttendance` from `js/pages/attendance.js`. It is reached by links or direct route navigation, not by the bottom navigation: `js/components/nav.js` does not include `/attendance` in `NAV_ITEMS`.
+The Attendance tab is the route `#/attendance` registered in `js/app.js` and rendered by `renderAttendance` from `js/pages/attendance.js`. It shows attendance derived from participation rows and manual no-tournament attendance.
 
-The page shows attendance derived from tournament matches and manual no-tournament attendance entries. It has two sub-tabs: Calendar for a month grid and Statistics for a sortable attendance table.
+The desktop page no longer uses Calendar/Statistics sub-tabs. It renders Calendar and Statistics side by side and adds a Year overview heatmap below them.
 
 ## Rules / Logic
-`renderAttendance(container, params = {})` clears the container, loads `allMatches` from `getParticipationRows()` (participation rows `{ date, players }` from the `player_attendance` view, falling back to `Store.getMatches()`), chooses the initial month with `getInitialMonth(allMatches)`, and builds the page header and content area.
+`renderAttendance(container, params = {})` clears the container, reads `allMatches` from `getParticipationRows()`, chooses the initial month with `getInitialMonth(allMatches)`, and builds the page header/content.
 
-Month navigation is local to the page. `renderNav()` renders previous and next buttons around the current `MONTHS[currentMonth - 1] currentYear` label. Clicking previous decrements `currentMonth`, rolling from January to December and decrementing `currentYear`; clicking next increments `currentMonth`, rolling from December to January and incrementing `currentYear`. Each click calls `renderContent()`.
+Loading:
 
-When no rows are loaded, or Supabase is configured and full participation history is not yet loaded (`Store.isParticipationComplete()`), the page shows a loading state, calls `ensureParticipationLoaded()` from `../services/backend.js`, re-reads `getParticipationRows()`, recalculates the initial month, and then calls `buildContent()`. If that load fails, it shows a failure empty state. The route never requests matches.
+- `getParticipationRows()` prefers lightweight participation rows (`{ date, players }`) and falls back to full match rows.
+- If no rows are loaded, or Supabase is configured and `Store.isParticipationComplete()` is false, the page shows "Loading match history…", imports `ensureParticipationLoaded()`, reloads participation rows, recalculates the initial month, and then builds content.
+- If loading fails, it shows "Failed to load match history".
 
-Sub-tab switching is controlled by the local `activeTab` variable inside `buildContent()`. It starts as `'calendar'`. `renderTabsBar()` renders `Calendar` and `Statistics` buttons, marks the active one with the `active` class, and on click updates `activeTab`, then calls `renderTabsBar()` and `renderBody()`.
+Layout:
 
-`renderBody()` decides which section to draw. For `activeTab === 'calendar'`, it calls `getMonthlyAttendance(currentYear, currentMonth)` and passes the result to `renderCalendar(body, currentYear, currentMonth, monthData)`. For the statistics tab, it calls `renderStatsTable(body, allMatches)`.
+- `buildContent()` adds `dash-grid` to content and creates three panels: Calendar (`span-6`), Statistics (`span-6 attendance-stats`), and Year overview (`span-12`).
+- Month navigation is rendered into the Calendar panel header by `renderNav()`.
+- Previous/next month buttons roll year boundaries and call `renderContent()`.
 
-`renderCalendar(el, year, month, monthData)` builds weekday headers from `WEEKDAYS`, computes `daysInMonth(year, month)` and `firstWeekday(year, month)`, inserts leading empty cells, then creates one `.attendance-day` cell per day. It consumes the service's sorted `{ date, players, playerCount }[]` rows directly. Cells with attendance get `has-tournament`, a pointer cursor, a day number, and an attendance count; clicking opens `showDayPlayers(info.players, year, month, day)`.
+Calendar:
 
-`getMonthlyAttendance(year, month, manualEntries?)` lives in `js/services/attendance.js`. It reads `getParticipationRows()`, defaults manual entries to `Store.getManualAttendance()`, calls `buildMonthParticipation(allMatches, manual, YYYY-MM)`, and returns sorted `{ date, players, playerCount }` rows. This service merges tournament matches and manual no-tournament attendance.
+- `renderBody()` calls `getMonthlyAttendance(currentYear, currentMonth)` and `renderCalendar(body, currentYear, currentMonth, monthData)`.
+- `renderCalendar()` builds weekday headers, leading blanks, and one `.attendance-day` per day.
+- Cells with attendance get `has-tournament`, show count, and open `showDayPlayers(players, year, month, day)`.
 
-`showDayPlayers(players, year, month, day)` creates a modal overlay listing players for the selected day. It closes through the `dialog-close` button or by clicking the overlay background.
+Statistics:
 
-`renderStatsTable(el, allMatches)` calls `getAttendanceStatistics(allMatches)`, maps its `{ playerName, attendanceCount, attendancePercentage, totalTournaments }` rows to visible `{ name, attended, rate, total }` rows, and creates a sortable table. The columns are `rank`, `name`, `attended`, `total`, and `rate`; clicking non-rank headers toggles `sortCol` and `sortDir`, then re-renders.
+- `renderStatsTable(statsBody, allMatches)` renders once from `getAttendanceStatistics(allMatches)`.
+- Columns are rank, player, attended, total, and attendance percentage.
+- Sorting is local to the table; default is attended descending.
 
-Manual attendance is created outside this page by `showManualAttendanceDialog()` in `js/components/manual-attendance-dialog.js`. The dialog is opened from Settings → Attendance → “➕ Add Attendance”, not from `/attendance`. Before opening it awaits `ensureAttendanceEditData()` (players, manual attendance, tournament index), because the save replaces the whole list server-side. It validates against `Store.getTournamentDates()` plus loaded match dates, only accepts real member names from `getMembers()`, calls `upsertManualEntry(Store.getManualAttendance(), { date, players }, tournamentDates())`, then saves with `saveManualAttendance(next)`.
+Year overview:
+
+- `renderYear()` calls `buildYearMatrix(allMatches, currentYear)`.
+- It uses `heatColor(50 + (value / max) * 50)` for non-zero month cells.
+- A year selector switches `currentYear` and re-renders.
+- Month header buttons set `currentMonth` and re-render the calendar/year view.
+- Player names in the heatmap link to `#/players?p=<name>`.
+
+Manual attendance remains created outside this page through `showManualAttendanceDialog()` in Settings.
 
 ## Key Files & Symbols
-- `js/pages/attendance.js` — exports `renderAttendance`; contains `getInitialMonth`, `daysInMonth`, `firstWeekday`, `renderCalendar`, `showDayPlayers`, and `renderStatsTable`.
-- `js/services/attendance.js` — exports `buildMonthParticipation`, `upsertManualEntry`, `getMonthlyAttendance`, and `getAttendanceStatistics`; merges tournament match attendance with manual attendance.
-- `js/components/manual-attendance-dialog.js` — exports `showManualAttendanceDialog`; writes manual no-tournament attendance through `Store.setManualAttendance`.
-- `js/store.js` — `Store.getMatches()`, `Store.getManualAttendance()`, and `Store.setManualAttendance(entries)` are the key data accessors.
-- `js/services/backend.js` — `pullCoreData()` hydrates manual attendance from the Supabase `manual_attendance` rows into the in-memory `Cache` key `attendance_manual`; `pushManualAttendance()` persists changes through the `domain-mutation` edge function.
-- `js/app.js` — registers route `/attendance` to `renderAttendance` and gives it the page name `Attendance`.
-- `js/components/nav.js` — bottom nav source; `/attendance` is intentionally absent from `NAV_ITEMS`.
+- `js/pages/attendance.js` — exports `renderAttendance`; local helpers `getInitialMonth`, `daysInMonth`, `firstWeekday`, `renderCalendar`, `showDayPlayers`, `renderStatsTable`, `renderNav`, `renderBody`, `renderYear`, and `renderContent`.
+- `js/services/attendance.js` — `getParticipationRows`, `buildMonthParticipation`, `upsertManualEntry`, `getMonthlyAttendance`, `getAttendanceStatistics`, and `buildYearMatrix`.
+- `js/components/chart.js` — `heatColor` for the Year overview heatmap.
+- `js/components/manual-attendance-dialog.js` — `showManualAttendanceDialog` writes manual attendance from Settings.
+- `js/services/backend.js` — `ensureParticipationLoaded`, manual-attendance hydration and persistence helpers.
+- `js/store.js` — participation rows, matches fallback, manual attendance, Supabase config, and participation completeness.
+- `js/app.js` — registers `/attendance`.
+- `css/desktop.css` — `dash-grid`, `span-6`, `span-12`, `panel`, and heatmap styles.
 
 ## Data
-The Attendance page reads participation rows `{ date, players }` (`Store.getParticipation()`, flattened from `participation_YYYY-MM` cache keys filled by the `player_attendance` view). The attendance service also accepts match rows (`team1Player1Name` … `team2Player2Name`) as a fallback. Route load: `player_attendance` (all) + manual attendance — no matches.
+Attendance uses participation rows shaped as:
 
-Manual no-tournament attendance lives in the in-memory `Cache` key `attendance_manual`, hydrated from Supabase on every pull. The feature document defines the JSON shape as:
+```js
+{ date: 'YYYY-MM-DD', players: ['Name'] }
+```
+
+Manual no-tournament attendance remains:
 
 ```json
 [
-  { "date": "YYYY-MM-DD", "players": ["Name", "..."], "note": "" }
+  { "date": "YYYY-MM-DD", "players": ["Name"], "note": "" }
 ]
 ```
 
-`Store.getManualAttendance()` defaults to `[]`. `Store.setManualAttendance(entries)` updates the in-memory cache; the durable write goes to Supabase via the backend service.
+`getMonthlyAttendance(year, month)` returns sorted rows `{ date, players, playerCount }`. `getAttendanceStatistics(allMatches)` returns `{ playerName, attendanceCount, attendancePercentage, totalTournaments }`.
 
-`buildMonthParticipation(matches, manualEntries, yearMonth)` builds `{ datePlayerMap, tournamentDates }`, where `datePlayerMap` maps each date to a `Set` of unique player names. `getMonthlyAttendance` converts that to sorted monthly rows. `getAttendanceStatistics` groups tournament and manual dates into session dates, counts player attendance, and computes attendance percentage over the number of sessions.
-
-`State` is not imported or used directly by `js/pages/attendance.js`; this page relies on local render state (`currentYear`, `currentMonth`, `activeTab`) plus `Store` and service functions.
+`buildYearMatrix(rows, year)` returns `{ years, sessions, players }`, where each player has `months` (12 counts) and `total`.
 
 ## Sub-tabs / Sections
-- Calendar — month grid of attendance. It is rendered by `renderCalendar` through `renderBody()` when `activeTab` is `'calendar'`. Month controls remain above the tabs and affect this view by changing `currentYear` and `currentMonth`.
-- Statistics — attendance stats table. It is rendered by `renderStatsTable` through `renderBody()` when `activeTab` is `'statistics'`. The table is sortable by player/stat columns.
+There are no sub-tabs. Sections are:
 
-Switching uses `activeTab`, `renderTabsBar()`, and `renderBody()`: tab button clicks update `activeTab`, redraw the tab bar so the active class is correct, and redraw only the body section.
+- Calendar — monthly attendance grid with month nav in the panel header.
+- Statistics — sortable attendance table.
+- Year overview — player x month heatmap with year select and clickable month headers.
+- Day players dialog — list of players for a selected calendar day.
 
 ## Related Feature Docs
-- `.github/features/manual-attendance.md` — explains manual no-tournament attendance, the `data/attendance_manual.json` store file, validation rules, sync behavior, and all pages affected by manual entries, including `/attendance`.
+- `.github/features/manual-attendance.md` — manual no-tournament attendance schema, validation, sync behavior, and affected pages.
+- `.github/features/desktop-ui.md` — side-by-side Attendance layout and Year overview heatmap.
 
 ## Update Protocol
-Update this skill whenever `js/pages/attendance.js` calendar/stats logic, sub-tabs, data shape, or routing changes, or when the linked feature MD changes.
+Update this skill whenever `js/pages/attendance.js` calendar/stats/year logic, data shape, routing, or manual-attendance behavior changes, or when the linked feature MDs change.
