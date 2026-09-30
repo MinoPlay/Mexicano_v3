@@ -4,11 +4,10 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const DEFAULT_GITHUB_ROOT = path.resolve(process.cwd(), '..', 'DataHub_Mexicano', 'mexicano_v3');
-const SCHEMA_VERSION = '20260929090000';
+const SCHEMA_VERSION = '20260930100000';
 const PAGE_SIZE = 1000;
 const SAFE_TABLES = [
   'players',
-  'player_aliases',
   'player_roles',
   'tournaments',
   'tournament_players',
@@ -18,11 +17,8 @@ const SAFE_TABLES = [
   'doodle_changelog',
   'attendance_records',
   'attendance_players',
-  'app_settings',
   'audit_events',
-  'elo_calculation_versions',
   'elo_snapshots',
-  'projection_runs',
 ];
 const isDirectRun = process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1]);
 
@@ -66,12 +62,6 @@ function removeStaleDayFiles(rootDir, expectedPaths) {
   };
   visit(backupRoot);
   return removed;
-}
-
-function activeProjectionVersion(snapshot) {
-  return snapshot.elo_calculation_versions?.find((version) => version.active)?.id
-    || snapshot.elo_calculation_versions?.[0]?.id
-    || null;
 }
 
 function buildLegacy(snapshot, generatedAt) {
@@ -141,7 +131,7 @@ function buildLegacy(snapshot, generatedAt) {
   const legacyPlayers = stableRows(snapshot.players || []).map((player) => {
     const elo = latestSnapshotByPlayer.get(player.id);
     return {
-      Id: player.legacy_id || player.id,
+      Id: player.id,
       Name: player.name,
       MatchPadelId: player.match_padel_id || 0,
       ELO: elo?.elo ?? 1000,
@@ -162,7 +152,7 @@ function buildLegacy(snapshot, generatedAt) {
       roundCount: new Set(matches.map((match) => match.round_number)).size,
       matchCount: matches.length,
       completedCount: matches.filter((match) => Number(match.score_team_1) + Number(match.score_team_2) > 0).length,
-      isComplete: tournament.is_complete === true || tournament.status === 'completed',
+      isComplete: tournament.status === 'completed',
     };
   });
 
@@ -187,7 +177,7 @@ function buildLegacy(snapshot, generatedAt) {
     attendancePlayers.set(row.attendance_id, names);
   }
   const manualAttendance = stableRows(
-    (snapshot.attendance_records || []).filter((record) => record.kind === 'manual'),
+    snapshot.attendance_records || [],
   ).map((record) => ({
     date: record.attendance_date,
     players: (attendancePlayers.get(record.id) || []).sort((a, b) => a.localeCompare(b)),
@@ -232,7 +222,6 @@ export function writeBackupSnapshot(snapshot, rootDir = DEFAULT_GITHUB_ROOT, opt
   const manifest = {
     generated_at: generatedAt,
     schema_version: schemaVersion,
-    projection_version: activeProjectionVersion(snapshot),
     source_watermark: options.sourceWatermark || generatedAt,
     record_counts: Object.fromEntries(SAFE_TABLES.map((table) => [table, (snapshot[table] || []).length])),
     stale_files_removed: staleFilesRemoved,
@@ -276,23 +265,6 @@ export async function loadSupabaseSnapshot(config) {
   return Object.fromEntries(entries);
 }
 
-async function createBackupRun(config) {
-  const rows = await supabaseRequest(config, '/rest/v1/backup_runs', {
-    method: 'POST',
-    body: JSON.stringify({ status: 'running' }),
-    prefer: 'return=representation',
-  });
-  return rows[0].id;
-}
-
-async function finishBackupRun(config, id, patch) {
-  await supabaseRequest(config, `/rest/v1/backup_runs?id=eq.${id}`, {
-    method: 'PATCH',
-    body: JSON.stringify({ ...patch, completed_at: new Date().toISOString() }),
-    prefer: 'return=minimal',
-  });
-}
-
 export async function main() {
   const rootDir = process.env.DATAHUB_ROOT || process.env.GITHUB_TARGET_REPO_PATH || DEFAULT_GITHUB_ROOT;
   const config = {
@@ -303,33 +275,16 @@ export async function main() {
     throw new Error('SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required.');
   }
 
-  const runId = await createBackupRun(config);
-  if (process.env.GITHUB_OUTPUT) {
-    fs.appendFileSync(process.env.GITHUB_OUTPUT, `backup_run_id=${runId}\n`, 'utf8');
-  }
-  try {
-    const snapshot = await loadSupabaseSnapshot(config);
-    const result = writeBackupSnapshot(snapshot, rootDir);
-    const manifestContent = fs.readFileSync(path.join(rootDir, 'supabase-backup', 'manifest.json'));
-    await finishBackupRun(config, runId, {
-      status: 'succeeded',
-      source_watermark: result.manifest.source_watermark,
-      record_counts: result.manifest.record_counts,
-      manifest_sha256: sha256(manifestContent),
-    });
-    console.log(JSON.stringify({
-      root_dir: rootDir,
-      files_written: result.filesWritten,
-      record_counts: result.manifest.record_counts,
-      stale_files_removed: result.staleFilesRemoved,
-    }, null, 2));
-  } catch (error) {
-    await finishBackupRun(config, runId, {
-      status: 'failed',
-      error: error.message || String(error),
-    }).catch(() => {});
-    throw error;
-  }
+  const snapshot = await loadSupabaseSnapshot(config);
+  const result = writeBackupSnapshot(snapshot, rootDir);
+  const manifestContent = fs.readFileSync(path.join(rootDir, 'supabase-backup', 'manifest.json'));
+  console.log(JSON.stringify({
+    root_dir: rootDir,
+    files_written: result.filesWritten,
+    record_counts: result.manifest.record_counts,
+    manifest_sha256: sha256(manifestContent),
+    stale_files_removed: result.staleFilesRemoved,
+  }, null, 2));
 }
 
 if (isDirectRun) {

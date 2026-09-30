@@ -109,7 +109,7 @@ export function buildTournamentFromRows({
       player4: { ...byName(slotName(slots, 2, 2, playersById)) },
       team1Score: match.score_team_1 ?? 0,
       team2Score: match.score_team_2 ?? 0,
-      completedAt: match.completed_at ? Date.parse(match.completed_at) : null,
+      completedAt: null,
     });
     byRound.set(match.round_number, roundMatches);
   }
@@ -122,9 +122,9 @@ export function buildTournamentFromRows({
       completedAt: null,
     }));
 
-  const isCompleted = tournament.is_complete === true || tournament.status === 'completed';
+  const isCompleted = tournament.status === 'completed';
   const built = {
-    id: tournament.legacy_id || tournament.id,
+    id: tournament.id,
     tournamentDate: tournament.tournament_date,
     players,
     rounds,

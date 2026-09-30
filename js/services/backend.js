@@ -40,15 +40,15 @@ function tournamentDataset(tournament, dayMatches = null) {
   const canonicalMatches = [];
   const matchPlayers = [];
   matches.forEach((match, index) => {
-    const matchKey = `${date}:${match.roundNumber}:${index + 1}`;
-    canonicalMatches.push({
-      match_key: matchKey,
+    const key = {
       match_date: date,
       round_number: match.roundNumber,
       match_order: index + 1,
+    };
+    canonicalMatches.push({
+      ...key,
       score_team_1: match.scoreTeam1,
       score_team_2: match.scoreTeam2,
-      source_path: 'supabase-app',
     });
     [
       [1, 1, match.team1Player1Name],
@@ -57,34 +57,29 @@ function tournamentDataset(tournament, dayMatches = null) {
       [2, 2, match.team2Player2Name],
     ].forEach(([team, position, playerName]) => {
       matchPlayers.push({
-        match_key: matchKey,
+        ...key,
         team,
         position,
         player_name: playerName,
-        source_path: 'supabase-app',
       });
     });
   });
   return {
     tournaments: [{
-      legacy_id: tournament?.id || null,
       tournament_date: date,
       status: tournament?.isCompleted ? 'completed' : 'active',
       current_round_number: tournament?.currentRoundNumber ?? null,
-      is_complete: tournament?.isCompleted === true,
       completed_at: tournament?.completedAt
         ? new Date(tournament.completedAt).toISOString()
         : null,
       access_code: tournament?.accessCode ?? null,
       courts: Array.isArray(tournament?.courts) ? tournament.courts : null,
-      source_path: 'supabase-app',
     }],
     tournament_players: (tournament?.players || []).map((player, index) => ({
       tournament_date: date,
       player_name: player.name,
       seed_position: player.id ?? index + 1,
       confirmed: player.confirmed === true,
-      source_path: 'supabase-app',
     })),
     matches: canonicalMatches,
     match_players: matchPlayers,

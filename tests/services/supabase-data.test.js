@@ -28,7 +28,6 @@ describe('Supabase domain hydration', () => {
         id: 't1',
         tournament_date: '2026-01-01',
         status: 'completed',
-        is_complete: true,
       }],
       matches: [{
         id: 'm1',
@@ -53,7 +52,6 @@ describe('Supabase domain hydration', () => {
       attendance_records: [{
         id: 'a1',
         attendance_date: '2026-01-08',
-        kind: 'manual',
         note: 'Training',
       }],
       attendance_players: [{ attendance_id: 'a1', player_id: 'p2' }],
@@ -217,24 +215,21 @@ describe('Supabase domain hydration', () => {
             id: 't-aug',
             tournament_date: '2026-08-27',
             status: 'completed',
-            is_complete: true,
-            tournament_players: [],
+                tournament_players: [],
             matches: [{ id: 'summary-aug', round_number: 1, score_team_1: 13, score_team_2: 12 }],
           },
           {
             id: 't-sep',
             tournament_date: '2026-09-24',
             status: 'completed',
-            is_complete: true,
-            tournament_players: [],
+                tournament_players: [],
             matches: [{ id: 'summary-sep', round_number: 1, score_team_1: 13, score_team_2: 10 }],
           },
           {
             id: 't-old',
             tournament_date: '2026-07-30',
             status: 'completed',
-            is_complete: true,
-            tournament_players: [],
+                tournament_players: [],
             matches: [],
           },
         ];

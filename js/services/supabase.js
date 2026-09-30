@@ -418,7 +418,7 @@ function buildTournamentIndex(dataset, appMatches, playersById) {
       roundCount,
       matchCount: matches.length,
       completedCount: matches.filter((match) => match.scoreTeam1 !== 0 || match.scoreTeam2 !== 0).length,
-      isComplete: tournament.is_complete === true || tournament.status === 'completed',
+      isComplete: tournament.status === 'completed',
     };
   }).sort((a, b) => a.date.localeCompare(b.date));
 }
@@ -451,7 +451,6 @@ function hydrateAttendance(dataset, playersById) {
     playersByAttendance.set(row.attendance_id, names);
   }
   Store.setManualAttendance((dataset.attendance_records || [])
-    .filter((record) => record.kind === 'manual')
     .map((record) => ({
       date: record.attendance_date,
       players: (playersByAttendance.get(record.id) || []).sort(),
@@ -580,8 +579,7 @@ function hydrateDoodleChangelog(dataset, playersById) {
  */
 function hydrateActiveTournament(dataset, playersById, loadedTournamentIds = null) {
   const candidates = (dataset.tournaments || [])
-    .filter((tournament) => tournament.is_complete !== true
-      && tournament.status !== 'completed'
+    .filter((tournament) => tournament.status !== 'completed'
       && tournament.status !== 'cancelled')
     .sort((a, b) => b.tournament_date.localeCompare(a.tournament_date));
 
@@ -657,12 +655,12 @@ async function loadSnapshot() {
     attendanceRecords,
   ] = await Promise.all([
     selectAll('players', 'select=id,name,email,match_padel_id&active=eq.true&order=name.asc,id.asc'),
-    selectAll('tournaments', 'select=id,tournament_date,status,is_complete,current_round_number,completed_at,legacy_id,access_code,courts,tournament_players(player_id,seed_position,confirmed)&order=tournament_date.asc,id.asc'),
-    selectAll('matches', 'select=id,tournament_id,round_number,match_order,score_team_1,score_team_2,completed_at,match_players(player_id,team,position)&order=tournament_id.asc,round_number.asc,match_order.asc,id.asc'),
-    selectAll('elo_snapshots', 'select=tournament_id,player_id,elo,previous_elo&calculation_version=eq.mexicano-v1&order=tournament_id.asc,player_id.asc'),
+    selectAll('tournaments', 'select=id,tournament_date,status,current_round_number,completed_at,access_code,courts,tournament_players(player_id,seed_position,confirmed)&order=tournament_date.asc,id.asc'),
+    selectAll('matches', 'select=id,tournament_id,round_number,match_order,score_team_1,score_team_2,match_players(player_id,team,position)&order=tournament_id.asc,round_number.asc,match_order.asc,id.asc'),
+    selectAll('elo_snapshots', 'select=tournament_id,player_id,elo,previous_elo&order=tournament_id.asc,player_id.asc'),
     selectAll('doodle_availability', 'select=availability_date,player_id&order=availability_date.asc,player_id.asc'),
     selectAll('doodle_changelog', 'select=year_month,player_id,selected_added,selected_removed,created_at&order=created_at.desc'),
-    selectAll('attendance_records', 'select=id,attendance_date,kind,note,attendance_players(player_id,confirmed)&order=attendance_date.asc,id.asc'),
+    selectAll('attendance_records', 'select=id,attendance_date,note,attendance_players(player_id)&order=attendance_date.asc,id.asc'),
   ]);
 
   const tournamentPlayers = tournaments.flatMap((tournament) =>
@@ -727,7 +725,7 @@ function buildHomeTournamentIndex(tournaments) {
       completedCount: matches.filter(
         (match) => match.score_team_1 !== 0 || match.score_team_2 !== 0,
       ).length,
-      isComplete: tournament.is_complete === true || tournament.status === 'completed',
+      isComplete: tournament.status === 'completed',
     };
   }).sort((a, b) => a.date.localeCompare(b.date));
 }
@@ -735,12 +733,12 @@ function buildHomeTournamentIndex(tournaments) {
 async function loadHomeSnapshot() {
   const [players, tournaments] = await Promise.all([
     selectAll('players', 'select=id,name,email,match_padel_id&active=eq.true&order=name.asc,id.asc'),
-    selectAll('tournaments', 'select=id,tournament_date,status,is_complete,current_round_number,completed_at,legacy_id,access_code,courts,tournament_players(player_id,seed_position,confirmed)&order=tournament_date.asc,id.asc'),
+    selectAll('tournaments', 'select=id,tournament_date,status,current_round_number,completed_at,access_code,courts,tournament_players(player_id,seed_position,confirmed)&order=tournament_date.asc,id.asc'),
   ]);
   const month = currentYearMonth();
   const previousMonth = previousYearMonth(month);
   const latestCompleted = [...tournaments]
-    .filter((tournament) => tournament.is_complete === true || tournament.status === 'completed')
+    .filter((tournament) => tournament.status === 'completed')
     .sort((a, b) => b.tournament_date.localeCompare(a.tournament_date))[0];
   const relevantTournaments = tournaments.filter((tournament) =>
     tournament.tournament_date.startsWith(month)
@@ -752,11 +750,11 @@ async function loadHomeSnapshot() {
     ? await Promise.all([
       selectAll(
         'matches',
-        `select=id,tournament_id,round_number,match_order,score_team_1,score_team_2,completed_at,match_players(player_id,team,position)&tournament_id=${idFilter}&order=tournament_id.asc,round_number.asc,match_order.asc,id.asc`,
+        `select=id,tournament_id,round_number,match_order,score_team_1,score_team_2,match_players(player_id,team,position)&tournament_id=${idFilter}&order=tournament_id.asc,round_number.asc,match_order.asc,id.asc`,
       ),
       selectAll(
         'elo_snapshots',
-        `select=tournament_id,player_id,elo,previous_elo&calculation_version=eq.mexicano-v1&tournament_id=${idFilter}&order=tournament_id.asc,player_id.asc`,
+        `select=tournament_id,player_id,elo,previous_elo&tournament_id=${idFilter}&order=tournament_id.asc,player_id.asc`,
       ),
     ])
     : [[], []];
@@ -795,10 +793,10 @@ async function loadTournamentSnapshot(date) {
   const encodedDate = encodeURIComponent(date);
   const [players, tournaments, matches] = await Promise.all([
     selectAll('players', 'select=id,name,email,match_padel_id&active=eq.true&order=name.asc,id.asc'),
-    selectAll('tournaments', 'select=id,tournament_date,status,is_complete,current_round_number,completed_at,legacy_id,access_code,courts,tournament_players(player_id,seed_position,confirmed)&order=tournament_date.asc,id.asc'),
+    selectAll('tournaments', 'select=id,tournament_date,status,current_round_number,completed_at,access_code,courts,tournament_players(player_id,seed_position,confirmed)&order=tournament_date.asc,id.asc'),
     selectAll(
       'matches',
-      `select=id,tournament_id,round_number,match_order,score_team_1,score_team_2,completed_at,match_players(player_id,team,position),tournaments!inner(tournament_date)&tournaments.tournament_date=eq.${encodedDate}&order=tournament_id.asc,round_number.asc,match_order.asc,id.asc`,
+      `select=id,tournament_id,round_number,match_order,score_team_1,score_team_2,match_players(player_id,team,position),tournaments!inner(tournament_date)&tournaments.tournament_date=eq.${encodedDate}&order=tournament_id.asc,round_number.asc,match_order.asc,id.asc`,
     ),
   ]);
 

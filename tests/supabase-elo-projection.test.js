@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 describe('Supabase ELO projection', () => {
-  it('builds versioned, deterministic end-of-tournament snapshots', async () => {
+  it('builds deterministic end-of-tournament snapshots', async () => {
     const projection = await import('../scripts/supabase/build-elo-projection.mjs').catch(() => null);
     expect(projection).not.toBeNull();
 
@@ -36,14 +36,12 @@ describe('Supabase ELO projection', () => {
       ],
     };
 
-    expect(projection.buildEloProjection(dataset, 'mexicano-v1')).toEqual({
-      calculation_version: 'mexicano-v1',
-      source_match_count: 1,
+    expect(projection.buildEloProjection(dataset)).toEqual({
       snapshots: [
-        { tournament_date: '2026-01-01', player_name: 'A', previous_elo: 1000, elo: 1016, source_match_count: 1 },
-        { tournament_date: '2026-01-01', player_name: 'B', previous_elo: 1000, elo: 1016, source_match_count: 1 },
-        { tournament_date: '2026-01-01', player_name: 'C', previous_elo: 1000, elo: 984.74, source_match_count: 1 },
-        { tournament_date: '2026-01-01', player_name: 'D', previous_elo: 1000, elo: 984.74, source_match_count: 1 },
+        { tournament_date: '2026-01-01', player_name: 'A', previous_elo: 1000, elo: 1016 },
+        { tournament_date: '2026-01-01', player_name: 'B', previous_elo: 1000, elo: 1016 },
+        { tournament_date: '2026-01-01', player_name: 'C', previous_elo: 1000, elo: 984.74 },
+        { tournament_date: '2026-01-01', player_name: 'D', previous_elo: 1000, elo: 984.74 },
       ],
     });
   });

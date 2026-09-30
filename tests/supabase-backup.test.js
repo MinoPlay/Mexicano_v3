@@ -9,12 +9,11 @@ const roots = [];
 
 function fixture() {
   return {
-    players: [{ id: 'p1', legacy_id: 'legacy-1', name: 'Alex', match_padel_id: 0, active: true }],
-    player_aliases: [],
+    players: [{ id: 'p1', name: 'Alex', match_padel_id: 0, active: true }],
     player_roles: [],
-    tournaments: [{ id: 't1', tournament_date: '2026-01-06', status: 'completed', is_complete: true }],
+    tournaments: [{ id: 't1', tournament_date: '2026-01-06', status: 'completed' }],
     tournament_players: [{ tournament_id: 't1', player_id: 'p1', seed_position: 1, confirmed: true }],
-    matches: [{ id: 'm1', legacy_key: '2026-01-06:1:1', tournament_id: 't1', round_number: 1, match_order: 1, score_team_1: 15, score_team_2: 10 }],
+    matches: [{ id: 'm1', tournament_id: 't1', round_number: 1, match_order: 1, score_team_1: 15, score_team_2: 10 }],
     match_players: [
       { match_id: 'm1', player_id: 'p1', team: 1, position: 1 },
       { match_id: 'm1', player_id: 'p1', team: 1, position: 2 },
@@ -22,12 +21,9 @@ function fixture() {
       { match_id: 'm1', player_id: 'p1', team: 2, position: 2 },
     ],
     doodle_availability: [{ availability_date: '2026-01-06', player_id: 'p1' }],
-    attendance_records: [{ id: 'a1', attendance_date: '2026-01-08', kind: 'manual' }],
+    attendance_records: [{ id: 'a1', attendance_date: '2026-01-08' }],
     attendance_players: [{ attendance_id: 'a1', player_id: 'p1' }],
-    app_settings: [],
-    elo_calculation_versions: [{ id: 'mexicano-v1', active: true }],
-    elo_snapshots: [{ calculation_version: 'mexicano-v1', tournament_id: 't1', player_id: 'p1', elo: 1012.5, previous_elo: 1000, source_match_count: 1 }],
-    projection_runs: [],
+    elo_snapshots: [{ tournament_id: 't1', player_id: 'p1', elo: 1012.5, previous_elo: 1000 }],
   };
 }
 
@@ -57,7 +53,7 @@ describe('Supabase DataHub backup', () => {
 
     const manifest = JSON.parse(fs.readFileSync(path.join(root, 'supabase-backup', 'manifest.json')));
     expect(manifest.schema_version).toBe('20260924120000');
-    expect(manifest.projection_version).toBe('mexicano-v1');
+    expect(manifest).not.toHaveProperty('projection_version');
     expect(manifest.files.every((file) => /^[a-f0-9]{64}$/.test(file.sha256))).toBe(true);
     expect(manifest.record_counts.matches).toBe(1);
     expect(result.filesWritten).toBe(manifest.files.length + 1);

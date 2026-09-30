@@ -47,7 +47,6 @@ async function saveTournament(client: any, userId: string, grant: Grant, payload
   requireAdmin(grant);
   const dataset = {
     players: [],
-    player_aliases: [],
     tournaments: payload.tournaments || [],
     tournament_players: payload.tournament_players || [],
     matches: payload.matches || [],
@@ -61,7 +60,7 @@ async function saveTournament(client: any, userId: string, grant: Grant, payload
   const date = payload.tournaments?.[0]?.tournament_date || null;
   await audit(client, userId, grant, 'save', 'tournament', date, {
     matches: dataset.matches.length,
-    complete: payload.tournaments?.[0]?.is_complete === true,
+    complete: payload.tournaments?.[0]?.status === 'completed',
     access_code: payload.tournaments?.[0]?.access_code ?? null,
     courts: payload.tournaments?.[0]?.courts ?? null,
   });
@@ -123,7 +122,6 @@ async function saveDoodle(client: any, userId: string, grant: Grant, payload: an
     const rows = (entry.selectedDates || []).map((date: string) => ({
       availability_date: date,
       player_id: playerId,
-      source_path: 'supabase-app',
     }));
     if (rows.length) {
       const { error: insertError } = await client.from('doodle_availability').insert(rows);
@@ -148,7 +146,6 @@ async function saveDoodle(client: any, userId: string, grant: Grant, payload: an
       player_id: await resolvePlayer(client, change.playerName),
       selected_added: change.selectedAdded || [],
       selected_removed: change.selectedRemoved || [],
-      source_path: 'supabase-app',
     });
   }
   if (changelogRows.length) {
@@ -166,21 +163,17 @@ async function saveDoodle(client: any, userId: string, grant: Grant, payload: an
 async function saveManualAttendance(client: any, userId: string, grant: Grant, payload: any) {
   requireAdmin(grant);
   const entries = Array.isArray(payload.entries) ? payload.entries : [];
-  const { error: deletePlayersError } = await client
-    .from('attendance_players')
+  // attendance_players rows cascade with their record.
+  const { error: deleteRecordsError } = await client
+    .from('attendance_records')
     .delete()
-    .in('attendance_id',
-      (await client.from('attendance_records').select('id').eq('kind', 'manual')).data?.map((row: any) => row.id) || []);
-  if (deletePlayersError) throw deletePlayersError;
-  const { error: deleteRecordsError } = await client.from('attendance_records').delete().eq('kind', 'manual');
+    .not('id', 'is', null);
   if (deleteRecordsError) throw deleteRecordsError;
 
   for (const entry of entries) {
     const { data: record, error } = await client.from('attendance_records').insert({
       attendance_date: entry.date,
-      kind: 'manual',
       note: entry.note || null,
-      source_path: 'supabase-app',
     }).select('id').single();
     if (error) throw error;
     const rows = [];
@@ -188,7 +181,6 @@ async function saveManualAttendance(client: any, userId: string, grant: Grant, p
       rows.push({
         attendance_id: record.id,
         player_id: await resolvePlayer(client, name),
-        source_path: 'supabase-app',
       });
     }
     if (rows.length) {

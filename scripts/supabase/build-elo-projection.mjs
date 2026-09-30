@@ -4,7 +4,6 @@ import { processMatchElo } from '../../js/services/elo.js';
 import { loadDataHubDataset } from './import-datahub.mjs';
 
 const DEFAULT_DATAHUB_ROOT = path.resolve(process.cwd(), '..', 'DataHub_Mexicano', 'mexicano_v3');
-const DEFAULT_VERSION = 'mexicano-v1';
 const isDirectRun = process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1]);
 
 function toAppMatches(dataset) {
@@ -42,14 +41,13 @@ function matchSort(a, b) {
     || a.matchOrder - b.matchOrder;
 }
 
-export function buildEloProjection(dataset, calculationVersion = DEFAULT_VERSION) {
+export function buildEloProjection(dataset) {
   const matches = toAppMatches(dataset)
     .filter((match) => !(match.scoreTeam1 === 0 && match.scoreTeam2 === 0))
     .sort(matchSort);
 
   const players = {};
   const snapshots = [];
-  let sourceMatchCount = 0;
 
   const matchesByDate = new Map();
   for (const match of matches) {
@@ -71,7 +69,6 @@ export function buildEloProjection(dataset, calculationVersion = DEFAULT_VERSION
 
     for (const match of dayMatches) {
       processMatchElo(match, players);
-      sourceMatchCount += 1;
     }
 
     for (const playerName of participantNames) {
@@ -80,16 +77,11 @@ export function buildEloProjection(dataset, calculationVersion = DEFAULT_VERSION
         player_name: playerName,
         previous_elo: previous[playerName],
         elo: players[playerName].elo,
-        source_match_count: sourceMatchCount,
       });
     }
   }
 
-  return {
-    calculation_version: calculationVersion,
-    source_match_count: sourceMatchCount,
-    snapshots,
-  };
+  return { snapshots };
 }
 
 export async function replaceSupabaseEloProjection(projection, options = {}) {
@@ -118,13 +110,11 @@ export async function replaceSupabaseEloProjection(projection, options = {}) {
 
 async function main() {
   const dataset = loadDataHubDataset(process.env.DATAHUB_ROOT || DEFAULT_DATAHUB_ROOT);
-  const projection = buildEloProjection(dataset, process.env.ELO_CALCULATION_VERSION || DEFAULT_VERSION);
+  const projection = buildEloProjection(dataset);
   await replaceSupabaseEloProjection(projection, {
     dryRun: process.argv.includes('--dry-run'),
   });
   console.log(JSON.stringify({
-    calculation_version: projection.calculation_version,
-    source_match_count: projection.source_match_count,
     snapshot_count: projection.snapshots.length,
     dry_run: process.argv.includes('--dry-run'),
   }, null, 2));

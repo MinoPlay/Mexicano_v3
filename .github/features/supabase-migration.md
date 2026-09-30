@@ -20,7 +20,7 @@ Supabase is the canonical writable data source. `DataHub_Mexicano` becomes a gen
 
 ### Canonical
 
-- Player identities, aliases, and roles.
+- Player identities and roles.
 - Tournament lifecycle, roster, rounds, match participants, and scores.
 - Doodle availability and manual/tournament attendance.
 - Shared app settings.
@@ -47,20 +47,23 @@ Raw matches remain canonical. Derived records carry an ELO calculation version a
 
 ## Canonical model
 
-- `players`, `player_aliases`, `player_roles`
+- `players`, `player_roles`
 - `app_access_grants`
 - `tournaments`, `tournament_players`
 - `matches`, `match_players`
 - `doodle_periods`, `doodle_availability`
-- `attendance_records`, `attendance_players`
-- `app_settings`
+- `attendance_records`, `attendance_players` (manual only, one record per date)
 - `push_subscriptions`
 - `audit_events`
 - `notification_outbox`
-- `elo_calculation_versions`, `elo_snapshots`
-- `projection_runs`, `backup_runs`
+- `elo_snapshots` (PK `tournament_id, player_id`; single unversioned projection, fully replaced on rebuild)
 
-Matches reference stable player UUIDs. Legacy player names are resolved through a reviewed alias map; ambiguous identities fail import.
+Removed in `20260930100000_schema_cleanup`: `player_aliases`, `app_settings`,
+`elo_calculation_versions`, `projection_runs`, `backup_runs`, all `source_path`, `legacy_id`,
+`legacy_key`, `version` columns, `tournaments.is_complete` (use `status`), `matches.completed_at`,
+attendance `kind`/`tournament_id`, `attendance_players.confirmed`. Rows are matched by natural
+keys (tournament date, round, match order).
+Matches reference stable player UUIDs. Legacy player names are resolved by exact name; ambiguous identities fail import.
 
 ## Access flow
 
@@ -171,9 +174,9 @@ Workflow lives in `DataHub_Mexicano`.
 - Two UTC cron triggers (`06:15`, `07:15`) plus Copenhagen local-time guard.
 - Manual dispatch supported.
 - Writes legacy-compatible JSON and sanitized canonical snapshots.
-- Manifest includes schema/projection versions, source watermark, row counts, and file hashes.
+- Manifest includes schema version, source watermark, row counts, and file hashes.
 - Excludes auth/access secrets, sessions, service credentials, and Web Push endpoint/key material.
-- Validates completeness before commit and records the resulting commit SHA in `backup_runs`.
+- Validates completeness before commit; run result is logged (manifest SHA-256), not stored in the DB.
 - Restore verification must recreate counts, checksums, and projections in an empty database.
 
 ## Cutover
@@ -194,10 +197,10 @@ Rollback requires exporting current Supabase data first. Old GitHub mutation cod
 - Missing required match field => importer reports a validation error; it does not coerce the field to `0`.
 - Same import run twice => second run creates no duplicate canonical identities, tournaments, matches, or participants.
 - DataHub sync containing a new completed tournament => canonical rows and end-of-tournament
-  `mexicano-v1` ELO snapshots are both replaced before the workflow reports success.
-- Historical name alias with one reviewed target => match references the target player UUID.
-- Ambiguous/unmapped name => import fails with source path and name.
-- Raw matches + calculation version => deterministic ELO snapshots tagged with that version.
+  ELO snapshots are both replaced before the workflow reports success.
+- Exact player name => match references that player UUID.
+- Ambiguous/unmapped name => import fails with the name.
+- Raw matches => deterministic ELO snapshots (no version tag).
 - Anonymous session without access grant => protected read/write denied.
 - Approved email user using a magic link => same Auth user ID and active member grant.
 - Unapproved email => no public signup and no protected access.

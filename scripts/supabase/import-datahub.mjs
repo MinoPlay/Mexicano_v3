@@ -243,6 +243,9 @@ function loadMatchData(root, tournamentIndex = []) {
       });
       matchPlayers.push(...match.players.map((player) => ({
         match_key: matchKey,
+        match_date: match.match_date,
+        round_number: match.round_number,
+        match_order: matchOrder,
         ...player,
         source_path: sourcePath,
       })));
@@ -380,7 +383,14 @@ export function loadDataHubDataset(rootDir) {
   const dataset = {
     players,
     player_aliases: playerAliases,
-    tournaments: [...tournamentByDate.values()].sort((a, b) => a.tournament_date.localeCompare(b.tournament_date)),
+    // `status` is the only completion flag in Supabase; fold the legacy
+    // isComplete marker into it before sending.
+    tournaments: [...tournamentByDate.values()]
+      .map((tournament) => ({
+        ...tournament,
+        status: tournament.is_complete === true ? 'completed' : (tournament.status || 'planned'),
+      }))
+      .sort((a, b) => a.tournament_date.localeCompare(b.tournament_date)),
     tournament_players: matchData.tournamentPlayers,
     matches: matchData.matches,
     match_players: matchData.matchPlayers,
