@@ -24,7 +24,9 @@ Players hub:
 - Rows come from `buildPlayerRows(matches)` and are ranked by ELO.
 - `PLAYER_COLUMNS` defines rank, player, ELO, Δ10, sparkline trend, games, win rate, average points, tournaments, firsts, podiums, attendance, form, and last played.
 - The grid is built with `createDataGrid()` using search by name, default ELO descending sort, multi-select checkboxes, and optional Members only toolbar.
-- Members only defaults on when `Store.getMembers()` has members. Toggling it calls `grid.setRows(visible())`.
+- Members only defaults on when `Store.getMembers()` has members. This roster contains only Supabase
+  players with `active = true`; inactive historical players remain available in match history but
+  are hidden while the toggle is checked. Toggling it calls `grid.setRows(visible())`.
 - Row clicks select a player, call `grid.setSelected(name)`, update URL query `?p=` with `history.replaceState`, and render the right detail panel.
 - The current user is selected by default when present; otherwise the first visible row is selected.
 - Checking two or more rows reveals the Compare button and links to `#/players/compare?p=a,b`.
@@ -63,7 +65,10 @@ Compare:
 - `css/desktop.css` — `split-view`, `split-master`, `split-detail`, `data-grid`, `line-chart`, `player-hero`, `player-picks`, `two-col`, and compare grid layout.
 
 ## Data
-Both routes operate over full flattened match history. Incomplete 0-0 matches are ignored by `buildPlayerRows()` and `buildPlayerDetail()` through `player-insights.js`.
+Both routes operate over full flattened match history. Full hydration loads all player rows so
+inactive historical player IDs still resolve to names, but only active player names populate the
+members roster. Incomplete 0-0 matches are ignored by `buildPlayerRows()` and `buildPlayerDetail()`
+through `player-insights.js`.
 
 Player row fields include:
 

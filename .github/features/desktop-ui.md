@@ -102,7 +102,10 @@ Zero-zero matches (0-0) ignored everywhere (same as statistics service).
   (search, "members only" toggle, sortable, sparkline + form cells, checkbox multi-select).
   Right: inline detail from `buildPlayerDetail` (KPIs, ELO chart, partners/opponents tables,
   tournament history, recent matches). `?p=<name>` selects player. "Compare (n)" → compare route.
-  Route loads the full snapshot (`/__full__` scope).
+  Route loads the full snapshot (`/__full__` scope). The snapshot loads every player so inactive
+  historical participants still resolve in match history, while `Store.getMembers()` contains only
+  players whose Supabase `players.active` value is `true`. "Members only" defaults on and filters
+  the historical player rows against that active roster.
 - **Compare** `/players/compare?p=a,b,c` (NEW) — KPI table (players as columns), overlaid ELO line
   chart, pairwise H2H table (`buildHeadToHead`). Full snapshot.
 - **Statistics** — no sub-tabs. dash-grid: statistics panel (span-7) | attendance panel (span-5),
@@ -139,3 +142,5 @@ Zero-zero matches (0-0) ignored everywhere (same as statistics service).
   → one row, `matches 1`, `totalPoints 25`, `winner 'A'` (tie with B → insertion order), `status 'Complete'`.
 - `buildYearMatrix` counts each date once per player; `sessions[m]` = distinct dates in month `m`.
 - `pickActivePlayers([{name:'A',attendance:10,games:5},{name:'B',attendance:20,games:1}],1)` → `['B']`.
+- Full Supabase hydration with active player A and inactive historical player B → match names keep
+  both A and B, while `Store.getMembers()` → `['A']`.

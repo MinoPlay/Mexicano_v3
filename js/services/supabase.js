@@ -655,7 +655,10 @@ export function hydrateSupabaseDataset(dataset) {
   const summary = buildPlayerSummary(dataset, appMatches, eloByName);
 
   Store.setMatches(appMatches);
-  Store.setMembers(summary.map((player) => player.name).sort());
+  Store.setMembers((dataset.players || [])
+    .filter((player) => player.active !== false)
+    .map((player) => player.name)
+    .sort());
   Store.setPlayersSummaryCache(summary);
   Store.setTournamentsIndex(buildTournamentIndex(dataset, appMatches, playersById));
   hydrateDoodles(dataset, playersById);
@@ -716,7 +719,8 @@ export async function selectAll(table, query = 'select=*') {
   return rows;
 }
 
-const PLAYER_QUERY = 'select=id,name,email,match_padel_id&active=eq.true&order=name.asc,id.asc';
+const ACTIVE_PLAYER_QUERY = 'select=id,name,email,match_padel_id,active&active=eq.true&order=name.asc,id.asc';
+const ALL_PLAYER_QUERY = 'select=id,name,email,match_padel_id,active&order=name.asc,id.asc';
 const TOURNAMENT_SELECT = 'id,tournament_date,status,current_round_number,completed_at,access_code,courts,tournament_players(player_id,seed_position,confirmed)';
 const MATCH_SELECT = 'id,tournament_id,round_number,match_order,score_team_1,score_team_2,match_players(player_id,team,position)';
 const MATCH_ORDER = 'order=tournament_id.asc,round_number.asc,match_order.asc,id.asc';
@@ -730,7 +734,7 @@ async function loadSnapshot() {
     doodleChangelog,
     attendanceRecords,
   ] = await Promise.all([
-    selectAll('players', PLAYER_QUERY),
+    selectAll('players', ALL_PLAYER_QUERY),
     selectAll('tournaments', `select=${TOURNAMENT_SELECT}&order=tournament_date.asc,id.asc`),
     selectAll('matches', `select=${MATCH_SELECT}&${MATCH_ORDER}`),
     selectAll('doodle_availability', 'select=availability_date,player_id&order=availability_date.asc,player_id.asc'),
@@ -817,7 +821,7 @@ function playersById() {
 
 export function loadPlayers() {
   return loadResource('players', async () => {
-    const players = await selectAll('players', PLAYER_QUERY);
+    const players = await selectAll('players', ACTIVE_PLAYER_QUERY);
     Cache.set('supabase_players_rows', players);
     Store.setMembers(players.map((player) => player.name).sort());
   });
