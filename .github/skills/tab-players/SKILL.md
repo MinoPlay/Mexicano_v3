@@ -24,9 +24,10 @@ Players hub:
 - Rows come from `buildPlayerRows(matches)` and are ranked by ELO.
 - `PLAYER_COLUMNS` defines rank, player, ELO, Δ10, sparkline trend, games, win rate, average points, tournaments, firsts, podiums, attendance, form, and last played.
 - The grid is built with `createDataGrid()` using search by name, default ELO descending sort, multi-select checkboxes, and optional Members only toolbar.
-- The master/detail split constrains both columns to the viewport and stacks below 1100px. Dense
-  grids, including Recent matches, scroll horizontally inside their own panels rather than
-  widening the page. Grid toolbars wrap when controls no longer fit on one row.
+- The master/detail split gives the Players grid its natural width and lets the detail use the
+  remaining space. At 1400px and below, the selected-player detail stacks under the full-width
+  Players table. Dense detail grids, including Recent matches, scroll horizontally inside their
+  own panels only when needed. Grid toolbars wrap when controls no longer fit on one row.
 - Members only defaults on when `Store.getMembers()` has members. This roster contains only Supabase
   players with `active = true`; inactive historical players remain available in match history but
   are hidden while the toggle is checked. Toggling it calls `grid.setRows(visible())`.
@@ -39,6 +40,7 @@ Player detail:
 - `renderDetail(el, name, matches, row, onPlayer)` calls `buildPlayerDetail(name, matches)`.
 - The hero shows rank, last played, and a Compare link seeded with the current player.
 - KPI cards show ELO, peak ELO, win rate, average points, tournaments, podiums, and win types.
+- Detail KPI cards use denser minimum widths and padding than dashboard KPI cards.
 - Picks show best partner, worst partner, nemesis, and favourite victim.
 - `createLineChart()` renders ELO history.
 - Four nested `createDataGrid()` tables show Partners, Opponents, Tournaments, and Recent matches.
