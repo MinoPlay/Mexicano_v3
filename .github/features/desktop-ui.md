@@ -28,9 +28,10 @@ Mobile layout NOT supported on this branch.
   minimum page width.
 - Root font uses a compact bounded `clamp()` scale; controls, spacing, sidebar width, paddings,
   and side-column widths remain rem/em-based without becoming oversized on wide screens.
-- Side columns use `minmax(<rem>, <%>)`; Players split constrains both columns to the available
-  width and stacks on narrower screens. The Players table, Recent matches, and other dense tables
-  scroll horizontally inside their own panel instead of widening the page.
+- The Players split gives the master table its natural width first and lets the selected-player
+  detail use the remaining space. At 1400px and below the detail stacks under the full-width table.
+  Recent matches and other dense detail tables still scroll inside their own panel only when needed.
+- Selected-player KPI cards use a denser minimum width and padding than dashboard KPIs.
 - Toolbars and panel actions wrap when their controls no longer fit on one row.
 - Heatmaps `width:100%` — cells stretch to fill panel; header labels not truncated.
 - Canvas text/padding via `fontPx(n)` (`chart.js`) = `round(n · max(1, rootFontPx/14))`;
@@ -151,5 +152,6 @@ Zero-zero matches (0-0) ignored everywhere (same as statistics service).
 - Full Supabase hydration with active player A and inactive historical player B → match names keep
   both A and B, while `Store.getMembers()` → `['A']`.
 - `index.html` viewport → `width=device-width, initial-scale=1`; desktop CSS → no fixed body
-  minimum width, compact root font capped at `16px`, constrained split columns, wrapping control
-  rows, and table scrollers whose tables use `width:max-content; min-width:100%`.
+  minimum width, compact root font capped at `16px`, Players master column sized to `max-content`,
+  detail stacked by 1400px, compact selected-player KPIs, wrapping control rows, and table scrollers
+  whose tables use `width:max-content; min-width:100%`.
