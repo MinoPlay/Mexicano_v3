@@ -21,6 +21,11 @@ function statusBadge(entry) {
 export function renderTournaments(container, params) {
   const index = Store.getTournamentsIndex();
   const sorted = [...index].sort((a, b) => b.date.localeCompare(a.date));
+  const currentYear = new Date().getFullYear();
+  const yearOptions = ['all', ...Array.from({ length: 3 }, (_, offset) => String(currentYear - offset))];
+  let year = String(currentYear);
+  let selected = null;
+  let resultLoadId = 0;
 
   const esc = (v) => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const link = (n) => n ? `<a href="#/players?p=${encodeURIComponent(n)}" onclick="event.stopPropagation()">${esc(n)}</a>` : '<span class="text-secondary">—</span>';
@@ -72,9 +77,6 @@ export function renderTournaments(container, params) {
       return;
     }
     const allRows = buildTournamentRows(sorted, Store.getMatches());
-    const years = [...new Set(allRows.map(r => r.year))];
-    let year = 'all';
-    let selected = null;
     list.innerHTML = `<div class="tournaments-desktop">
       <section class="panel"><div class="panel-body flush" id="tournaments-grid"></div></section>
       <aside class="panel tournament-side"><div class="panel-body" id="tournament-preview"></div></aside>
@@ -87,7 +89,7 @@ export function renderTournaments(container, params) {
       rowKey: 'date',
       sort: { key: 'date', dir: 'desc' },
       searchKeys: ['date', 'winner', 'runnerUp'],
-      toolbarHtml: `<select id="tournaments-year" style="width:auto"><option value="all">All years</option>${years.map(y => `<option value="${y}">${y}</option>`).join('')}</select>`,
+      toolbarHtml: `<select id="tournaments-year" style="width:auto">${yearOptions.map(value => `<option value="${value}"${value === year ? ' selected' : ''}>${value === 'all' ? 'All time' : value}</option>`).join('')}</select>`,
       emptyText: 'No tournaments match',
       maxHeight: 'calc(100vh - 170px)',
       onRowClick: (row) => {
@@ -98,15 +100,37 @@ export function renderTournaments(container, params) {
       },
     });
     list.querySelector('#tournaments-grid').appendChild(grid.el);
-    grid.el.querySelector('#tournaments-year').addEventListener('change', (e) => { year = e.target.value; grid.setRows(filtered()); });
+    grid.el.querySelector('#tournaments-year').addEventListener('change', (e) => {
+      year = e.target.value;
+      selected = null;
+      renderList();
+      loadResultsForYear(year);
+    });
     renderPreview(side, null);
+  }
+
+  async function loadResultsForYear(targetYear) {
+    if (!Store.getSupabaseConfig()) return;
+    const loadId = ++resultLoadId;
+    const status = container.querySelector('#tournaments-results-status');
+    if (status) status.textContent = `Loading ${targetYear === 'all' ? 'all' : targetYear} results…`;
+    try {
+      const { loadTournamentResults } = await import('../services/backend.js');
+      await loadTournamentResults(targetYear);
+      if (loadId !== resultLoadId || !container.isConnected) return;
+      if (status) status.textContent = '';
+      renderList();
+    } catch (err) {
+      if (loadId !== resultLoadId) return;
+      if (status) status.textContent = `Failed to load results: ${err.message}`;
+    }
   }
 
   container.innerHTML = `
     <header class="page-header">
       <h1>Tournaments</h1>
       <span class="text-sm text-secondary">click a row to preview · click again to open</span>
-      ${Store.getSupabaseConfig() && !Store.isMatchesFullyLoaded() ? '<button class="btn btn-secondary btn-sm" id="tournaments-load-results" style="margin-left:auto">Load results</button>' : ''}
+      <span class="text-sm text-secondary" id="tournaments-results-status" style="margin-left:auto"></span>
     </header>
     <div class="page-content">
       <div id="tournament-list">
@@ -127,23 +151,9 @@ export function renderTournaments(container, params) {
     <a href="#/create-tournament" class="fab" aria-label="Create tournament">+</a>
   `;
 
-  container.querySelector('#tournaments-load-results')?.addEventListener('click', async (e) => {
-    const btn = e.currentTarget;
-    btn.disabled = true;
-    btn.textContent = '⏳ Loading…';
-    try {
-      const { pullForRoute } = await import('../services/backend.js');
-      await pullForRoute('#/__full__');
-      if (!btn.isConnected) return;
-      btn.remove();
-      renderList();
-    } catch (err) {
-      btn.textContent = `Failed: ${err.message}`;
-    }
-  });
-
   if (index.length > 0) {
     renderList();
+    loadResultsForYear(year);
     return;
   }
 
@@ -159,6 +169,7 @@ export function renderTournaments(container, params) {
           sorted.length = 0;
           fresh.sort((a, b) => b.date.localeCompare(a.date)).forEach(e => sorted.push(e));
           renderList();
+          loadResultsForYear(year);
         } else {
           if (loadingEl?.isConnected) {
             loadingEl.innerHTML = `

@@ -111,6 +111,15 @@ export async function pullMonthlyOverview(yearMonth = null) {
   return Store.getMonthlyOverview(yearMonth);
 }
 
+export async function loadTournamentResults(year = 'all') {
+  await supabase.loadTournamentIndex();
+  const prefix = year === 'all' ? null : `${year}-`;
+  const dates = Store.getTournamentsIndex()
+    .map((entry) => entry.date)
+    .filter((date) => date && (!prefix || date.startsWith(prefix)));
+  return supabase.loadDayMatches(dates);
+}
+
 export async function ensureDayMatchesLoaded(date) {
   return supabase.loadDayMatches([date]);
 }
