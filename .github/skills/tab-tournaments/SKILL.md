@@ -13,13 +13,13 @@ The Tournaments tab renders `#/tournaments` as a desktop results browser. It sho
 ## Rules / Logic
 `renderTournaments(container, params)` in `js/pages/tournaments.js` reads `Store.getTournamentsIndex()`, sorts entries by date descending, and builds a two-column `.tournaments-desktop` layout when entries exist.
 
-The grid is created with `createDataGrid()` and rows from `buildTournamentRows(sorted, Store.getMatches())`. Columns are Date, Players, Rounds, Matches, Points, Winner, Runner-up, and Status. The grid has a year filter in `toolbarHtml`, text search over date/winner/runner-up, sticky grid behavior from the shared component, and default date descending sort.
+The grid is created with `createDataGrid()` and rows from `buildTournamentRows(sorted, Store.getMatches())`. Columns are Date, Players, Rounds, Matches, Points, Winner, Runner-up, and Status. The grid has a year filter in `toolbarHtml`, text search over date/winner/runner-up, sticky grid behavior from the shared component, and default date descending sort. The year filter offers All time, the current year, and the two previous years; the current year is selected by default.
 
 `statusBadge(entry)` renders Complete, partial completion (`completedCount/matchCount`), or Pending from the original index entry. `formatDate(dateStr)` localizes visible dates.
 
 `renderPreview(side, row)` builds a side-panel leaderboard from currently loaded matches for the selected date. It does not fetch day data itself. Player names in winner/runner-up and preview rows link to `#/players?p=<name>` while stopping row-click propagation.
 
-When Supabase is configured and full match history is not loaded, the page header shows `#tournaments-load-results`. Clicking it imports `pullForRoute` and calls `pullForRoute('#/__full__')`, then removes the button and re-renders the grid/preview with full results.
+When Supabase is configured, the page automatically imports `loadTournamentResults(year)` for the selected year. The backend loads matches only for tournament dates in that year; All time loads all indexed tournament dates without loading the unrelated full snapshot. Changing the year filter starts the same scoped load and re-renders the grid when it completes. Loading failures appear in `#tournaments-results-status`.
 
 When the local index is empty and Supabase is configured, the page shows a loading state, imports `fetchTournamentsIndexPublic()`, re-reads the index, and renders either the grid or the empty state. Without Supabase, the empty state links to Create Tournament.
 
@@ -30,7 +30,7 @@ The floating action button always links to `#/create-tournament`.
 - `js/components/data-grid.js` — `createDataGrid`, `sortRows`, `filterRows`, and `nextSortState` power the desktop grid.
 - `js/services/player-insights.js` — `buildTournamentRows(index, matches)` enriches index entries with winner, runner-up, points, and status fields.
 - `js/store.js` — `Store.getTournamentsIndex`, `Store.getMatches`, `Store.getSupabaseConfig`, and `Store.isMatchesFullyLoaded`.
-- `js/services/backend.js` — lazy imports `fetchTournamentsIndexPublic` and `pullForRoute('#/__full__')`.
+- `js/services/backend.js` — lazy imports `fetchTournamentsIndexPublic` and `loadTournamentResults(year)`.
 - `js/app.js` — registers `/tournaments` to `renderTournaments`.
 - `js/components/nav.js` — includes `/tournaments` in the desktop side nav.
 - `css/desktop.css` — `tournaments-desktop`, `panel`, `tournament-side`, and shared `data-grid` styles.

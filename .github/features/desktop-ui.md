@@ -111,7 +111,9 @@ Zero-zero matches (0-0) ignored everywhere (same as statistics service).
   Ranking panel (`renderRankingTable`, Δ = `elo − previousElo`).
 - **Tournaments** — data-grid (`buildTournamentRows`): date/players/rounds/matches/points/winner/runner-up/status,
   search + year select. 1st row click previews leaderboard in side panel (380px), 2nd click / "Open" navigates.
-  "Load results" header button pulls full history when not loaded.
+  The year select contains All time plus the current year and two previous years, defaulting to the current year.
+  Results for the selected year load automatically; changing the filter loads only that year's tournament days.
+  All time loads all tournament days without loading unrelated full-snapshot data.
 - **Tournament** — Matches panel | Leaderboard aside, no sub-tabs; rounds' matches in `.round-matches` grid;
   toolbar holds access-code area (hidden when empty). Leaderboard names → Players hub.
 - **Create tournament** — Setup | Lineup | Member pool (chips with ELO from `getRecentMembers()`,
