@@ -5,7 +5,9 @@ Preview: `https://minoplay.github.io/Mexicano_v3/preview/feature-desktop-ui/`.
 Mobile layout NOT supported on this branch.
 
 ## Truth
-- Target viewport ≥ 1280px wide. Content fluid, max `--max-width: 1600px`.
+- Target viewport = the actual device width. The shell and controls must stay inside the
+  viewport at every width; dense tables own their horizontal scrolling.
+- Content stays fluid without growing controls beyond the compact desktop scale.
 - No frameworks, no chart libs. Canvas + CSS grid only.
 - Services (`js/services/*`) reused. New pure view-model logic lives in
   `js/services/player-insights.js`, `js/components/data-grid.js` (sort/filter helpers),
@@ -22,10 +24,14 @@ Mobile layout NOT supported on this branch.
 - Device-type (iPhone padding) setting removed from Settings UI (Store API kept, unused).
 
 ## Fluid scaling
-- Root font `clamp(14px, 9px + 0.42vw, 20px)`; spacing vars, sidebar width, paddings, side-column widths in rem/em
-  → whole UI scales with viewport. No content max-width (fills screen). `body` min-width 1024px.
-- Side columns use `minmax(<rem>, <%>)`; Players split = `minmax(0, max-content) | minmax(26rem, 1fr)`
-  (grid takes its natural width, detail gets the rest; grid scrolls inside its panel if too narrow).
+- Viewport meta uses `width=device-width, initial-scale=1`; neither `html` nor `body` imposes a
+  minimum page width.
+- Root font uses a compact bounded `clamp()` scale; controls, spacing, sidebar width, paddings,
+  and side-column widths remain rem/em-based without becoming oversized on wide screens.
+- Side columns use `minmax(<rem>, <%>)`; Players split constrains both columns to the available
+  width and stacks on narrower screens. The Players table, Recent matches, and other dense tables
+  scroll horizontally inside their own panel instead of widening the page.
+- Toolbars and panel actions wrap when their controls no longer fit on one row.
 - Heatmaps `width:100%` — cells stretch to fill panel; header labels not truncated.
 - Canvas text/padding via `fontPx(n)` (`chart.js`) = `round(n · max(1, rootFontPx/14))`;
   chart heights set in rem.
@@ -144,3 +150,6 @@ Zero-zero matches (0-0) ignored everywhere (same as statistics service).
 - `pickActivePlayers([{name:'A',attendance:10,games:5},{name:'B',attendance:20,games:1}],1)` → `['B']`.
 - Full Supabase hydration with active player A and inactive historical player B → match names keep
   both A and B, while `Store.getMembers()` → `['A']`.
+- `index.html` viewport → `width=device-width, initial-scale=1`; desktop CSS → no fixed body
+  minimum width, compact root font capped at `16px`, constrained split columns, wrapping control
+  rows, and table scrollers whose tables use `width:max-content; min-width:100%`.
