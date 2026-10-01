@@ -135,6 +135,42 @@ describe('Supabase domain hydration', () => {
     ]);
   });
 
+  it('keeps inactive historical players in matches but excludes them from members', () => {
+    supabase.hydrateSupabaseDataset({
+      players: [
+        { id: 'p1', name: 'Active A', active: true },
+        { id: 'p2', name: 'Inactive B', active: false },
+        { id: 'p3', name: 'Active C', active: true },
+        { id: 'p4', name: 'Active D', active: true },
+      ],
+      tournaments: [{
+        id: 't1',
+        tournament_date: '2026-01-01',
+        status: 'completed',
+      }],
+      matches: [{
+        id: 'm1',
+        tournament_id: 't1',
+        round_number: 1,
+        match_order: 1,
+        score_team_1: 13,
+        score_team_2: 10,
+      }],
+      match_players: [
+        { match_id: 'm1', player_id: 'p1', team: 1, position: 1 },
+        { match_id: 'm1', player_id: 'p2', team: 1, position: 2 },
+        { match_id: 'm1', player_id: 'p3', team: 2, position: 1 },
+        { match_id: 'm1', player_id: 'p4', team: 2, position: 2 },
+      ],
+    });
+
+    expect(Store.getMatches()[0]).toMatchObject({
+      team1Player1Name: 'Active A',
+      team1Player2Name: 'Inactive B',
+    });
+    expect(Store.getMembers()).toEqual(['Active A', 'Active C', 'Active D']);
+  });
+
   it('shares one embedded hydration batch across concurrent consumers', async () => {
     Store.setSupabaseConfig({ url: 'https://example.supabase.co', anonKey: 'anon' });
     Store.setSupabaseSession({
@@ -160,6 +196,9 @@ describe('Supabase domain hydration', () => {
     expect(urls.some((url) => url.includes('/rest/v1/match_players?'))).toBe(false);
     expect(urls.some((url) => url.includes('/rest/v1/tournament_players?'))).toBe(false);
     expect(urls.some((url) => url.includes('/rest/v1/attendance_players?'))).toBe(false);
+    const playersUrl = urls.find((url) => url.includes('/rest/v1/players?'));
+    expect(playersUrl).toContain('select=id,name,email,match_padel_id,active');
+    expect(playersUrl).not.toContain('active=eq.true');
     expect(urls.find((url) => url.includes('/rest/v1/matches?')))
       .toContain('match_players(player_id,team,position)');
     expect(urls.find((url) => url.includes('/rest/v1/matches?')))
