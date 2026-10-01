@@ -24,6 +24,9 @@ Players hub:
 - Rows come from `buildPlayerRows(matches)` and are ranked by ELO.
 - `PLAYER_COLUMNS` defines rank, player, ELO, Δ10, sparkline trend, games, win rate, average points, tournaments, firsts, podiums, attendance, form, and last played.
 - The grid is built with `createDataGrid()` using search by name, default ELO descending sort, multi-select checkboxes, and optional Members only toolbar.
+- The master/detail split constrains both columns to the viewport and stacks below 1100px. Dense
+  grids, including Recent matches, scroll horizontally inside their own panels rather than
+  widening the page. Grid toolbars wrap when controls no longer fit on one row.
 - Members only defaults on when `Store.getMembers()` has members. This roster contains only Supabase
   players with `active = true`; inactive historical players remain available in match history but
   are hidden while the toggle is checked. Toggling it calls `grid.setRows(visible())`.
@@ -62,7 +65,9 @@ Compare:
 - `js/store.js` — `Store.getMatches`, `Store.getMembers`, `Store.getCurrentUser`, and `Store.getSupabaseConfig`.
 - `js/app.js` — registers `/players` and `/players/compare`, and names them Players/Compare.
 - `js/components/nav.js` — desktop side nav includes `/players`.
-- `css/desktop.css` — `split-view`, `split-master`, `split-detail`, `data-grid`, `line-chart`, `player-hero`, `player-picks`, `two-col`, and compare grid layout.
+- `css/desktop.css` — responsive `split-view`, `split-master`, `split-detail`, internally scrolling
+  `data-grid`, wrapping toolbars, `line-chart`, `player-hero`, `player-picks`, `two-col`, and compare
+  grid layout.
 
 ## Data
 Both routes operate over full flattened match history. Full hydration loads all player rows so

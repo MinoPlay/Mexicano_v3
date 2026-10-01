@@ -2,17 +2,16 @@
    Desktop layer — loaded last. See .github/features/desktop-ui.md
    ═══════════════════════════════════════════════════════════════ */
 
-/* Fluid scale: everything below is rem/em-based so it grows with the viewport
-   (≈14px @1280 → 17px @1920 → 20px @2560+). */
-html { font-size: clamp(14px, calc(9px + 0.42vw), 20px); }
+/* Compact fluid scale. Controls adapt without becoming oversized on wide screens. */
+html { font-size: clamp(13px, calc(12.2px + 0.18vw), 16px); }
 :root {
   --space-xs: 0.25rem; --space-sm: 0.5rem; --space-md: 0.875rem; --space-lg: 1.25rem;
   --space-xl: 1.5rem; --space-2xl: 2.5rem;
   --font-size-xs: 0.8rem; --font-size-sm: 0.9rem;
-  --sidebar-width: 13rem; --sidebar-collapsed-width: 3.75rem;
+  --sidebar-width: 12rem; --sidebar-collapsed-width: 3.5rem;
   --max-width: none;
 }
-body { min-width: 1024px; }
+body { min-width: 0; }
 
 ::-webkit-scrollbar { width: 8px; height: 8px; }
 
@@ -20,6 +19,7 @@ body { min-width: 1024px; }
 #app {
   display: grid;
   grid-template-columns: var(--sidebar-width) minmax(0, 1fr);
+  width: 100%;
   max-width: none;
   margin: 0;
   min-height: 100vh;
@@ -96,6 +96,8 @@ html.sidebar-collapsed .side-nav-collapse { transform: scaleX(-1); }
 .page-header {
   margin: 0 calc(-1 * var(--space-xl)) var(--space-lg);
   padding: var(--space-md) var(--space-xl);
+  gap: var(--space-sm);
+  flex-wrap: wrap;
   max-width: none !important;
   background: color-mix(in srgb, var(--bg) 88%, transparent);
   backdrop-filter: blur(8px);
@@ -118,9 +120,13 @@ html.sidebar-collapsed .side-nav-collapse { transform: scaleX(-1); }
 .fab { right: var(--space-xl); bottom: var(--space-xl); }
 
 /* ─── Controls ─── */
-.btn { min-height: 2.25rem; }
-.tab { min-height: 2.5rem; }
-input, select, textarea { font-size: var(--font-size-sm); }
+.btn { min-height: 2rem; padding: 0.4rem 0.7rem; }
+.tab { min-height: 2.25rem; }
+input, select, textarea {
+  min-width: 0;
+  padding: 0.45rem 0.65rem;
+  font-size: var(--font-size-sm);
+}
 
 /* ─── Layout primitives ─── */
 .dash-grid {
@@ -171,14 +177,15 @@ input, select, textarea { font-size: var(--font-size-sm); }
 .panel-subtitle { font-size: var(--font-size-xs); color: var(--text-tertiary); }
 .panel-body { padding: var(--space-md); min-width: 0; }
 .panel-body.flush { padding: 0; }
-.panel-actions { display: flex; align-items: center; gap: var(--space-xs); }
+.panel-actions { display: flex; align-items: center; gap: var(--space-xs); flex-wrap: wrap; }
 
 .split-view {
   display: grid;
-  grid-template-columns: minmax(0, max-content) minmax(26rem, 1fr);
+  grid-template-columns: minmax(0, min(38%, 32rem)) minmax(0, 1fr);
   gap: var(--space-lg);
   align-items: start;
 }
+.split-view > * { min-width: 0; }
 .split-view > .split-detail { position: sticky; top: 88px; max-height: calc(100vh - 104px); overflow-y: auto; }
 
 .kpi-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr)); gap: var(--space-sm); }
@@ -202,14 +209,20 @@ input, select, textarea { font-size: var(--font-size-sm); }
 .data-grid-toolbar {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: var(--space-sm);
   padding: var(--space-sm) var(--space-md);
   border-bottom: 1px solid var(--border);
 }
-.data-grid-search { flex: 1; max-width: 22rem; padding: 0.4em 0.7em; }
+.data-grid-search { flex: 1 1 12rem; max-width: 22rem; padding: 0.4em 0.7em; }
 .data-grid-toolbar-extra { display: flex; align-items: center; gap: var(--space-sm); flex: 1; flex-wrap: wrap; }
-.data-grid-scroll { overflow: auto; }
-.data-grid table { font-size: var(--font-size-sm); font-variant-numeric: tabular-nums; }
+.data-grid-scroll { max-width: 100%; overflow-x: auto; overflow-y: auto; }
+.data-grid table {
+  width: max-content;
+  min-width: 100%;
+  font-size: var(--font-size-sm);
+  font-variant-numeric: tabular-nums;
+}
 .data-grid th {
   position: sticky;
   top: 0;
@@ -243,6 +256,8 @@ input, select, textarea { font-size: var(--font-size-sm); }
 .data-grid .sparkline { display: inline-block; vertical-align: middle; }
 
 /* Existing mobile tables get breathing room */
+.data-table { max-width: 100%; overflow-x: auto; }
+.data-table table { width: max-content; min-width: 100%; }
 .data-table th { font-size: var(--font-size-xs); padding: 0.55em 0.7em; }
 .data-table td { font-size: var(--font-size-sm); padding: 0.45em 0.7em; }
 .data-table th:first-child, .data-table td:first-child { padding-left: 10px; }
@@ -369,3 +384,40 @@ input, select, textarea { font-size: var(--font-size-sm); }
 .heatmap td sub { font-size: 0.7em; }
 .player-picks { grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr)); }
 .two-col { grid-template-columns: repeat(auto-fit, minmax(min(22rem, 100%), 1fr)); }
+
+@media (max-width: 1100px) {
+  .split-view,
+  .tournament-desktop,
+  .tournaments-desktop,
+  .elo-desktop,
+  .create-desktop {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .split-view > .split-detail,
+  .tournament-desktop > .tournament-side,
+  .tournaments-desktop > .tournament-side,
+  .elo-desktop .elo-side {
+    position: static;
+    max-height: none;
+    overflow: visible;
+  }
+
+  .settings-desktop { column-count: 1; }
+}
+
+@media (max-width: 760px) {
+  #app,
+  html.sidebar-collapsed #app {
+    grid-template-columns: var(--sidebar-collapsed-width) minmax(0, 1fr);
+  }
+
+  .side-nav-label { display: none; }
+  #page-container.page-content { padding-inline: var(--space-md); }
+  .page-header {
+    margin-inline: calc(-1 * var(--space-md));
+    padding-inline: var(--space-md);
+  }
+  .dash-grid { gap: var(--space-md); }
+  .dash-grid > [class*="span-"] { grid-column: span 12; }
+}
