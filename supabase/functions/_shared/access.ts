@@ -19,6 +19,26 @@ export async function requireUser(request: Request) {
   return { client, user: data.user };
 }
 
+/**
+ * Player the caller acts as. An approved email is bound to exactly one player,
+ * which overrides any selection; only transitional shared-code sessions fall
+ * back to their selected player.
+ */
+export async function effectivePlayerId(
+  client: ReturnType<typeof serviceClient>,
+  userId: string,
+  selectedPlayerId: string | null,
+): Promise<string | null> {
+  const { data, error } = await client
+    .from('approved_auth_users')
+    .select('player_id')
+    .eq('user_id', userId)
+    .is('revoked_at', null)
+    .maybeSingle();
+  if (error) throw error;
+  return data?.player_id ?? selectedPlayerId;
+}
+
 export async function sha256Hex(value: string): Promise<string> {
   const bytes = new TextEncoder().encode(value);
   const digest = await crypto.subtle.digest('SHA-256', bytes);

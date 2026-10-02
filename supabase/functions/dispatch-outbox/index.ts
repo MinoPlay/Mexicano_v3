@@ -19,23 +19,13 @@ Deno.serve(async (request) => {
   const githubToken = Deno.env.get('GITHUB_RELAY_TOKEN');
   if (!githubToken) return json({ message: 'GitHub relay token is missing' }, 500);
 
-  const { data: items, error } = await client
-    .from('notification_outbox')
-    .select('*')
-    .in('status', ['pending', 'failed'])
-    .lte('available_at', new Date().toISOString())
-    .order('created_at')
-    .limit(25);
+  // Atomic claim (FOR UPDATE SKIP LOCKED): concurrent dispatchers never get the
+  // same row. Claimed rows are already 'processing' with attempt_count bumped.
+  const { data: items, error } = await client.rpc('claim_notification_outbox', { p_limit: 25 });
   if (error) return json({ message: error.message }, 500);
 
   const results = [];
   for (const item of items || []) {
-    await client.from('notification_outbox').update({
-      status: 'processing',
-      attempt_count: item.attempt_count + 1,
-      last_error: null,
-    }).eq('id', item.id);
-
     try {
       const response = await fetch(`https://api.github.com/repos/${owner}/${repo}/dispatches`, {
         method: 'POST',
@@ -64,7 +54,7 @@ Deno.serve(async (request) => {
       }).eq('id', item.id);
       results.push({ id: item.id, status: 'delivered' });
     } catch (dispatchError) {
-      const attempt = item.attempt_count + 1;
+      const attempt = item.attempt_count;
       await client.from('notification_outbox').update({
         status: 'failed',
         last_error: dispatchError.message,

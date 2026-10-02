@@ -36,9 +36,27 @@ async function mutate(operation, payload) {
   }
 }
 
+const isScored = (match) => match.team1Score + match.team2Score === 25;
+
+// Every generated match is persisted (unplayed ones as 0-0, which reads skip),
+// so a reload mid-round keeps the round's pairings.
+function roundMatches(tournament) {
+  return (tournament?.rounds || []).flatMap((round) => round.matches.map((match) => ({
+    roundNumber: round.roundNumber,
+    team1Player1Name: match.player1?.name,
+    team1Player2Name: match.player2?.name,
+    team2Player1Name: match.player3?.name,
+    team2Player2Name: match.player4?.name,
+    scoreTeam1: isScored(match) ? match.team1Score : 0,
+    scoreTeam2: isScored(match) ? match.team2Score : 0,
+  })));
+}
+
 function tournamentDataset(tournament, dayMatches = null) {
   const date = tournament?.tournamentDate;
-  const matches = dayMatches || Store.getMatches().filter((match) => match.date === date);
+  const matches = dayMatches || (Array.isArray(tournament?.rounds)
+    ? roundMatches(tournament)
+    : Store.getMatches().filter((match) => match.date === date));
   const canonicalMatches = [];
   const matchPlayers = [];
   matches.forEach((match, index) => {
@@ -134,8 +152,38 @@ export async function pullAllMatches(onProgress) {
 
 export const ensureAllMatchesLoaded = pullAllMatches;
 
+const tournamentWrites = new Map();
+
+/**
+ * Each save replaces the whole tournament, so writes for one date run one at a
+ * time and states queued behind a running write collapse into the latest one.
+ * An older request can therefore never land after a newer one.
+ */
+function queueTournamentWrite(date, dataset) {
+  let slot = tournamentWrites.get(date);
+  if (!slot) {
+    slot = { tail: Promise.resolve(), pending: null };
+    tournamentWrites.set(date, slot);
+  }
+  if (slot.pending) {
+    slot.pending.dataset = dataset;
+    return slot.pending.promise;
+  }
+  const pending = { dataset };
+  pending.promise = slot.tail.catch(() => {}).then(() => {
+    slot.pending = null;
+    return mutate('save_tournament', pending.dataset);
+  });
+  slot.pending = pending;
+  slot.tail = pending.promise;
+  pending.promise.finally(() => {
+    if (slot.tail === pending.promise) tournamentWrites.delete(date);
+  }).catch(() => {});
+  return pending.promise;
+}
+
 export async function pushTournamentDayFile(tournament) {
-  return mutate('save_tournament', tournamentDataset(tournament));
+  return queueTournamentWrite(tournament?.tournamentDate, tournamentDataset(tournament));
 }
 
 export async function pushCompletedTournament(date, dayMatches, indexEntry, { onStep } = {}) {
@@ -151,7 +199,7 @@ export async function pushCompletedTournament(date, dayMatches, indexEntry, { on
     isCompleted: indexEntry?.isComplete === true,
     completedAt: Date.now(),
   };
-  await mutate('save_tournament', tournamentDataset(tournament, dayMatches));
+  await queueTournamentWrite(date, tournamentDataset(tournament, dayMatches));
   onStep?.('push', 'success');
   onStep?.('index', 'success');
 }
@@ -167,11 +215,17 @@ export async function dispatchConfirmAttendance(date, playerName) {
  * @param {Array}  changes - only the changelog entries produced by this save.
  *   The changelog is a shared history owned by Supabase, so the client appends
  *   to it instead of replaying its own accumulated list.
+ *
+ * Only the changed players' entries are sent: members may write only their own
+ * availability, so sending the whole shared month would be rejected.
  */
 export async function pushDoodleNow(yearMonth, changes = []) {
+  const changed = [...new Set(changes.map((change) => change.playerName))];
+  const entries = Store.getDoodle(yearMonth);
   return mutate('save_doodle', {
     year_month: yearMonth,
-    entries: Store.getDoodle(yearMonth),
+    entries: changed.map((name) => entries.find((entry) => entry.name === name)
+      || { name, selectedDates: [] }),
     changes,
   });
 }

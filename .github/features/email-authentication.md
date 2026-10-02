@@ -165,4 +165,8 @@ an empty result because RLS no longer sees active access. Edge Function mutation
 - An unapproved email cannot self-register.
 - Revocation blocks reads and writes without deleting the identity.
 - Selecting an admin player does not grant admin rights.
+- An approved email user cannot bind (`bind_current_player`) any player other than the one their
+  email resolves to. Edge Functions (`domain-mutation`, `elevate-admin`) always act as
+  `approved_auth_users.player_id` when present (`effectivePlayerId()`), ignoring any selection.
+  Shared-code sessions keep free selection while that transitional path exists.
 - No service-role key or user password is committed or sent to the browser.

@@ -72,6 +72,14 @@ Time: {ISO timestamp}
   ```
   (or a `case`/`if` step). Store `-5458909914` as a repo variable/secret there.
 
+## Server-side authorization
+- `domain-mutation` validates every enqueue (`supabase/functions/_shared/notifications.ts`).
+- Members: only `doodle` and `tournament-confirmation`; text is rebuilt server-side from the
+  bound player plus structured fields, so client-supplied text is ignored. No `target`.
+- Admin-only: `test`, `tournament-test`, `tournament-created`, `tournament-completed`, and `target`.
+- Idempotency keys are prefixed with the user id; doodle keys carry a random suffix so every
+  doodle edit in a month alerts (not just the first).
+
 ## GitHub repository_dispatch
 - Sent only by the Supabase `dispatch-outbox` function.
 - URL: `POST https://api.github.com/repos/{owner}/{repo}/dispatches`

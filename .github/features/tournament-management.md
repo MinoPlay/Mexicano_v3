@@ -255,10 +255,13 @@ Example: 8 players in a 12-slot tournament. Select player 4, click ▼ — playe
   deleted, player stats are recalculated, and (since the edited round is complete again) the
   next round is immediately regenerated from the updated standings. Example: on round 7, editing
   round 6 overrides round 6 and recreates round 7 from the new results.
-  The cascade is pushed to GitHub straight away via `pushTournamentDayFile()` (verified write) —
-  unlike a normal current-round score entry, which is only pushed on round advance / end.
-  Without that immediate push the remote day file would keep the stale rounds and silently
-  overwrite the edit on the next load.
+  The cascade is pushed straight away via `pushTournamentDayFile()`.
+- **Persistence**: every state change is written through to Supabase (`save_tournament`). The
+  payload is built from `tournament.rounds`, so freshly generated rounds are saved too; unplayed
+  or partial matches are written as 0-0 (skipped by stats/ELO reads). Writes for one date are
+  serialized and queued states coalesce to the latest, so an older write never lands after a
+  newer one (`backend.js#queueTournamentWrite`). Cross-device concurrent edits are still
+  last-writer-wins.
 - **Player removal**: Not explicitly handled; current schema assumes fixed player list per tournament.
 - **Stale date file vs definitive index**: If `tournaments.json` has `isComplete: true` with real match data (`completedCount === matchCount > 0`), the index wins over a stale date file that still contains `{ tournament: { isCompleted: false } }` (leftover intermediate push). The active tournament is cleared and stale matches are purged. Only when `matchCount === 0` (index may be stale after a data-restore) does the date file take precedence.
 

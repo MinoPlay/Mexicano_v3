@@ -23,7 +23,13 @@ Offline writes are blocked before success UI or notification enqueueing.
 - **Web Push:** subscription stored in protected `push_subscriptions`; sends use the same outbox/dispatcher path and DataHub `web-push-relay.yml`.
 - **GitHub backup:** DataHub workflow exports Supabase Tuesday/Thursday at 08:15 Copenhagen. It is not a runtime write path.
 
-Outbox rows carry an idempotency key and correlation ID. The dispatcher retries failures with backoff and records `last_error`.
+Outbox rows carry an idempotency key and correlation ID. The dispatcher claims rows atomically via `claim_notification_outbox` (`FOR UPDATE SKIP LOCKED`), retries failures with backoff and records `last_error`.
+
+`domain-mutation` authorizes every enqueue with `_shared/notifications.ts#authorizeNotification`:
+- Only `telegram`/`telegram_alert` and `push`/`web_push` are accepted.
+- Members may only enqueue Telegram `doodle` and `tournament-confirmation`; the server rebuilds their text from the bound player and structured fields (`yearMonth`/`selectedAdded`/`selectedRemoved`, `tournamentDate`) and ignores client text. No `target`.
+- Everything else (test alerts, tournament created/completed, any push) requires admin.
+- Idempotency keys are namespaced by user id. Doodle alert keys include a random suffix so every edit alerts.
 
 ## Event catalog
 

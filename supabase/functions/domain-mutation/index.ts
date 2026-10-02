@@ -1,5 +1,6 @@
 import { handleOptions, json } from '../_shared/http.ts';
-import { requireUser } from '../_shared/access.ts';
+import { effectivePlayerId, requireUser } from '../_shared/access.ts';
+import { authorizeNotification } from '../_shared/notifications.ts';
 
 type Grant = {
   role: 'member' | 'admin';
@@ -18,7 +19,10 @@ async function requireGrant(client: any, userId: string): Promise<Grant> {
   if (!data || data.revoked_at || Date.parse(data.expires_at) <= Date.now()) {
     throw new Error('Active app access is required');
   }
-  return data;
+  return {
+    ...data,
+    selected_player_id: await effectivePlayerId(client, userId, data.selected_player_id),
+  };
 }
 
 function requireAdmin(grant: Grant) {
@@ -164,33 +168,14 @@ async function saveDoodle(client: any, userId: string, grant: Grant, payload: an
 async function saveManualAttendance(client: any, userId: string, grant: Grant, payload: any) {
   requireAdmin(grant);
   const entries = Array.isArray(payload.entries) ? payload.entries : [];
-  // attendance_players rows cascade with their record.
-  const { error: deleteRecordsError } = await client
-    .from('attendance_records')
-    .delete()
-    .not('id', 'is', null);
-  if (deleteRecordsError) throw deleteRecordsError;
-
-  for (const entry of entries) {
-    const { data: record, error } = await client.from('attendance_records').insert({
-      attendance_date: entry.date,
-      note: entry.note || null,
-    }).select('id').single();
-    if (error) throw error;
-    const rows = [];
-    for (const name of entry.players || []) {
-      rows.push({
-        attendance_id: record.id,
-        player_id: await resolvePlayer(client, name),
-      });
-    }
-    if (rows.length) {
-      const { error: playersError } = await client.from('attendance_players').insert(rows);
-      if (playersError) throw playersError;
-    }
-  }
-  await audit(client, userId, grant, 'save', 'manual_attendance', null, { count: entries.length });
-  return { saved: entries.length };
+  // One transaction: validate, replace and audit, or change nothing.
+  const { data, error } = await client.rpc('replace_manual_attendance', {
+    p_entries: entries,
+    p_actor_user_id: userId,
+    p_actor_player_id: grant.selected_player_id,
+  });
+  if (error) throw error;
+  return { saved: data };
 }
 
 async function addPlayer(client: any, userId: string, grant: Grant, payload: any) {
@@ -217,18 +202,22 @@ async function deleteTournament(client: any, userId: string, grant: Grant, paylo
 }
 
 async function enqueue(client: any, userId: string, grant: Grant, payload: any) {
+  const playerName = grant.selected_player_id
+    ? (await client.from('players').select('name').eq('id', grant.selected_player_id).single()).data?.name ?? null
+    : null;
+  const notification = authorizeNotification({ role: grant.role, playerName, userId }, payload);
   const correlationId = crypto.randomUUID();
   const { data, error } = await client.rpc('enqueue_notification', {
-    p_idempotency_key: payload.idempotency_key,
-    p_channel: payload.channel,
-    p_event_type: payload.event_type,
-    p_payload: payload.payload,
+    p_idempotency_key: notification.idempotency_key,
+    p_channel: notification.channel,
+    p_event_type: notification.event_type,
+    p_payload: notification.payload,
     p_correlation_id: correlationId,
   });
   if (error) throw error;
   await audit(client, userId, grant, 'enqueue', 'notification', data, {
-    channel: payload.channel,
-    event_type: payload.event_type,
+    channel: notification.channel,
+    event_type: notification.event_type,
     correlation_id: correlationId,
   });
   return { id: data, correlation_id: correlationId };

@@ -1109,7 +1109,7 @@ export async function loadEloHistory(playerIds = []) {
 
 /** Drop every cached read so the next route visit reloads fresh data. */
 export function invalidateReadCache() {
-  for (const prefix of [RESOURCE_PREFIX, 'supabase_route_', 'elo_day_', 'elo_history_player_']) {
+  for (const prefix of [RESOURCE_PREFIX, 'supabase_route_', 'elo_day_', 'elo_history_player_', 'participation_']) {
     for (const key of Cache.keys(prefix)) Cache.del(key);
   }
   Cache.del('supabase_snapshot_loaded');

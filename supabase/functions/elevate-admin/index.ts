@@ -2,6 +2,7 @@ import { handleOptions, json } from '../_shared/http.ts';
 import {
   assertRateLimit,
   constantTimeEqual,
+  effectivePlayerId,
   recordAttempt,
   requireUser,
   sha256Hex,
@@ -20,12 +21,13 @@ Deno.serve(async (request) => {
       .eq('user_id', user.id)
       .maybeSingle();
     if (grantError) throw grantError;
-    if (!grant?.selected_player_id) return json({ message: 'Select a player before admin elevation' }, 403);
+    const playerId = await effectivePlayerId(client, user.id, grant?.selected_player_id ?? null);
+    if (!playerId) return json({ message: 'Select a player before admin elevation' }, 403);
 
     const { count, error: roleError } = await client
       .from('player_roles')
       .select('player_id', { count: 'exact', head: true })
-      .eq('player_id', grant.selected_player_id)
+      .eq('player_id', playerId)
       .eq('role', 'admin');
     if (roleError) throw roleError;
     if (!count) return json({ message: 'Selected player is not an administrator' }, 403);

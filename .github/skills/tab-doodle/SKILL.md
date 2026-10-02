@@ -35,7 +35,7 @@ Saving runs through `DoodleEditSession.save()`:
 2. Re-pull the latest month via `pullDoodleMonth(ym)` so edits are applied on top of the current Supabase state.
 3. Apply the edited selections with `saveDoodle(playerName, year, month, selectedDates)`.
 4. Collect the returned changelog entries as pending Telegram alerts.
-5. Push the month immediately with `pushDoodleNow(ym, changes)` — one batched `save_doodle` mutation carrying the availability entries plus the new changelog entries.
+5. Push the month immediately with `pushDoodleNow(ym, changes)` — one batched `save_doodle` mutation carrying only the changed players' availability entries (members may write only their own) plus the new changelog entries.
 6. Fire `sendDoodleAlert()` for each changed player after the write succeeds.
 7. Call `cancelPendingSync()` and show `Doodle saved`.
 

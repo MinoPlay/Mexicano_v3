@@ -119,6 +119,13 @@ that Supabase does not own, and keeps everything else in the ephemeral
 in-memory `Cache` (`js/cache.js`), which is wiped on every page load and
 re-hydrated from Supabase by `pullForRoute()`.
 
+Offline fallback: after every successful route load the `Cache` is snapshotted
+to `localStorage['mexicano-offline-cache']`. The snapshot is read **only** when
+the app starts with `navigator.onLine === false`; online starts always fetch
+fresh. Reconnecting (`online` event) invalidates read caches and reloads the
+route. The snapshot is dropped on sign-out / revoked access
+(`Store.clearSupabaseSession()`).
+
 ### What is persisted in `localStorage`
 
 Exactly three categories. `Store.set()` enforces this with an allowlist in

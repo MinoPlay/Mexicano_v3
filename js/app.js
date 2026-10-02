@@ -8,7 +8,8 @@ import { showToast } from './components/toast.js';
 import { showRefreshDialog } from './components/refresh-dialog.js';
 import { pullForRoute } from './services/backend.js';
 import { showOnboardingDialog } from './components/onboarding-dialog.js';
-import { captureAuthSessionFromUrl } from './services/supabase.js';
+import { captureAuthSessionFromUrl, invalidateReadCache } from './services/supabase.js';
+import { Cache } from './cache.js';
 import { currentDeployId, nsPrefix } from './deploy-env.js';
 import { createRouteLoader } from './services/route-loader.js';
 import { perfStart } from './services/perf.js';
@@ -79,12 +80,14 @@ async function loadLocalData() {
 }
 
 // Each route loads only its own data (see js/services/supabase.js routeScope).
-// In-memory Cache is empty on every page refresh, so the first pull runs fresh;
-// later visits to a route reuse cached resources.
+// In-memory Cache is empty on every online page refresh, so the first pull runs
+// fresh; later visits to a route reuse cached resources. After each successful
+// load the Cache is snapshotted so an offline reload can still render.
 const loadRoute = createRouteLoader({
   pull: (hash) => pullForRoute(hash),
   render: () => router.resolve(),
   currentHash: () => window.location.hash,
+  onLoaded: () => Cache.persistSnapshot(),
   onError: (e) => {
     console.warn('Supabase auto-pull failed:', e);
     showToast(`⚠️ Sync failed: ${e.message}`);
@@ -98,6 +101,12 @@ async function loadFromBackend() {
 
 window.addEventListener('hashchange', () => { loadFromBackend(); });
 
+// Data hydrated from the offline snapshot may be stale; refetch on reconnect.
+window.addEventListener('online', () => {
+  invalidateReadCache();
+  loadFromBackend();
+});
+
 captureAuthSessionFromUrl();
 
 async function init() {
@@ -105,6 +114,8 @@ async function init() {
   // on this device, so it can never shadow the live backend state.
   localStorage.removeItem('mexicano_azure_conn_str');
   Store.purgeNonPersistedKeys();
+  // Offline start only: render the last loaded data instead of nothing.
+  if (navigator.onLine === false) Cache.hydrateSnapshot();
 
   Store.applyDeviceType();
   const startupDone = perfStart('startup');

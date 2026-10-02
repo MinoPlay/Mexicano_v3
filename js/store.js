@@ -278,6 +278,7 @@ export const Store = {
     this.remove('access_role');
     this.remove('access_expires_at');
     this.remove('current_player_id');
+    Cache.clearSnapshot();
   },
 
   getCurrentPlayerId() {

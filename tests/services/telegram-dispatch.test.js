@@ -88,4 +88,27 @@ describe('Telegram Supabase outbox', () => {
     expect(payload().target).toBe('tournaments');
     expect(payload().kind).toBe('tournament-test');
   });
+
+  it('gives every doodle alert in the same month its own idempotency key', async () => {
+    await sendDoodleAlert('Alice', '2026-07', ['2026-07-01'], []);
+    await sendDoodleAlert('Alice', '2026-07', ['2026-07-03'], []);
+    const [first, second] = mocks.enqueueNotification.mock.calls.map((call) => call[3]);
+    expect(first).toMatch(/^telegram:doodle:2026-07:Alice:/);
+    expect(second).not.toBe(first);
+  });
+
+  it('sends structured doodle fields so the server can rebuild member text', async () => {
+    await sendDoodleAlert('Alice', '2026-07', ['2026-07-01'], ['2026-07-03']);
+    expect(payload()).toMatchObject({
+      kind: 'doodle',
+      yearMonth: '2026-07',
+      selectedAdded: ['2026-07-01'],
+      selectedRemoved: ['2026-07-03'],
+    });
+  });
+
+  it('sends the confirmation date as a structured field', async () => {
+    await sendTournamentConfirmationAlert('Alice', '2024-06-22');
+    expect(payload()).toMatchObject({ kind: 'tournament-confirmation', tournamentDate: '2024-06-22' });
+  });
 });

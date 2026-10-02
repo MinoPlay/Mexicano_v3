@@ -50,7 +50,8 @@ They do NOT touch ELO, tournaments, Home, ELO charts, or the Statistics leaderbo
 ## UI (`js/components/manual-attendance-dialog.js`)
 - `showManualAttendanceDialog()` (async) first awaits `ensureAttendanceEditData()` (players,
   manual attendance, tournament index — cached), because the save replaces the whole list
-  server-side; if loading fails it shows a toast and does not open. Then it opens a modal popup. Reached via a
+  server-side (atomically, via the `replace_manual_attendance` RPC — a failure leaves the
+  previous list intact); if loading fails it shows a toast and does not open. Then it opens a modal popup. Reached via a
   **Settings → Attendance → "➕ Add Attendance"** button (Mino-only section).
 - Fields: date (defaults to today), and a dynamic list of autocomplete player rows.
   Each row is a text input with a custom themed autocomplete dropdown (in-flow, no

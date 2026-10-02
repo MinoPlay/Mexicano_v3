@@ -51,4 +51,26 @@ describe('route loader', () => {
     await expect(load('#/')).resolves.toBe(false);
     expect(onError).toHaveBeenCalledWith(error);
   });
+
+  it('calls onLoaded after every successful pull, even with nothing new', async () => {
+    const onLoaded = vi.fn();
+    const load = createRouteLoader({
+      pull: vi.fn().mockResolvedValue(false), render: vi.fn(), currentHash: () => '#/', onLoaded,
+    });
+
+    await load('#/');
+
+    expect(onLoaded).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not call onLoaded when the pull fails', async () => {
+    const onLoaded = vi.fn();
+    const load = createRouteLoader({
+      pull: vi.fn().mockRejectedValue(new Error('offline')), render: vi.fn(), currentHash: () => '#/', onLoaded,
+    });
+
+    await load('#/');
+
+    expect(onLoaded).not.toHaveBeenCalled();
+  });
 });

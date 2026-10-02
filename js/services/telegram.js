@@ -40,17 +40,20 @@ export function buildTournamentCompletedText(date, rankedPlayers = []) {
   return `🏆 Tournament complete — ${date}\nFinal ranking:\n${lines.join('\n')}`;
 }
 
-async function dispatchTelegramAlert(text, meta, target) {
-  const payload = { text, kind: meta.kind };
+async function dispatchTelegramAlert(text, meta, target, fields = {}) {
+  // `fields` lets the server rebuild member alert text from trusted identity.
+  const payload = { text, kind: meta.kind, ...fields };
   if (target) payload.target = target;
   const idempotencyKey = [
     'telegram',
     meta.kind,
     meta.tournamentDate || meta.date || meta.yearMonth || meta.timestamp || Date.now(),
     meta.playerName || meta.user || '',
-  ].join(':');
+  ];
+  // A player edits their doodle many times per month; each edit must alert.
+  if (meta.kind === 'doodle') idempotencyKey.push(crypto.randomUUID());
   log('info', 'Enqueuing Telegram alert.', { kind: meta.kind });
-  await enqueueNotification('telegram', DISPATCH_EVENT, payload, idempotencyKey);
+  await enqueueNotification('telegram', DISPATCH_EVENT, payload, idempotencyKey.join(':'));
   log('info', 'Telegram alert enqueued.', { kind: meta.kind });
 }
 
@@ -69,6 +72,8 @@ export async function sendDoodleAlert(playerName, yearMonth, selectedAdded = [],
   return dispatchTelegramAlert(
     buildDoodleAlertText(playerName, yearMonth, selectedAdded, selectedRemoved),
     meta,
+    undefined,
+    { yearMonth, selectedAdded, selectedRemoved },
   );
 }
 
@@ -76,6 +81,8 @@ export async function sendTournamentConfirmationAlert(playerName, tournamentDate
   return dispatchTelegramAlert(
     buildConfirmationText(playerName, tournamentDate),
     { kind: 'tournament-confirmation', playerName, tournamentDate },
+    undefined,
+    { tournamentDate },
   );
 }
 

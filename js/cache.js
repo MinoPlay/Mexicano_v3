@@ -7,6 +7,9 @@
 
 const _data = {};
 
+// Outside the `mexicano_` prefix so Store.purgeNonPersistedKeys() keeps it.
+export const OFFLINE_SNAPSHOT_KEY = 'mexicano-offline-cache';
+
 export const Cache = {
   get(key) {
     return _data[key] ?? null;
@@ -32,5 +35,33 @@ export const Cache = {
   /** Return all keys that start with the given prefix. */
   keys(prefix = '') {
     return Object.keys(_data).filter(k => k.startsWith(prefix));
+  },
+
+  /**
+   * Offline fallback only: the last successfully loaded data is saved so an
+   * offline reload can still render. Online starts never read it.
+   */
+  persistSnapshot() {
+    try {
+      localStorage.setItem(OFFLINE_SNAPSHOT_KEY, JSON.stringify(_data));
+      return true;
+    } catch {
+      return false;
+    }
+  },
+
+  hydrateSnapshot() {
+    try {
+      const snapshot = JSON.parse(localStorage.getItem(OFFLINE_SNAPSHOT_KEY));
+      if (!snapshot || typeof snapshot !== 'object') return false;
+      Object.assign(_data, snapshot);
+      return true;
+    } catch {
+      return false;
+    }
+  },
+
+  clearSnapshot() {
+    try { localStorage.removeItem(OFFLINE_SNAPSHOT_KEY); } catch { /* ignore */ }
   },
 };

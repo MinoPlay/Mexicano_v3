@@ -13,7 +13,9 @@ Supabase is the canonical writable data source. `DataHub_Mexicano` becomes a gen
 - Supabase Auth supports transitional anonymous sessions plus named, pre-approved email users.
 - Approved email users authenticate with a magic link against one Auth identity.
 - Server-side access grants and RLS authorize reads/writes.
-- Cached data may render offline; domain writes are blocked while offline.
+- Cached data may render offline; domain writes are blocked while offline. The last successfully
+  loaded `Cache` is snapshotted to `localStorage` and hydrated only on an offline start
+  (`Cache.persistSnapshot()` / `Cache.hydrateSnapshot()`); it is cleared with the session.
 - Browser never receives Supabase service-role, GitHub relay, Telegram, VAPID private, access-code hash, or admin-code hash secrets.
 
 ## Source-of-truth policy
@@ -211,6 +213,9 @@ Rollback requires exporting current Supabase data first. Old GitHub mutation cod
 - Offline mutation => blocked before local success UI or notification.
 - Failed domain transaction => no notification outbox row and no relay.
 - Retried outbox item => one logical relay dispatch.
+- Concurrent dispatchers => each outbox row is claimed once (`claim_notification_outbox`, `FOR UPDATE SKIP LOCKED`); rows stuck in `processing` > 10 min are reclaimed.
+- Manual attendance save failure (e.g. unknown player) => previous list unchanged (`replace_manual_attendance` RPC, one transaction).
+- Member enqueue of push, admin-only Telegram kinds, or a Telegram `target` => rejected server-side.
 - Backup trigger at Danish summer/winter => exactly one run at local 08:15.
 - Backup export => legacy JSON plus canonical manifest; no auth secrets or push endpoint/key material.
 - Shadow read mismatch => discrepancy is logged and cutover remains blocked.
