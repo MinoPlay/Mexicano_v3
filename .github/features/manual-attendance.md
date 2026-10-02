@@ -25,20 +25,33 @@ They do NOT touch ELO, tournaments, Home, ELO charts, or the Statistics leaderbo
 - `Store.setManualAttendance(entries)` → persists + schedules GitHub push.
 
 ## Service (`js/services/attendance.js`)
-- `buildMonthParticipation(matches, manualEntries, yearMonth)` → `{ datePlayerMap, tournamentDates }`.
+- `buildMonthParticipation(rows, manualEntries, yearMonth)` → `{ datePlayerMap, tournamentDates }`.
+  Rows are either match rows or lightweight participation rows `{ date, players }`.
   Shared by the doodle Player Overview and the attendance calendar.
+- `getParticipationRows()` → `Store.getParticipation()` (from the `player_attendance` view)
+  when loaded, else `Store.getMatches()`. `/attendance` renders from it and never loads matches;
+  it waits for `ensureParticipationLoaded()` until the full history is present
+  (`Store.isParticipationComplete()`).
 - `upsertManualEntry(entries, { date, players }, tournamentDates)` → validated, pure insert/replace.
   Rejects tournament dates and empty player lists; dedupes + sorts.
 - `getMonthlyAttendance(year, month, manualEntries?)` and
   `getAttendanceStatistics(matches, cutoffDate?, manualEntries?)` merge manual dates;
   a manual date counts as a **session** (increments the Attendance% denominator).
+- `/attendance` consumes `getMonthlyAttendance()` rows directly as
+  `{ date, players, playerCount }`; the calendar maps the ISO date to its day cell.
+- `/attendance` maps statistics service rows
+  `{ playerName, attendanceCount, attendancePercentage, totalTournaments }` to the visible
+  Player / Attended / Total / Attendance% columns.
 
 ## Stats page (`js/services/statistics.js`)
 - `computeAttendance(rawByMonth, filter, today, manualEntries?)` adds each manual date's
   players (+1) within the filter window / cutoff. Page passes `Store.getManualAttendance()`.
 
 ## UI (`js/components/manual-attendance-dialog.js`)
-- `showManualAttendanceDialog()` opens a modal popup. Reached via a
+- `showManualAttendanceDialog()` (async) first awaits `ensureAttendanceEditData()` (players,
+  manual attendance, tournament index — cached), because the save replaces the whole list
+  server-side (atomically, via the `replace_manual_attendance` RPC — a failure leaves the
+  previous list intact); if loading fails it shows a toast and does not open. Then it opens a modal popup. Reached via a
   **Settings → Attendance → "➕ Add Attendance"** button (Mino-only section).
 - Fields: date (defaults to today), and a dynamic list of autocomplete player rows.
   Each row is a text input with a custom themed autocomplete dropdown (in-flow, no
@@ -54,5 +67,6 @@ They do NOT touch ELO, tournaments, Home, ELO charts, or the Statistics leaderbo
 - No dedicated page/route and no bottom-nav entry.
 
 ## Validation
-- Date must be `YYYY-MM-DD` and NOT already a tournament date (`Store.getMatches()`).
+- Date must be `YYYY-MM-DD` and NOT already a tournament date (`Store.getTournamentDates()`
+  plus any loaded match dates).
 - At least one player; blanks trimmed; players deduped.

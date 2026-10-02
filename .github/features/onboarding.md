@@ -1,60 +1,73 @@
-# Onboarding — PAT + Player Setup
+# Onboarding — Supabase Access + Player Setup
 
 ## Purpose
-When a user opens the app for the first time (no GitHub config saved), guide them through:
-1. Entering their GitHub Personal Access Token (PAT)
-2. Selecting themselves from the player list
 
-This replaces the silent failure / empty state that previously occurred with no config.
+First launch has two required steps:
 
-## Trigger Conditions
-- **Full onboarding** (both steps): `!Store.getGitHubConfig()?.pat`
-- **Step 2 only** (player pick): PAT exists but `!Store.getCurrentUser()`
-- **Skip entirely**: PAT and `current_user` both present
+1. Authenticate with an approved-email magic link or the transitional shared Mexicano app access
+   code.
+2. Select the current player profile.
 
-## Component
-`js/components/onboarding-dialog.js`
+Supabase Auth replaces the GitHub PAT. Supabase project URL and public anon key are shipped as
+public application configuration.
 
-```js
-export async function showOnboardingDialog()
-// Returns Promise<void> — resolves when onboarding is complete
+## Trigger
+
+- Full onboarding: no active Supabase grant/session.
+- Player-only step: active ordinary grant exists but no bound current player.
+- Skip: active grant and current player ID are present.
+
+## Access
+
+- Magic-link requests set `create_user: false`; callback tokens are captured before hash routing,
+  then the user's existing access grant is loaded.
+- Transitional shared-code access creates/restores an anonymous session and calls `claim-access`.
+- Successful authentication stores role/expiry only; passwords and access codes are never persisted.
+- Players are loaded from Supabase after the grant succeeds.
+- When the grant has a `selected_player_id` (set by email approval from `players.email`), the player
+  name is fetched and bound automatically and the player-selection step is skipped.
+- Selecting a player calls `bind_current_player` and stores the returned/bound player ID locally for cache lookup.
+
+## Admin
+
+Selecting an administrator name does not grant admin access. Settings provides a separate admin-code elevation action for designated admin players. Admin elevation is short-lived and server-authorized.
+
+## Public project config
+
+`data/supabase-config.json` contains:
+
+```json
+{
+  "url": "https://<project>.supabase.co",
+  "anonKey": "<public-anon-key>"
+}
 ```
 
-Called from `js/app.js` `init()` before `loadFromGitHub()`.
+These values are public client configuration, not secrets. Service-role and access-code hashes never appear in the repository/browser.
 
-## Step 1 — GitHub PAT
-- Fullscreen overlay, centered card (max-width 360px)
-- Password input for PAT
-- "Connect" button → calls `testConnection()` from `github.js`
-- Shows inline success/error feedback
-- On success: `Store.setGitHubConfig({ owner, repo, pat, basePath })` using fixed defaults
-- Advance to Step 2
+The deployed config file is authoritative on every app start. If its project URL or anon key differs
+from the persisted browser config, the app replaces the stale config and clears the old project-bound
+session, access grant, and selected-player binding before onboarding continues.
 
-Fixed defaults (same as Settings page):
-```
-owner:    MinoPlay
-repo:     DataHub_Mexicano
-basePath: mexicano_v3/backup-data
-```
+## UX
 
-## Step 2 — Player Selection
-- Fetch `players.json` from GitHub → extract `Name` fields → sorted list
-- Show as clickable player buttons
-- On selection → `Store.setCurrentUser(name)` → resolve Promise (close dialog)
-- Fallback (players.json missing or empty): show text input so user can type name
+- No dismiss/skip button.
+- Magic-link and shared-code options are visible together.
+- A successful magic-link request reports that the user should check their email.
+- Invalid/expired access reports an inline error.
+- Missing public project configuration reports deployment misconfiguration; it does not ask users for URL/key.
+- Player list failure is an error; arbitrary free-text identity is not allowed.
+- On success, normal route loading starts from Supabase.
 
-## UX Rules
-- No close / dismiss / skip button — user must complete onboarding
-- No nav visible during onboarding (dialog sits on top with overlay)
-- Step indicator shown (dots or "Step 1 of 2")
+## Acceptance
 
-## Data Written
-| Key | Location | Value |
-|-----|----------|-------|
-| `mexicano_github_config` | localStorage | `{ owner, repo, pat, basePath }` |
-| `mexicano_current_user`  | localStorage | `"PlayerName"` |
-
-No GitHub files are created or modified during onboarding.
-
-## After Completion
-Normal `loadFromGitHub()` runs, fetching all data with the newly saved config.
+- no grant => magic-link and shared-code choices shown.
+- approved email + magic-link callback => ordinary grant restored and player selection shown.
+- unknown magic-link email => no account is created.
+- valid code => ordinary grant stored, raw code absent from storage.
+- invalid code => remain on step 1 with error.
+- persisted config for another project + current deployed config => deployed config stored and old project session/grant/player binding cleared.
+- ordinary grant + no player => player selection shown.
+- select player => server binding succeeds before dialog closes.
+- select admin player without admin elevation => `Store.isAdministrator()` is false.
+- valid separate admin code for admin-designated player => admin role active until expiry.

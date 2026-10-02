@@ -1,9 +1,22 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+const relayMocks = vi.hoisted(() => ({
+  enqueueNotification: vi.fn(),
+  savePushSubscription: vi.fn(),
+}));
+
+vi.mock('../../js/services/backend.js', () => ({
+  enqueueNotification: relayMocks.enqueueNotification,
+}));
+
+vi.mock('../../js/services/supabase.js', () => ({
+  savePushSubscription: relayMocks.savePushSubscription,
+}));
+
 vi.mock('../../js/store.js', () => ({
   Store: {
-    getGitHubConfig: () => ({ owner: 'MinoPlay', repo: 'DataHub_Mexicano', pat: 'p' }),
     getCurrentUser: () => 'Tester',
+    getCurrentPlayerId: () => 'player-1',
     getPlayersSummary: vi.fn(() => []),
   },
 }));
@@ -32,8 +45,16 @@ import { Store } from '../../js/store.js';
 beforeEach(() => {
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
+  relayMocks.enqueueNotification.mockReset();
+  relayMocks.enqueueNotification.mockResolvedValue(undefined);
+  relayMocks.savePushSubscription.mockReset();
+  relayMocks.savePushSubscription.mockResolvedValue(undefined);
   Store.getPlayersSummary.mockReturnValue([]);
 });
+
+function lastPushPayload() {
+  return relayMocks.enqueueNotification.mock.calls.at(-1)?.[2];
+}
 
 describe('urlBase64ToUint8Array', () => {
   it('decodes a padded-length base64url string', () => {
@@ -121,59 +142,39 @@ describe('buildPushAlertPayload', () => {
 });
 
 describe('dispatchSubscription', () => {
-  it('POSTs a web_push_subscribe repository_dispatch to the data repo', async () => {
-    const fetchMock = vi.fn(async () => ({ status: 204, json: async () => ({}) }));
-    global.fetch = fetchMock;
-
+  it('stores the subscription in Supabase for the selected player', async () => {
     const sub = { endpoint: 'https://push.example/abc', keys: { p256dh: 'k', auth: 'a' } };
     await dispatchSubscription(sub);
 
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    const [url, opts] = fetchMock.mock.calls[0];
-    expect(url).toBe('https://api.github.com/repos/MinoPlay/DataHub_Mexicano/dispatches');
-    expect(opts.method).toBe('POST');
-    expect(opts.headers.Authorization).toBe('token p');
-    const body = JSON.parse(opts.body);
-    expect(body.event_type).toBe('web_push_subscribe');
-    expect(body.client_payload.subscription).toEqual(sub);
-    expect(body.client_payload.user).toBe('Tester');
+    expect(relayMocks.savePushSubscription).toHaveBeenCalledWith(sub, 'player-1');
   });
 
-  it('rejects with the GitHub error message on failure', async () => {
-    global.fetch = vi.fn(async () => ({
-      status: 403,
-      json: async () => ({ message: 'Resource not accessible by personal access token' }),
-    }));
-    await expect(dispatchSubscription({ endpoint: 'x' })).rejects.toThrow(/Resource not accessible/);
+  it('surfaces Supabase subscription failures', async () => {
+    relayMocks.savePushSubscription.mockRejectedValueOnce(new Error('Subscription rejected'));
+    await expect(dispatchSubscription({ endpoint: 'x' })).rejects.toThrow('Subscription rejected');
   });
 });
 
 describe('sendPushNotification', () => {
-  it('POSTs a web_push repository_dispatch with title/body/url', async () => {
-    const fetchMock = vi.fn(async () => ({ status: 204, json: async () => ({}) }));
-    global.fetch = fetchMock;
-
+  it('enqueues a web_push outbox item with title/body/url', async () => {
     await sendPushNotification('New tournament', '2026-07-15', './#/tournament/2026-07-15');
 
-    const [url, opts] = fetchMock.mock.calls[0];
-    expect(url).toBe('https://api.github.com/repos/MinoPlay/DataHub_Mexicano/dispatches');
-    const body = JSON.parse(opts.body);
-    expect(body.event_type).toBe('web_push');
-    expect(body.client_payload).toEqual({
+    expect(relayMocks.enqueueNotification).toHaveBeenCalledWith(
+      'push',
+      'web_push',
+      {
       title: 'New tournament',
       body: '2026-07-15',
       url: './#/tournament/2026-07-15',
-    });
+      },
+      expect.any(String),
+    );
   });
 
-  it('forwards a users recipient list into the dispatch', async () => {
-    const fetchMock = vi.fn(async () => ({ status: 204, json: async () => ({}) }));
-    global.fetch = fetchMock;
-
+  it('forwards a users recipient list into the outbox payload', async () => {
     await sendPushNotification('T', 'B', './', ['Alice', 'Bob']);
 
-    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
-    expect(body.client_payload.users).toEqual(['Alice', 'Bob']);
+    expect(lastPushPayload().users).toEqual(['Alice', 'Bob']);
   });
 });
 
@@ -210,15 +211,10 @@ describe('buildTournamentCompletedPush', () => {
 });
 
 describe('sendTournamentCreatedPush', () => {
-  it('dispatches a web_push for the created tournament', async () => {
-    const fetchMock = vi.fn(async () => ({ status: 204, json: async () => ({}) }));
-    global.fetch = fetchMock;
-
+  it('enqueues a web_push for the created tournament', async () => {
     await sendTournamentCreatedPush({ tournamentDate: '2026-07-15' });
 
-    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
-    expect(body.event_type).toBe('web_push');
-    expect(body.client_payload).toEqual({
+    expect(lastPushPayload()).toEqual({
       title: '🎾 New tournament',
       body: 'Tournament on 2026-07-15',
       url: './#/tournament/2026-07-15',
@@ -226,9 +222,6 @@ describe('sendTournamentCreatedPush', () => {
   });
 
   it('targets only the tournament players when they are present', async () => {
-    const fetchMock = vi.fn(async () => ({ status: 204, json: async () => ({}) }));
-    global.fetch = fetchMock;
-
     await sendTournamentCreatedPush({
       tournamentDate: '2026-07-15',
       players: [
@@ -237,8 +230,7 @@ describe('sendTournamentCreatedPush', () => {
       ],
     });
 
-    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
-    expect(body.client_payload.users).toEqual(['Alice', 'Bob']);
+    expect(lastPushPayload().users).toEqual(['Alice', 'Bob']);
   });
 });
 
@@ -344,10 +336,7 @@ describe('buildTournamentCompletedMessages', () => {
 });
 
 describe('sendTournamentCompletedPush', () => {
-  it('dispatches one personalised message per participant only', async () => {
-    const fetchMock = vi.fn(async () => ({ status: 204, json: async () => ({}) }));
-    global.fetch = fetchMock;
-
+  it('enqueues one personalised message per participant only', async () => {
     const matches = [{
       date: '2026-07-15',
       roundNumber: 1,
@@ -367,10 +356,7 @@ describe('sendTournamentCompletedPush', () => {
       ],
     }, matches);
 
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
-    expect(body.event_type).toBe('web_push');
-    expect(body.client_payload).toEqual({
+    expect(lastPushPayload()).toEqual({
       messages: [
         {
           users: ['Alice'],
@@ -396,9 +382,6 @@ describe('sendTournamentCompletedPush', () => {
       { name: 'Bob', elo: 980, previousElo: 1000 },
     ]);
 
-    const fetchMock = vi.fn(async () => ({ status: 204, json: async () => ({}) }));
-    global.fetch = fetchMock;
-
     const matches = [{
       date: '2026-07-15',
       roundNumber: 1,
@@ -418,21 +401,16 @@ describe('sendTournamentCompletedPush', () => {
       ],
     }, matches);
 
-    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
-    const aliceMsg = body.client_payload.messages.find(m => m.users[0] === 'Alice');
-    const bobMsg = body.client_payload.messages.find(m => m.users[0] === 'Bob');
+    const aliceMsg = lastPushPayload().messages.find(m => m.users[0] === 'Alice');
+    const bobMsg = lastPushPayload().messages.find(m => m.users[0] === 'Bob');
     expect(aliceMsg.body).toBe('Rank 1/2 · 24 pts · 6.0 avg\nELO 1050 (+20)');
     expect(bobMsg.body).toBe('Rank 2/2 · 18 pts · 4.5 avg\nELO 980 (-20)');
   });
 
   it('falls back to a broadcast summary when the tournament has no players', async () => {
-    const fetchMock = vi.fn(async () => ({ status: 204, json: async () => ({}) }));
-    global.fetch = fetchMock;
-
     await sendTournamentCompletedPush({ tournamentDate: '2026-07-15', players: [] }, []);
 
-    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
-    expect(body.client_payload).toEqual({
+    expect(lastPushPayload()).toEqual({
       title: '🏆 Tournament complete',
       body: 'Tournament on 2026-07-15',
       url: './#/tournament/2026-07-15',
@@ -456,35 +434,22 @@ describe('resyncPushSubscription', () => {
   it('silently re-dispatches the existing subscription tagged with the current user', async () => {
     const sub = { endpoint: 'https://push.example/abc', keys: { p256dh: 'k', auth: 'a' } };
     stubPushEnv({ subscription: sub });
-    const fetchMock = vi.fn(async () => ({ status: 204, json: async () => ({}) }));
-    vi.stubGlobal('fetch', fetchMock);
-
     const result = await resyncPushSubscription();
 
     expect(result).toBe(true);
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
-    expect(body.event_type).toBe('web_push_subscribe');
-    expect(body.client_payload.subscription).toEqual(sub);
-    expect(body.client_payload.user).toBe('Tester');
+    expect(relayMocks.savePushSubscription).toHaveBeenCalledWith(sub, 'player-1');
   });
 
   it('does nothing when notification permission is not granted', async () => {
     stubPushEnv({ permission: 'default', subscription: { endpoint: 'x' } });
-    const fetchMock = vi.fn();
-    vi.stubGlobal('fetch', fetchMock);
-
     expect(await resyncPushSubscription()).toBe(false);
-    expect(fetchMock).not.toHaveBeenCalled();
+    expect(relayMocks.savePushSubscription).not.toHaveBeenCalled();
   });
 
   it('does nothing when there is no existing subscription on this device', async () => {
     stubPushEnv({ subscription: undefined });
-    const fetchMock = vi.fn();
-    vi.stubGlobal('fetch', fetchMock);
-
     expect(await resyncPushSubscription()).toBe(false);
-    expect(fetchMock).not.toHaveBeenCalled();
+    expect(relayMocks.savePushSubscription).not.toHaveBeenCalled();
   });
 });
 
@@ -513,9 +478,6 @@ describe('subscribeToPush', () => {
       serviceWorker: { ready: Promise.resolve({ pushManager: { getSubscription, subscribe } }) },
     });
 
-    const fetchMock = vi.fn(async () => ({ status: 204, json: async () => ({}) }));
-    vi.stubGlobal('fetch', fetchMock);
-
     const result = await subscribeToPush();
 
     expect(getSubscription).toHaveBeenCalledTimes(1);
@@ -526,8 +488,10 @@ describe('subscribeToPush', () => {
       .toBeLessThan(subscribe.mock.invocationCallOrder[0]);
     expect(result).toBe(freshSub);
 
-    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
-    expect(body.client_payload.subscription.endpoint).toBe('https://push.example/fresh');
+    expect(relayMocks.savePushSubscription).toHaveBeenCalledWith(
+      expect.objectContaining({ endpoint: 'https://push.example/fresh' }),
+      'player-1',
+    );
   });
 
   it('subscribes directly when there is no existing subscription', async () => {
@@ -545,9 +509,6 @@ describe('subscribeToPush', () => {
     vi.stubGlobal('navigator', {
       serviceWorker: { ready: Promise.resolve({ pushManager: { getSubscription, subscribe } }) },
     });
-
-    const fetchMock = vi.fn(async () => ({ status: 204, json: async () => ({}) }));
-    vi.stubGlobal('fetch', fetchMock);
 
     await subscribeToPush();
 

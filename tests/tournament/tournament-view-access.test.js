@@ -9,7 +9,8 @@ import { vi, describe, it, expect, beforeEach } from 'vitest';
 import { JSDOM } from 'jsdom';
 
 // ─── Mock GitHub service ───
-vi.mock('../../js/services/github.js', () => ({
+vi.mock('../../js/services/backend.js', async (importOriginal) => ({
+  ...await importOriginal(),
   schedulePush: vi.fn(),
   cancelPendingSync: vi.fn(),
   flushPush: vi.fn().mockResolvedValue(undefined),

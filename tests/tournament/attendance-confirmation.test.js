@@ -19,7 +19,12 @@ const githubMock = vi.hoisted(() => ({
   dispatchConfirmAttendance: vi.fn().mockResolvedValue(true),
 }));
 
-vi.mock('../../js/services/github.js', () => githubMock);
+vi.mock('../../js/services/backend.js', () => ({
+  ...githubMock,
+  FAST_TIMEOUTS: [2000, 3000],
+  readDayMatches: vi.fn().mockResolvedValue([]),
+  pushCompletedTournament: vi.fn().mockResolvedValue(undefined),
+}));
 vi.mock('../../js/services/local.js', () => ({
   writeTournamentDay: vi.fn().mockResolvedValue(undefined),
 }));

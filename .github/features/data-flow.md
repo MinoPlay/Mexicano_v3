@@ -7,6 +7,9 @@ All app data lives in two places simultaneously:
 `Store` (localStorage wrapper) and `github.js` (GitHub Contents API) are the two layers.
 Every `Store.set()` call automatically schedules a debounced push to GitHub (1.5 s delay).
 
+> **Current read path:** Supabase, route-scoped. See `route-data-loading.md` for what each
+> route loads. The per-window GitHub-era notes below are historical.
+
 ---
 
 ## Repository File Layout
@@ -171,7 +174,7 @@ No writes.
 ```
 createTournament(date, names)
   → Store.setActiveTournament(tournament)
-      → localStorage: mexicano_active_tournament
+      → Cache: active_tournament (in-memory only)
 
 startTournament(tournament)
   → saveTournamentState(tournament)           [see step 2]
@@ -198,20 +201,19 @@ startTournament(tournament)
 setMatchScore(tournament, roundNumber, matchId, s1, s2)
   → recalculateAllPlayerStats(tournament)
   → saveTournamentState(tournament)
-      → Store.setActiveTournament(tournament)   → localStorage: mexicano_active_tournament
-      → Store.setMatches(matches)               → localStorage: mexicano_matches
-      → markMatchDateDirty(date)
-  → cancelPendingSync()                       [NO GitHub push on individual scores]
+      → Store.setActiveTournament(tournament)   → Cache: active_tournament (in-memory only)
+      → Store.setMatches(matches)               → Cache: matches (in-memory only)
+  → persistTournamentState(tournament)        → Supabase WRITE: save_tournament mutation
 ```
 
-> Scores are **only pushed to GitHub** when advancing to the next round or ending the tournament.
+> Because nothing survives a page refresh locally, **every** score is written straight through to Supabase via `persistTournamentState()`.
 
 ### 3. Next Round (`startNextRound`)
 
 ```
 startNextRound(tournament)
-  → saveTournamentState(tournament)           [writes localStorage]
-  → cancelPendingSync()
+  → saveTournamentState(tournament)           [in-memory Cache only]
+  → persistTournamentState(tournament)        → Supabase WRITE: save_tournament mutation
   → flushPush()                               → GitHub WRITE: YYYY/YYYY-MM/YYYY-MM-DD.json
                                                               (updated { tournament: {...} } field)
 ```
@@ -220,33 +222,30 @@ startNextRound(tournament)
 
 ```
 completeTournament(tournament)
-  → Store.setMatches(allMatches)              → localStorage: mexicano_matches
-  → Store.setActiveTournament(tournament)     → localStorage: keeps tournament (isCompleted: true)
-  → completion_marker set                     → localStorage: mexicano_completion_marker
+  → Store.setMatches(allMatches)              → Cache: matches (in-memory only)
+  → Store.setActiveTournament(tournament)     → Cache: keeps tournament (isCompleted: true)
   → writeTournamentDay(date, matches)         → local dev server only (no-op in prod)
   → markMatchDateDirty(date)
   → flushPush()                               → GitHub WRITE: YYYY/YYYY-MM/YYYY-MM-DD.json
                                                               (completed format: { matches: [...] }
                                                                no `tournament` field)
   ─── ON SUCCESS ───
-  → Store.clearActiveTournament()             → localStorage: mexicano_active_tournament (removed)
-  → completion_marker removed                 → localStorage: mexicano_completion_marker (removed)
+  → Store.clearActiveTournament()             → Cache: active_tournament (removed, in-memory)
   → generateMonthlyOverviews(yearMonth)       → GitHub WRITE: YYYY/YYYY-MM/players_overview.json  ← MUST come first
   → generatePlayersJson({ playerNames })      → GitHub WRITE: players.json                         ← runs only after overview succeeds
                                               → only participant entries recomputed;
                                                 non-participants keep existing players.json values
                                               → GitHub WRITE: players_meta.json
   → updateTournamentIndexEntry(...)           → GitHub READ+WRITE: tournaments.json
-  ─── ON FAILURE (no internet) ───
-  → localStorage preserved (tournament + matches + marker intact)
-  → retryCompletedTournamentPush() fires on `online` event
+  ─── ON FAILURE ───
+  → in-memory Cache preserved (tournament + matches intact for this session only)
 ```
 
-> **Offline-safe guarantee**: `Store.clearActiveTournament()` is called ONLY after `flushPush()`
-> succeeds. If the push fails (no internet, API error), all local data is preserved. When the
-> browser fires the `online` event, `retryCompletedTournamentPush()` automatically retries the
-> full push chain. The function is idempotent — calling `completeTournament()` on an already-
-> completed tournament simply retries the push without re-processing matches.
+> **Retry guarantee**: `Store.clearActiveTournament()` is called ONLY after the push
+> succeeds. If the push fails, the in-memory copy is preserved so the user can retry from the
+> open page. `completeTournament()` is idempotent — calling it on an already-completed
+> tournament simply retries the push without re-processing matches. Nothing is buffered on the
+> device across a page refresh; a refresh re-hydrates state from Supabase.
 >
 > **Ordering guarantee**: `generateMonthlyOverviews` is chained with `.then()` before
 > `generatePlayersJson`. This is intentional and must not be reversed. The Statistics
@@ -512,7 +511,7 @@ No writes.
 ```
 createTournament(date, names)
   → Store.setActiveTournament(tournament)
-      → localStorage: mexicano_active_tournament
+      → Cache: active_tournament (in-memory only)
 
 startTournament(tournament)
   → saveTournamentState(tournament)           [see step 2]
@@ -532,20 +531,19 @@ startTournament(tournament)
 setMatchScore(tournament, roundNumber, matchId, s1, s2)
   → recalculateAllPlayerStats(tournament)
   → saveTournamentState(tournament)
-      → Store.setActiveTournament(tournament)   → localStorage: mexicano_active_tournament
-      → Store.setMatches(matches)               → localStorage: mexicano_matches
-      → markMatchDateDirty(date)
-  → cancelPendingSync()                       [NO GitHub push on individual scores]
+      → Store.setActiveTournament(tournament)   → Cache: active_tournament (in-memory only)
+      → Store.setMatches(matches)               → Cache: matches (in-memory only)
+  → persistTournamentState(tournament)        → Supabase WRITE: save_tournament mutation
 ```
 
-> Scores are **only pushed to GitHub** when advancing to the next round or ending the tournament.
+> Because nothing survives a page refresh locally, **every** score is written straight through to Supabase via `persistTournamentState()`.
 
 ### 3. Next Round (`startNextRound`)
 
 ```
 startNextRound(tournament)
-  → saveTournamentState(tournament)           [writes localStorage]
-  → cancelPendingSync()
+  → saveTournamentState(tournament)           [in-memory Cache only]
+  → persistTournamentState(tournament)        → Supabase WRITE: save_tournament mutation
   → flushPush()                               → GitHub WRITE: data/active_tournament.json
                                               → GitHub WRITE: YYYY/YYYY-MM/YYYY-MM-DD.json (dirty date)
 ```
@@ -554,23 +552,21 @@ startNextRound(tournament)
 
 ```
 completeTournament(tournament)
-  → Store.setMatches(allMatches)              → localStorage: mexicano_matches
-  → Store.setActiveTournament(tournament)     → localStorage: keeps tournament (isCompleted: true)
-  → completion_marker set                     → localStorage: mexicano_completion_marker
+  → Store.setMatches(allMatches)              → Cache: matches (in-memory only)
+  → Store.setActiveTournament(tournament)     → Cache: keeps tournament (isCompleted: true)
   → writeTournamentDay(date, matches)         → local dev server only (no-op in prod)
   → markMatchDateDirty(date)
   → flushPush()                               → GitHub WRITE: YYYY/YYYY-MM/YYYY-MM-DD.json
   ─── ON SUCCESS ───
-  → Store.clearActiveTournament()             → localStorage: mexicano_active_tournament (removed)
-  → completion_marker removed
+  → Store.clearActiveTournament()             → Cache: active_tournament (removed, in-memory)
   → generateMonthlyOverviews(yearMonth)       → GitHub WRITE: YYYY/YYYY-MM/players_overview.json  ← MUST come first
   → generatePlayersJson({ playerNames })      → GitHub WRITE: players.json                         ← runs only after overview succeeds
                                               → only participant entries recomputed;
                                                 non-participants keep existing players.json values
                                               → GitHub WRITE: players_meta.json
   → updateTournamentIndexEntry(...)           → GitHub READ+WRITE: tournaments.json
-  ─── ON FAILURE (no internet) ───
-  → localStorage preserved — retries on `online` event
+  ─── ON FAILURE ───
+  → in-memory Cache preserved — retry from the open page (not across a refresh)
 ```
 
 > **Ordering guarantee**: `generateMonthlyOverviews` is chained with `.then()` before

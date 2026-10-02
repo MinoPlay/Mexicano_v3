@@ -18,7 +18,7 @@ const gh = vi.hoisted(() => ({
   ensureAllMatchesLoaded: vi.fn(async () => { throw new Error('must not pull full history'); }),
 }));
 
-vi.mock('../../js/services/github.js', () => ({
+vi.mock('../../js/services/backend.js', () => ({
   schedulePush: vi.fn(),
   cancelPendingSync: vi.fn(),
   flushPush: vi.fn().mockResolvedValue(undefined),
@@ -73,10 +73,10 @@ beforeEach(() => {
 
 describe('resolveEloBaseline', () => {
   it('uses the local snapshot when it matches the previous tournament — no network', async () => {
-    localStorage.setItem(ELO_BASELINE_KEY, JSON.stringify({
+    Cache.set(ELO_BASELINE_KEY, {
       date: PREV,
       elo: { Alice: 1120, Bob: 980 },
-    }));
+    });
     Store.setPlayersSummaryCache([{ name: 'Alice', elo: 1 }, { name: 'Bob', elo: 2 }]);
 
     const { elo, source } = await resolveEloBaseline(TODAY);

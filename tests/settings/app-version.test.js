@@ -12,7 +12,8 @@ vi.mock('../../js/services/members.js', () => ({
   removeMember: vi.fn(),
 }));
 
-vi.mock('../../js/services/github.js', () => ({
+vi.mock('../../js/services/backend.js', async (importOriginal) => ({
+  ...await importOriginal(),
   testConnection: vi.fn().mockResolvedValue({ ok: true, message: '' }),
   onSyncStatus: vi.fn(() => () => {}),
   getSyncStatus: vi.fn(() => 'idle'),

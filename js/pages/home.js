@@ -1,4 +1,5 @@
 import { Store } from '../store.js';
+import { Cache } from '../cache.js';
 import { State } from '../state.js';
 import { calculateAllEloRankings, getEloSnapshots, getEloForDate } from '../services/elo.js';
 import { getLatestCompleteTournamentDate, getActiveTournament, confirmAttendanceAndPush } from '../services/tournament.js';
@@ -9,7 +10,7 @@ import { currentDeployId } from '../deploy-env.js';
 import { renderNotificationBell } from '../components/notification-bell.js';
 import { showErrorDialog } from '../components/error-dialog.js';
 
-export function shouldShowConfirmationPopup(activeTournament, currentUser, alreadyConfirmed) {
+export function shouldShowConfirmationPopup(activeTournament, currentUser, alreadyConfirmed = false) {
   if (!activeTournament || activeTournament.isCompleted) return false;
   if (!currentUser) return false;
   if (alreadyConfirmed) return false;
@@ -80,6 +81,9 @@ function formatDate(dateStr) {
 }
 
 export function renderHome(container, params) {
+  const getHomeMatches = () => Cache.get('home_matches') || Store.getMatches();
+  const getHomePlayersSummary = () =>
+    Cache.get('home_players_summary') || Store.getPlayersSummary();
   const _rawActive = getActiveTournament();
   // Guard: if the tournaments index already marks this date complete, don't show as active.
   // This prevents stale localStorage from showing a completed tournament before the pull clears it.
@@ -87,15 +91,15 @@ export function renderHome(container, params) {
   const activeTournament = (_rawActive && _index.some(e => e.date === _rawActive.tournamentDate && e.isComplete))
     ? null
     : _rawActive;
-  const allMatches = Store.getMatches();
+  const allMatches = getHomeMatches();
 
   // Get latest COMPLETE tournament date
   const latestDate = getLatestCompleteTournamentDate();
 
   // Helper: attach ELO ratings to a stats array for the latest date
   function attachEloToStats(stats) {
-    const summary = Store.getPlayersSummary();
-    const matches = Store.getMatches();
+    const summary = getHomePlayersSummary();
+    const matches = getHomeMatches();
     if (summary.length > 0) {
       const summaryMap = {};
       for (const p of summary) summaryMap[p.name] = p;
@@ -143,7 +147,7 @@ export function renderHome(container, params) {
     if (monthMatches.length > 0) {
       const stats = calculatePlayerStatistics(monthMatches);
       // Attach ELO from players.json summary
-      const summary = Store.getPlayersSummary();
+      const summary = getHomePlayersSummary();
       if (summary.length > 0) {
         const summaryMap = {};
         for (const p of summary) summaryMap[p.name] = p;
@@ -510,12 +514,12 @@ export function renderHome(container, params) {
   // Render table after DOM is ready
   if (latestTournamentStats.length > 0) {
     renderTable();
-  } else if (latestDate && Store.getGitHubConfig()?.pat) {
-    // Lazy-fetch latest date's matches from GitHub (same pattern as statistics.js)
+  } else if (latestDate && Store.getSupabaseConfig()) {
+    // Lazy-fetch the latest date if route hydration has not populated it yet.
     const noDataEl = container.querySelector('#latest-no-data');
     if (noDataEl) {
       noDataEl.textContent = '⏳ Loading…';
-      import('../services/github.js').then(({ ensureDayMatchesLoaded }) =>
+      import('../services/backend.js').then(({ ensureDayMatchesLoaded }) =>
         ensureDayMatchesLoaded(latestDate)
       ).then(fetched => {
         if (!noDataEl.isConnected) return;
@@ -544,15 +548,15 @@ export function renderHome(container, params) {
   // Always fetch monthly overview to get correct month-over-month ELO change.
   // The fallback from local matches uses players_summary.previousElo which is
   // per-tournament, not per-month — so we must replace it once overview arrives.
-  if (Store.getGitHubConfig()?.pat) {
+  if (Store.getSupabaseConfig()) {
     const noDataEl = container.querySelector('#current-month-no-data');
     if (currentMonthStats.length === 0 && noDataEl) {
       noDataEl.textContent = '⏳ Loading…';
     }
-    import('../services/github.js').then(({ pullMonthlyOverview }) =>
+    import('../services/backend.js').then(({ pullMonthlyOverview }) =>
       Promise.all([
-        pullMonthlyOverview(currentYearMonth),
-        pullMonthlyOverview(prevYearMonth),
+        pullMonthlyOverview(currentYearMonth, { route: '#/' }),
+        pullMonthlyOverview(prevYearMonth, { route: '#/' }),
       ])
     ).then(() => {
       const tableEl = container.querySelector('#current-month-table');
@@ -597,20 +601,20 @@ export function renderHome(container, params) {
   if (titleEl) {
     titleEl.addEventListener('click', () => {
       if (!confirm('Clear all cached tournament data and reload?')) return;
-      Store.remove('matches');
-      Store.remove('matches_fully_loaded');
+      // Domain data is in-memory only, so a reload re-pulls everything from
+      // Supabase; this just drops it early for a clean re-render.
+      Store.setMatches([]);
+      Store.setMatchesFullyLoaded(false);
       Store.clearActiveTournament();
-      Store.remove('completion_marker');
       location.reload();
     });
   }
 
-  // Tournament confirmation popup — once per tournament per user
+  // Tournament confirmation popup — driven by the confirmed flag pulled from
+  // Supabase, so it follows the player across devices.
   if (activeTournament) {
     const currentUser = Store.getCurrentUser();
-    const confirmKey = `confirmed_tournament_${activeTournament.tournamentDate}`;
-    const alreadyConfirmed = !!Store.get(confirmKey);
-    if (shouldShowConfirmationPopup(activeTournament, currentUser, alreadyConfirmed) &&
+    if (shouldShowConfirmationPopup(activeTournament, currentUser) &&
         !document.getElementById('tournament-confirm-overlay')) {
       const overlay = document.createElement('div');
       overlay.id = 'tournament-confirm-overlay';
@@ -649,7 +653,6 @@ export function renderHome(container, params) {
           return;
         }
         if (!result.changed) { overlay.remove(); return; }
-        Store.set(confirmKey, true);
         overlay.remove();
         import('../services/telegram.js').then(({ sendTournamentConfirmationAlert }) => {
           sendTournamentConfirmationAlert(currentUser, activeTournament.tournamentDate)

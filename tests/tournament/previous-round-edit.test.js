@@ -15,7 +15,7 @@ const github = vi.hoisted(() => ({
   pushTournamentDayFile: vi.fn().mockResolvedValue(true),
 }));
 
-vi.mock('../../js/services/github.js', () => ({
+vi.mock('../../js/services/backend.js', () => ({
   schedulePush: vi.fn(),
   cancelPendingSync: github.cancelPendingSync,
   flushPush: github.flushPush,
@@ -162,7 +162,7 @@ describe('editing the previous round', () => {
     expect(stored.rounds[1].matches[0].team1Score).toBe(5);
   });
 
-  it('pushes the cascade to GitHub so a reload cannot restore the stale rounds', async () => {
+  it('persists the cascade through the backend so a reload cannot restore stale rounds', async () => {
     const t = tournamentAtRound(3);
     const r2 = t.rounds.find(r => r.roundNumber === 2);
     github.pushTournamentDayFile.mockClear();
@@ -177,12 +177,16 @@ describe('editing the previous round', () => {
     await new Promise(r => setTimeout(r, 0));
   });
 
-  it('does not push on a normal current-round score entry', () => {
+  it('writes every score straight through to the backend', async () => {
     const t = tournamentAtRound(3);
     github.pushTournamentDayFile.mockClear();
 
     setMatchScore(t, 3, t.rounds[2].matches[0].id, 15, 10);
 
-    expect(github.pushTournamentDayFile).not.toHaveBeenCalled();
+    // Tournament state is no longer kept on the device, so an ordinary score
+    // entry must reach Supabase immediately.
+    expect(github.pushTournamentDayFile).toHaveBeenCalledTimes(1);
+    expect(github.pushTournamentDayFile.mock.calls[0][0].tournamentDate).toBe(DATE);
+    await new Promise(r => setTimeout(r, 0));
   });
 });

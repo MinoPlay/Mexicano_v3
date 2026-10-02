@@ -3,6 +3,21 @@
  */
 import { Store } from '../store.js';
 
+/**
+ * Rows describing who played when. Prefers the lightweight participation rows
+ * ({ date, players }) loaded for attendance; falls back to full match rows.
+ */
+export function getParticipationRows() {
+  const participation = Store.getParticipation();
+  return participation.length ? participation : Store.getMatches();
+}
+
+/** Names of everyone in a participation row or a match row. */
+function participantsOf(row) {
+  if (Array.isArray(row.players)) return row.players;
+  return [row.team1Player1Name, row.team1Player2Name, row.team2Player1Name, row.team2Player2Name];
+}
+
 /** Normalize manual attendance entries to a clean array. */
 function normalizeManual(manualEntries) {
   return (manualEntries || []).filter(
@@ -25,9 +40,7 @@ export function buildMonthParticipation(matches, manualEntries, yearMonth) {
 
   for (const m of matches || []) {
     if (!m.date || !m.date.startsWith(yearMonth)) continue;
-    [m.team1Player1Name, m.team1Player2Name, m.team2Player1Name, m.team2Player2Name]
-      .filter(Boolean)
-      .forEach(n => add(m.date, n));
+    participantsOf(m).filter(Boolean).forEach(n => add(m.date, n));
   }
 
   for (const entry of normalizeManual(manualEntries)) {
@@ -59,7 +72,7 @@ export function upsertManualEntry(entries, { date, players }, tournamentDates = 
 }
 
 export function getMonthlyAttendance(year, month, manualEntries) {
-  const allMatches = Store.getMatches();
+  const allMatches = getParticipationRows();
   const prefix = `${year}-${String(month).padStart(2, '0')}`;
   const manual = manualEntries === undefined ? Store.getManualAttendance() : manualEntries;
 
@@ -89,8 +102,7 @@ export function getAttendanceStatistics(matches, cutoffDate = null, manualEntrie
   };
 
   for (const m of filtered) {
-    [m.team1Player1Name, m.team1Player2Name, m.team2Player1Name, m.team2Player2Name]
-      .forEach(n => add(m.date, n));
+    participantsOf(m).forEach(n => add(m.date, n));
   }
   for (const entry of normalizeManual(manual)) {
     if (cutoffDate && entry.date > cutoffDate) continue;

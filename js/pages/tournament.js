@@ -81,8 +81,8 @@ export function renderTournament(container, params) {
       render();
       // Fire a background refresh so we always show the latest round data,
       // bypassing the session-level pull guard that runs only once per page load.
-      if (Store.getGitHubConfig()?.pat) {
-        import('../services/github.js')
+      if (Store.getSupabaseConfig()) {
+        import('../services/backend.js')
           .then(({ fetchActiveTournamentJson, ensureDayMatchesLoaded, readDayMatches }) => {
             return fetchActiveTournamentJson().then(fresh => {
               if (fresh && !fresh.isCompleted && fresh.tournamentDate === date) {
@@ -90,15 +90,14 @@ export function renderTournament(container, params) {
                 render();
                 return;
               }
-              // GitHub has no in-progress tournament — stale local state.
+              // Supabase has no in-progress tournament — stale local state.
               // Clear active tournament, force-fetch completed matches.
               if (!fresh && active && !active.isCompleted) {
                 Store.clearActiveTournament();
                 return readDayMatches(date).then(fetched => {
                   if (fetched.length > 0) {
-                    const cached = JSON.parse(localStorage.getItem('mexicano_matches') || '[]');
-                    const withoutDate = cached.filter(m => m.date !== date);
-                    localStorage.setItem('mexicano_matches', JSON.stringify([...withoutDate, ...fetched]));
+                    const withoutDate = Store.getMatches().filter(m => m.date !== date);
+                    Store.setMatches([...withoutDate, ...fetched]);
                   }
                   tournament = loadTournamentByDate(date);
                   if (tournament?.isCompleted) currentTab = 'leaderboard';
@@ -119,11 +118,11 @@ export function renderTournament(container, params) {
       return;
     }
 
-    // Try loading from GitHub on demand
-    if (Store.getGitHubConfig()?.pat) {
+    // Try loading from Supabase on demand
+    if (Store.getSupabaseConfig()) {
       isLoading = true;
       render(); // shows loading state
-      import('../services/github.js')
+      import('../services/backend.js')
         .then(({ ensureDayMatchesLoaded }) => ensureDayMatchesLoaded(date))
         .then(() => {
           tournament = loadTournamentByDate(date);
@@ -436,7 +435,6 @@ export function renderTournament(container, params) {
         return;
       }
       if (result.changed) {
-        Store.set(`confirmed_tournament_${tournament.tournamentDate}`, true);
         import('../services/telegram.js').then(({ sendTournamentConfirmationAlert }) => {
           sendTournamentConfirmationAlert(user, tournament.tournamentDate)
             .catch(err => console.warn('[telegram] confirmation alert error:', err));
