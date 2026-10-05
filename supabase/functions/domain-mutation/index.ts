@@ -47,6 +47,27 @@ async function resolvePlayer(client: any, name: string) {
   return data;
 }
 
+async function triggerOutboxDispatch() {
+  const baseUrl = Deno.env.get('SUPABASE_URL')?.replace(/\/$/, '');
+  const secret = Deno.env.get('OUTBOX_DISPATCH_SECRET');
+  const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+  if (!baseUrl || !secret || !serviceRoleKey) {
+    throw new Error('Outbox dispatcher configuration is missing');
+  }
+
+  const response = await fetch(`${baseUrl}/functions/v1/dispatch-outbox`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${serviceRoleKey}`,
+      'Content-Type': 'application/json',
+      'x-outbox-secret': secret,
+    },
+  });
+  if (!response.ok) {
+    throw new Error(`Outbox dispatcher failed (${response.status})`);
+  }
+}
+
 async function saveTournament(client: any, userId: string, grant: Grant, payload: any) {
   requireAdmin(grant);
   const dataset = {
@@ -215,6 +236,7 @@ async function enqueue(client: any, userId: string, grant: Grant, payload: any) 
     p_correlation_id: correlationId,
   });
   if (error) throw error;
+  await triggerOutboxDispatch();
   await audit(client, userId, grant, 'enqueue', 'notification', data, {
     channel: notification.channel,
     event_type: notification.event_type,

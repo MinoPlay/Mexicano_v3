@@ -24,4 +24,12 @@ describe('Supabase domain mutation function', () => {
     expect(source).toContain("from('audit_events').insert");
     expect(source).toContain("rpc('enqueue_notification'");
   });
+
+  it('wakes the protected outbox dispatcher after every persisted notification', () => {
+    const source = fs.readFileSync(mutationPath, 'utf8');
+
+    expect(source).toContain("Deno.env.get('OUTBOX_DISPATCH_SECRET')");
+    expect(source).toContain('/functions/v1/dispatch-outbox');
+    expect(source).toContain("await triggerOutboxDispatch()");
+  });
 });

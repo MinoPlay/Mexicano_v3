@@ -10,7 +10,8 @@ send Telegram messages directly. Alerts remain relayed through DataHub GitHub Ac
 but the browser no longer holds a GitHub PAT:
 
 1. A successful domain mutation commits a `notification_outbox` record in Supabase.
-2. The server-side outbox dispatcher fires GitHub `repository_dispatch`
+2. `domain-mutation` invokes the server-side outbox dispatcher immediately after
+   it persists an alert row. The dispatcher fires GitHub `repository_dispatch`
    (`event_type: telegram_alert`) using a GitHub token stored as a Supabase secret.
 3. A workflow in the data repo (`.github/workflows/telegram-relay.yml`) receives the
    event and sends the message via the Telegram Bot API from a GitHub runner (not
@@ -101,6 +102,10 @@ Time: {ISO timestamp}
 - Shows explicit error when the outbox request is rejected
 
 ## Behavior
+- Every successful Telegram outbox enqueue immediately wakes `dispatch-outbox`.
+  This applies consistently to doodle changes, tournament creation, and
+  tournament completion. The browser never calls GitHub directly and never
+  receives the dispatcher secret.
 - Fire-and-forget for doodle/confirmation triggers: they `.catch` and log failures, never block UI
 - Outbox insertion errors are surfaced by the test button
 - Logs explicit skip reason when a doodle change has no added/removed dates

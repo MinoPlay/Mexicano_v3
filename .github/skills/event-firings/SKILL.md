@@ -11,7 +11,8 @@ Supabase is canonical. Browser code never writes DataHub and never holds a GitHu
 
 1. Persist the domain mutation through `js/services/backend.js`.
 2. Only after persistence succeeds, enqueue Telegram/Web Push through `notification_outbox`.
-3. `dispatch-outbox` sends trusted `repository_dispatch` events to DataHub.
+3. `domain-mutation` immediately invokes `dispatch-outbox`, which sends trusted
+   `repository_dispatch` events to DataHub.
 4. Failures must be visible; never use an empty catch.
 
 Offline writes are blocked before success UI or notification enqueueing.
