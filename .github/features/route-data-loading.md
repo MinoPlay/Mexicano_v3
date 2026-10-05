@@ -41,6 +41,7 @@ Resource loaders, each cached in memory (`supabase_res_<key>`) with in-flight de
   with admins/dev-config/onboarding.
 - `selectAll` fetches page 1 with `Prefer: count=exact`, then remaining pages in parallel.
 - Concurrent requests share one session refresh.
+- The home route only schedules `pullMonthlyOverview` for months whose overview cache is still empty, avoiding redundant reloads when route hydration already filled the current/previous month data.
 - Any successful mutation calls `invalidateReadCache()`; the next visit reloads.
 - If the migration is missing (404 / `PGRST205` / `PGRST202`), loaders fall back to the full snapshot.
 - The manual-attendance editor loads players, manual attendance and the tournament index before

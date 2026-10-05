@@ -37,6 +37,14 @@ function getPrevYearMonth(yearMonth) {
     : `${y}-${String(mo - 1).padStart(2, '0')}`;
 }
 
+export function getHomeOverviewMonthsToRefresh(now = new Date()) {
+  const currentYearMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  const previousYearMonth = getPrevYearMonth(currentYearMonth);
+  return [currentYearMonth, previousYearMonth].filter(
+    (yearMonth) => (Store.getMonthlyOverview(yearMonth) || []).length === 0,
+  );
+}
+
 function formatMonth(yearMonth) {
   try {
     const [y, m] = yearMonth.split('-');
@@ -548,16 +556,18 @@ export function renderHome(container, params) {
   // Always fetch monthly overview to get correct month-over-month ELO change.
   // The fallback from local matches uses players_summary.previousElo which is
   // per-tournament, not per-month — so we must replace it once overview arrives.
-  if (Store.getSupabaseConfig()) {
+  // Only hydrate the months that have not already been loaded by the route-scoped
+  // Supabase pull; otherwise each home render re-requests the same data.
+  const homeOverviewMonthsToRefresh = getHomeOverviewMonthsToRefresh();
+  if (Store.getSupabaseConfig() && homeOverviewMonthsToRefresh.length > 0) {
     const noDataEl = container.querySelector('#current-month-no-data');
     if (currentMonthStats.length === 0 && noDataEl) {
       noDataEl.textContent = '⏳ Loading…';
     }
     import('../services/backend.js').then(({ pullMonthlyOverview }) =>
-      Promise.all([
-        pullMonthlyOverview(currentYearMonth, { route: '#/' }),
-        pullMonthlyOverview(prevYearMonth, { route: '#/' }),
-      ])
+      Promise.all(homeOverviewMonthsToRefresh.map((month) =>
+        pullMonthlyOverview(month, { route: '#/' }),
+      ))
     ).then(() => {
       const tableEl = container.querySelector('#current-month-table');
       if (!tableEl) return;
