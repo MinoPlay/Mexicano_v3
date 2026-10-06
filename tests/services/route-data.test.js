@@ -154,6 +154,24 @@ describe('route-scoped Supabase reads', () => {
     expect(fetch.mock.calls.length).toBe(before);
   });
 
+  it('Home builds month overview from the already fetched match and ELO batches instead of reloading the same month', async () => {
+    vi.stubGlobal('fetch', backendMock());
+    await supabase.pullForRoute('#/');
+
+    const overview = supabase.buildMonthOverviewFromMatches('2026-09', Store.getMatches(), {
+      '2026-09-24': { A: { elo: 1030.56, previousElo: 1016 }, C: { elo: 970.84, previousElo: 984.74 } },
+    });
+
+    expect(overview).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: 'A', elo: 1030.56, wins: 1 }),
+      expect.objectContaining({ name: 'C', elo: 970.84, wins: 0 }),
+    ]));
+    expect(Store.getMonthlyOverview('2026-09')).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: 'A', elo: 1030.56 }),
+      expect.objectContaining({ name: 'C', elo: 970.84 }),
+    ]));
+  });
+
   it('Home merges its days into already loaded matches instead of replacing them', async () => {
     const older = { date: '2025-01-02', team1Player1Name: 'X', team1Player2Name: 'Y', team2Player1Name: 'Z', team2Player2Name: 'W', scoreTeam1: 13, scoreTeam2: 5 };
     Store.setMatches([older]);

@@ -939,6 +939,39 @@ function latestCompletedDate() {
     .at(-1) || null;
 }
 
+export function buildMonthOverviewFromMatches(yearMonth, matches = [], eloByDate = {}) {
+  const monthMatches = (matches || []).filter((match) => match.date?.startsWith(yearMonth));
+  const monthElo = {};
+  for (const date of [...new Set(monthMatches.map((match) => match.date).filter(Boolean))].sort()) {
+    Object.assign(monthElo, eloByDate[date] || {});
+  }
+
+  const overview = calculatePlayerStatistics(monthMatches).map((row) => ({
+    name: row.name,
+    wins: row.wins,
+    losses: row.losses,
+    totalPoints: row.points,
+    average: row.average,
+    elo: monthElo[row.name]?.elo ?? null,
+  }));
+  Cache.set(`monthly_${yearMonth}`, overview);
+
+  const attendance = new Map();
+  for (const match of monthMatches) {
+    for (const name of [
+      match.team1Player1Name, match.team1Player2Name,
+      match.team2Player1Name, match.team2Player2Name,
+    ]) {
+      if (!name) continue;
+      const played = attendance.get(name) || new Set();
+      played.add(match.date);
+      attendance.set(name, played);
+    }
+  }
+  setMonthParticipation(yearMonth, attendance);
+  return overview;
+}
+
 /** Monthly overview (stats + month-end ELO) and attendance for one month. */
 export function loadMonth(yearMonth) {
   return loadResource(`month_${yearMonth}`, async () => {
@@ -950,31 +983,7 @@ export function loadMonth(yearMonth) {
       loadEloForDates(dates),
     ]);
     if (snapshotLoaded()) return;
-
-    const monthElo = {};
-    for (const date of [...dates].sort()) Object.assign(monthElo, eloByDate[date]);
-    Cache.set(`monthly_${yearMonth}`, calculatePlayerStatistics(matches).map((row) => ({
-      name: row.name,
-      wins: row.wins,
-      losses: row.losses,
-      totalPoints: row.points,
-      average: row.average,
-      elo: monthElo[row.name]?.elo ?? null,
-    })));
-
-    const attendance = new Map();
-    for (const match of matches) {
-      for (const name of [
-        match.team1Player1Name, match.team1Player2Name,
-        match.team2Player1Name, match.team2Player2Name,
-      ]) {
-        if (!name) continue;
-        const played = attendance.get(name) || new Set();
-        played.add(match.date);
-        attendance.set(name, played);
-      }
-    }
-    setMonthParticipation(yearMonth, attendance);
+    buildMonthOverviewFromMatches(yearMonth, matches, eloByDate);
   });
 }
 
@@ -1135,11 +1144,13 @@ async function loadHomeRoute() {
   // One matches request + one ELO RPC for every date Home shows; the month
   // projections below then build from cache.
   const [, eloByDate] = await Promise.all([loadDayMatches(dates), loadEloForDates(dates)]);
-  await Promise.all([loadMonth(month), loadMonth(previousMonth)]);
   if (snapshotLoaded()) return;
 
   const dateSet = new Set(dates);
-  Cache.set('home_matches', Store.getMatches().filter((match) => dateSet.has(match.date)));
+  const homeMatches = Store.getMatches().filter((match) => dateSet.has(match.date));
+  Cache.set('home_matches', homeMatches);
+  buildMonthOverviewFromMatches(month, homeMatches, eloByDate);
+  buildMonthOverviewFromMatches(previousMonth, homeMatches, eloByDate);
   const byName = new Map((Cache.get('supabase_players_rows') || []).map((p) => [p.name, p]));
   Cache.set('home_players_summary', Object.entries(eloByDate[latest] || {})
     .map(([name, { elo, previousElo }]) => ({ id: byName.get(name)?.id ?? null, name, elo, previousElo }))
