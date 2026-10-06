@@ -123,3 +123,12 @@ ELO fields represent each player's ELO **after** this match, embedded at tournam
 - **Parity tests**: `tests/elo/elo-parity.test.js` (C# compatibility)
 - **Monthly overview tests**: `tests/scripts/generate-monthly-overviews.test.js` (seed backfill)
 - **Integration test**: `tests/integration/tournament-2026-05-05.test.js` (end-to-end tournament simulation)
+
+## Server-side computation
+The app no longer replays ELO in the browser from all matches. `get_player_elo` and
+`get_current_elo` (migration `20260930150000_route_scoped_reads.sql`) run the same algorithm in
+Postgres (`elo_step`, `elo_timeline`) and return only requested rows (players who played on given
+dates, or given player ids). SQL keys players by `player_id`; the JS replay keys by name, so
+inactive players (name collapsed to `''`) may differ — active players match exactly
+(`tests/supabase-route-reads.test.js`). `js/services/elo.js` remains the reference and is still
+used for in-tournament ELO and the full-snapshot fallback.

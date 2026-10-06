@@ -6,6 +6,8 @@
  * Settings page must no longer render #app-refresh-btn.
  */
 import { vi, describe, it, expect, beforeEach } from 'vitest';
+import { Cache } from '../../js/cache.js';
+import { Store } from '../../js/store.js';
 
 const { refreshAppMock } = vi.hoisted(() => ({
   refreshAppMock: vi.fn().mockResolvedValue(undefined),
@@ -52,10 +54,13 @@ function makeLocalStorage() {
 const localStorageStub = makeLocalStorage();
 vi.stubGlobal('localStorage', localStorageStub);
 
-import { renderHome } from '../../js/pages/home.js';
+import { renderHome, getHomeOverviewMonthsToRefresh } from '../../js/pages/home.js';
 
 beforeEach(() => {
   localStorageStub.clear();
+  Cache.clear();
+  Store.clearSupabaseConfig();
+  Store.clearSupabaseSession();
   refreshAppMock.mockClear();
 });
 
@@ -79,5 +84,15 @@ describe('Home header — version + refresh', () => {
     btn.click();
     await Promise.resolve();
     expect(refreshAppMock).toHaveBeenCalled();
+  });
+
+  it('only schedules home overview refreshes for months that are still missing', () => {
+    Cache.clear();
+    Cache.set('monthly_2026-09', [{ name: 'A', wins: 1, losses: 0, totalPoints: 13, average: 13, elo: 1030.56 }]);
+    expect(getHomeOverviewMonthsToRefresh(new Date('2026-10-05'))).toEqual(['2026-10']);
+
+    Cache.clear();
+    Cache.set('monthly_2026-09', [{ name: 'A', wins: 1, losses: 0, totalPoints: 13, average: 13, elo: 1030.56 }]);
+    expect(getHomeOverviewMonthsToRefresh(new Date('2026-09-05'))).toEqual(['2026-08']);
   });
 });

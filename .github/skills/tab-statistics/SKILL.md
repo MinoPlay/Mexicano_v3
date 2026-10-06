@@ -20,14 +20,14 @@ The Statistics panel has a filter bar and a sortable table. Filter state is stor
 
 - `all` — all-time stats from `Store.getPlayersSummary()` / `players.json`; fallback computes from local matches.
 - `latest` — stats for `getLatestCompleteTournamentDate()`.
-- `YYYY-MM` — monthly overview from `Store.getMonthlyOverview(yearMonth)` / `players_overview.json`; fetched lazily with `pullMonthlyOverview` when GitHub is configured.
+- `YYYY-MM` — monthly overview from `Store.getMonthlyOverview(yearMonth)`, prebuilt during Supabase hydration from canonical matches, with ELO calculated at runtime.
 - `YYYY-MM-DD` — one tournament day from cached matches or `ensureDayMatchesLoaded(date)`.
 
 The main table is rendered by `renderSortableTable(container, stats, onPlayerClick, columns = STAT_COLUMNS, defaultSort = 'average')`. `STAT_COLUMNS` defines `#`, `NAME`, `W/T`, `PTS`, `AVG`, `WIN`, `ELO`, and `WLO`. Default sort is `average` descending; `name` defaults to ascending when first selected. User header clicks use `getNextStatisticsSortState`, then `sortStatisticsRows`, which sorts by the selected column, then `wins` descending, then `name` ascending. `rank` is recalculated after sorting. The `rank` column is not clickable. Column resize handles support drag resize and double-click auto-fit.
 
 Stats rows come from `calculatePlayerStatistics(matches)` for raw match data or from summary/overview mapping for precomputed data. `calculatePlayerStatistics` ignores matches where both scores are zero, calculates wins, losses, points, games played (`wl`), average points, win rate, and win categories, then assigns ranks by points descending and wins descending. `overviewToStats` converts monthly overview rows and computes monthly ELO change against the previous month. ELO can be attached from players summary, ELO snapshots, player history files, or embedded match ELO data through `attachEloFromSummary`, `attachEloFromSnapshots`, `attachEloFromPlayerHistoryFiles`, and `attachEloFromEmbeddedMatchData`.
 
-Player names in the main statistics table call `showPlayerProfile(name)`. This dialog is defined inside `js/pages/statistics.js`, not by `js/components/player-profile.js` for the `/statistics` route. The dialog lazy-imports `readPlayerSummary` from `js/services/github.js` and reads `players_summaries/summary_<player>.json`. If no summary exists, it shows a GitHub/config-specific empty state telling the user to generate summaries.
+Player names in the main statistics table call `showPlayerProfile(name)`. This dialog is defined inside `js/pages/statistics.js`, not by `js/components/player-profile.js` for the `/statistics` route. The dialog lazy-imports `readPlayerSummary` from `js/services/backend.js` and reads `players_summaries/summary_<player>.json`. If no summary exists, it shows a GitHub/config-specific empty state telling the user to generate summaries.
 
 The profile dialog sub-tab state is in local variables only. It starts on `Overview`, switches by re-rendering tab buttons and body content, and resets when the dialog is reopened. Head-to-Head and Partners each keep their own in-dialog sort state, defaulting to `gamesPlayed` descending. `Last 3` columns are rendered with `formatRecentResults` and are not sortable.
 
@@ -35,7 +35,7 @@ The profile dialog sub-tab state is in local variables only. It starts on `Overv
 - `js/pages/statistics.js` — route render and UI behavior: `renderStatistics`, `renderSortableTable`, `STAT_COLUMNS`, `sortStatisticsRows`, `getNextStatisticsSortState`, `showPlayerProfile`, `renderDayStatsInto`, `renderAttendanceSection`, `attachEloFromSummary`, `attachEloFromSnapshots`, `attachEloFromPlayerHistoryFiles`, `attachEloFromEmbeddedMatchData`.
 - `js/services/statistics.js` — pure/stat helpers: `calculatePlayerStatistics`, `getMonthsForAttendanceFilter`, `computeAttendance`, `getPlayerAttendanceDates`, `formatRecentResults`, plus older local profile helpers such as `calculateOpponentStats`, `calculatePartnershipStats`, `generatePlayerSummary`, `sortHeadToHeadTable`, and `sortPartnersTable`.
 - `js/services/elo.js` — ELO helpers used by the page: `calculateAllEloRankings`, `getEloSnapshots`, `getEloForDate`, `getEloForMonth`, `getEloFromEmbeddedMatches`.
-- `js/services/github.js` — lazy data loading: `pullMonthlyOverview`, `pullMonthlyOverviewRaw`, `ensureDayMatchesLoaded`, `readPlayerSummary`, player ELO history loading.
+- `js/services/backend.js` — lazy data loading: `pullMonthlyOverview`, `pullMonthlyOverviewRaw`, `ensureDayMatchesLoaded`, `readPlayerSummary`, player ELO history loading.
 - `js/store.js` — data access: `Store.getMatches`, `Store.getPlayersSummary`, `Store.getMonthlyOverviewMonths`, `Store.getTournamentDates`, `Store.getMonthlyOverview`, `Store.isMatchesFullyLoaded`, `Store.getManualAttendance`, `Store.getGitHubConfig`.
 - `js/components/chart.js` — Attendance uses `drawBarChart` for the Canvas bar chart.
 - `js/components/player-profile.js` — older standalone local-match profile dialog. Do not assume it powers `/statistics`; current `/statistics` uses `showPlayerProfile` in `js/pages/statistics.js`.
@@ -44,13 +44,15 @@ The profile dialog sub-tab state is in local variables only. It starts on `Overv
 - `js/app.js` — route registration for `/statistics`.
 
 ## Data
+
+Route load (`pullForRoute('#/statistics')`): `tournament_index` + latest completed day's matches, player summary (`player_totals_summary` table + `player_current_elo` view, precomputed by DB triggers; falls back to `player_totals` + `get_current_elo` if not migrated) and manual attendance. Month filters load that month on demand via `pullMonthlyOverview(ym)`; a single day via `ensureDayMatchesLoaded(date)`; Attendance sub-tab months via `pullMonthlyOverviewRaw` (`player_attendance`), fetched in parallel. Full match history is never loaded. See `.github/features/route-data-loading.md`.
 Raw match rows are stored in `Store.getMatches()` and use flattened player/team fields such as `date`, `team1Player1Name`, `team1Player2Name`, `team2Player1Name`, `team2Player2Name`, `scoreTeam1`, and `scoreTeam2`. Raw match filters compute day/latest/all-time fallback stats with `calculatePlayerStatistics`.
 
 All-time canonical data comes from `players.json`, exposed through `Store.getPlayersSummary()` as camelCase rows like `{ name, elo, previousElo, wins, losses, points, average, tournaments }`. The all-time table maps this to table fields and shows `eloChange` as `elo - 1000`.
 
 Monthly data comes from `YYYY/YYYY-MM/players_overview.json`, exposed through `Store.getMonthlyOverview(yearMonth)` with rows containing values such as `name`, `wins`, `losses`, `totalPoints`, `average`, and `elo`. `overviewToStats` calculates `points`, `wl`, `winRate`, and ELO change against the previous month.
 
-Attendance intentionally uses raw monthly overview arrays from `pullMonthlyOverviewRaw`, not `Store.getMonthlyOverview()`, because attendance needs each `ELO[].Date` entry. `computeAttendance(rawByMonth, filter, today, Store.getManualAttendance())` counts attendance by player, merges manual no-tournament attendance, excludes zero-count players, and sorts attendance descending then name ascending. `getPlayerAttendanceDates` returns unique matching dates sorted newest first for the attendance-date dialog.
+Attendance uses `monthly_raw_YYYY-MM` compatibility arrays built once during Supabase hydration from canonical match participation dates. `pullMonthlyOverviewRaw` reads this cache without another full network load. `computeAttendance(rawByMonth, filter, today, Store.getManualAttendance())` counts attendance by player, merges manual no-tournament attendance, excludes zero-count players, and sorts attendance descending then name ascending. `getPlayerAttendanceDates` returns unique matching dates sorted newest first for the attendance-date dialog.
 
 Player-profile summary data is not computed on the page. `showPlayerProfile` loads a pre-generated summary object from GitHub. The expected object includes aggregate fields such as `totalTournaments`, `totalWins`, `totalLosses`, `totalPoints`, `tightWins`, `solidWins`, `dominatingWins`, `firstPlaceFinishes`, `secondPlaceFinishes`, `thirdPlaceFinishes`, plus `opponents` and `partners` arrays for the profile tables.
 

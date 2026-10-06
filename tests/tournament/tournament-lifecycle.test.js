@@ -11,7 +11,8 @@ import { vi, describe, it, expect, beforeEach } from 'vitest';
 // Defined via vi.hoisted so it is safely available inside the hoisted vi.mock factory.
 const eloFixture = vi.hoisted(() => ({ full: [] }));
 
-vi.mock('../../js/services/github.js', () => ({
+vi.mock('../../js/services/backend.js', async (importOriginal) => ({
+  ...await importOriginal(),
   schedulePush: vi.fn(),
   cancelPendingSync: vi.fn(),
   flushPush: vi.fn().mockResolvedValue(undefined),
@@ -328,7 +329,7 @@ describe('completeTournament', () => {
   });
 
   it('keeps active tournament in Store until push succeeds (offline-safe)', async () => {
-    const { pushCompletedTournament } = await import('../../js/services/github.js');
+    const { pushCompletedTournament } = await import('../../js/services/backend.js');
     pushCompletedTournament.mockRejectedValueOnce(new Error('Request timed out after 2000ms'));
 
     const t = makeCompletedTournament();
@@ -406,7 +407,7 @@ describe('completeTournament', () => {
   });
 
   it('embeds ELO from the persisted baseline, without pulling the full history', async () => {
-    const { ensureAllMatchesLoaded } = await import('../../js/services/github.js');
+    const { ensureAllMatchesLoaded } = await import('../../js/services/backend.js');
     ensureAllMatchesLoaded.mockClear();
 
     // Previous tournament day file carries authoritative post-match ELO.

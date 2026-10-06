@@ -4,7 +4,7 @@ import { Store } from '../store.js';
 import { State } from '../state.js';
 import { showToast } from '../components/toast.js';
 import { calculateAllEloRankings } from '../services/elo.js';
-import { pushDoodleNow, cancelPendingSync, pullDoodleMonth, clearSessionTTL, pullMonthlyOverview, ensureDayMatchesLoaded } from '../services/github.js';
+import { pushDoodleNow, cancelPendingSync, pullDoodleMonth, clearSessionTTL, pullMonthlyOverview } from '../services/backend.js';
 import { sendDoodleAlert } from '../services/telegram.js';
 
 const WEEKDAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -79,26 +79,10 @@ class DoodleEditSession {
       const year = parseInt(ym.slice(0, 4));
       const month = parseInt(ym.slice(5, 7));
 
-      // Pull latest changes from GitHub
-      const { content: remoteContent, changelog: remoteChangelog } = await pullDoodleMonth(ym);
-      if (remoteContent && Array.isArray(remoteContent)) {
-        // Merge remote entries with local store
-        const mergedEntries = [...Store.getDoodle(ym)];
-        let changed = false;
-        remoteContent.forEach(entry => {
-          const existing = mergedEntries.find(e => e.name === entry.name);
-          if (!existing) {
-            mergedEntries.push(entry);
-            changed = true;
-          }
-        });
-        if (changed) Store.setDoodle(ym, mergedEntries);
-      }
-      if (remoteChangelog && Array.isArray(remoteChangelog)) {
-        Store.setDoodleChangelog(ym, remoteChangelog);
-      }
+      // Re-pull so edits are applied on top of the current Supabase state.
+      await pullDoodleMonth(ym);
 
-      // Apply accumulated edits to Store (all in one batch)
+      // Apply accumulated edits to the in-memory store (all in one batch)
       const pendingAlerts = [];
       for (const [playerName, editedSet] of Object.entries(this.currentEdits)) {
         const selectedDates = [...editedSet].sort();
@@ -106,8 +90,8 @@ class DoodleEditSession {
         if (change) pendingAlerts.push(change);
       }
 
-      // Push to GitHub (single batched commit)
-      await pushDoodleNow(ym);
+      // Single batched write: availability plus the changelog entries it produced
+      await pushDoodleNow(ym, pendingAlerts);
       void Promise.allSettled(
         pendingAlerts.map(change =>
           sendDoodleAlert(
@@ -954,25 +938,17 @@ export function renderDoodle(container, params = {}) {
     renderChangelog();
     updateFooter();
     const ym = `${currentYear}-${String(currentMonth).padStart(2, '0')}`;
-    if (Store.getGitHubConfig()?.pat) {
+    if (Store.getSupabaseConfig()) {
       clearSessionTTL(`doodle_${ym}`);
-      pullDoodleMonth(ym).then(({ content, changelog, updated }) => {
-        if (updated) {
-          if (content) Store.setDoodle(ym, content);
-          if (changelog) Store.setDoodleChangelog(ym, changelog);
-          State.emit('doodle-changed', { year: currentYear, month: currentMonth });
-        }
+      // The pull hydrates availability + changelog straight into the store,
+      // so a re-render is all that is needed afterwards.
+      pullDoodleMonth(ym).then(() => {
+        State.emit('doodle-changed', { year: currentYear, month: currentMonth });
       }).catch(() => {});
 
-      // Pull players_overview.json + day match files for the viewed month
-      pullMonthlyOverview(ym).then(({ updated: overviewUpdated }) => {
-        const tournamentDates = Store.getTournamentDates().filter(d => d.startsWith(ym));
-        const cached = Store.getMatches();
-        const missingDates = tournamentDates.filter(d => !cached.some(m => m.date === d));
-        const fetches = missingDates.map(d => ensureDayMatchesLoaded(d).catch(() => {}));
-        if (overviewUpdated || missingDates.length > 0) {
-          Promise.allSettled(fetches).then(() => renderPlayerOverview());
-        }
+      // Monthly overview + that month's matches (one scoped load per month).
+      pullMonthlyOverview(ym).then(() => {
+        if (ym === `${currentYear}-${String(currentMonth).padStart(2, '0')}`) renderPlayerOverview();
       }).catch(() => {});
     }
   }
