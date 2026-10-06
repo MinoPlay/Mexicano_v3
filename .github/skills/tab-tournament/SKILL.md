@@ -32,7 +32,7 @@ Loading rules:
 - If `getActiveTournament()` matches the route date, use it first.
 - With Supabase configured, startup and navigation call `pullForRoute('#/tournament/:date')`. This
   route loads `tournament_index`, the active tournament, matches for only the requested date and
-  the player summary (`player_totals` + `get_current_elo`); no doodle or attendance data.
+  the player summary (`player_totals_summary` + `player_current_elo`, precomputed; fallback `player_totals` + `get_current_elo`); no doodle or attendance data.
 - The completed route hydration is cached for the page session. The page's background
   `fetchActiveTournamentJson()` / `ensureDayMatchesLoaded(date)` calls reuse it instead of
   starting a second PostgREST batch.

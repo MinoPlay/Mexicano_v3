@@ -36,6 +36,19 @@ const ELO_ROWS = [
   { player_id: 'p3', tournament_date: '2026-09-24', elo: 970.84, previous_elo: 984.74 },
 ];
 
+// Precomputed server-side (supabase/migrations/20261006090000_precomputed_home_summaries.sql).
+const MONTHLY_ROWS = [
+  { year_month: '2026-08', player_id: 'p1', wins: 1, losses: 0, points: 13, games: 1, average: 13, elo: 1016 },
+  { year_month: '2026-08', player_id: 'p3', wins: 0, losses: 1, points: 12, games: 1, average: 12, elo: 984.74 },
+  { year_month: '2026-09', player_id: 'p1', wins: 1, losses: 0, points: 13, games: 1, average: 13, elo: 1030.56 },
+  { year_month: '2026-09', player_id: 'p3', wins: 0, losses: 1, points: 10, games: 1, average: 10, elo: 970.84 },
+];
+
+function eqValue(url, column) {
+  const match = decodeURIComponent(url).match(new RegExp(`${column}=eq\\.([^&]*)`));
+  return match ? match[1] : null;
+}
+
 function inList(url, column) {
   const match = decodeURIComponent(url).match(new RegExp(`${column}=in\\.\\(([^)]*)\\)`));
   return match ? match[1].split(',') : null;
@@ -68,6 +81,27 @@ function backendMock(overrides = {}) {
       return respond(ELO_ROWS.filter((row) =>
         (!body.p_dates || body.p_dates.includes(row.tournament_date))
         && (!body.p_player_ids || body.p_player_ids.includes(row.player_id))));
+    }
+    if (url.includes('/rest/v1/player_monthly_summary?')) {
+      const months = inList(url, 'year_month') || [];
+      return respond(MONTHLY_ROWS.filter((row) => months.includes(row.year_month)));
+    }
+    if (url.includes('/rest/v1/player_tournament_elo?')) {
+      const date = eqValue(url, 'tournament_date');
+      const dates = inList(url, 'tournament_date');
+      const ids = inList(url, 'player_id');
+      return respond(ELO_ROWS.filter((row) =>
+        (!date || row.tournament_date === date)
+        && (!dates || dates.includes(row.tournament_date))
+        && (!ids || ids.includes(row.player_id))));
+    }
+    if (url.includes('/rest/v1/player_current_elo?')) {
+      return respond([
+        { player_id: 'p1', tournament_date: '2026-09-24', elo: 1030.56, previous_elo: 1016 },
+      ]);
+    }
+    if (url.includes('/rest/v1/player_totals_summary?')) {
+      return respond([{ player_id: 'p1', wins: 2, losses: 1, points: 36, games: 3, tournaments: 2 }]);
     }
     if (url.includes('/rest/v1/rpc/get_current_elo')) {
       return respond([
@@ -114,17 +148,21 @@ describe('route-scoped Supabase reads', () => {
     vi.unstubAllGlobals();
   });
 
-  it('Home loads only the relevant tournament days and their ELO, never the full match history', async () => {
+  it('Home reads precomputed month summaries and latest-day ELO, never replays ELO or loads month matches', async () => {
     vi.stubGlobal('fetch', backendMock());
 
     await supabase.pullForRoute('#/');
 
     const matchUrls = requested('/rest/v1/matches?');
     expect(matchUrls).toHaveLength(1);
-    expect(inList(matchUrls[0], 'tournaments.tournament_date').sort()).toEqual(['2026-08-27', '2026-09-24']);
-    const eloCalls = fetch.mock.calls.filter(([url]) => url.includes('/rpc/get_player_elo'));
-    expect(eloCalls).toHaveLength(1);
-    expect(JSON.parse(eloCalls[0][1].body).p_dates.sort()).toEqual(['2026-08-27', '2026-09-24']);
+    expect(inList(matchUrls[0], 'tournaments.tournament_date')).toEqual(['2026-09-24']);
+    expect(requested('/rpc/get_player_elo')).toHaveLength(0);
+    const summaryUrls = requested('/rest/v1/player_monthly_summary?');
+    expect(summaryUrls).toHaveLength(1);
+    expect(inList(summaryUrls[0], 'year_month').sort()).toEqual(['2026-08', '2026-09']);
+    const eloUrls = requested('/rest/v1/player_tournament_elo?');
+    expect(eloUrls).toHaveLength(1);
+    expect(eqValue(eloUrls[0], 'tournament_date')).toBe('2026-09-24');
     expect(requested('/rest/v1/tournament_index?')).toHaveLength(1);
     for (const table of ['doodle_availability', 'doodle_changelog', 'attendance_records', 'player_attendance', 'player_totals']) {
       expect(requested(`/rest/v1/${table}?`)).toHaveLength(0);
@@ -133,7 +171,7 @@ describe('route-scoped Supabase reads', () => {
     expect(Store.getTournamentsIndex().at(-1)).toEqual({
       date: '2026-09-24', playerCount: 4, roundCount: 1, matchCount: 1, completedCount: 1, isComplete: true,
     });
-    expect(Cache.get('home_matches').map((m) => m.date)).toEqual(['2026-08-27', '2026-09-24']);
+    expect(Cache.get('home_matches').map((m) => m.date)).toEqual(['2026-09-24']);
     expect(Cache.get('home_players_summary')).toEqual([
       expect.objectContaining({ name: 'A', elo: 1030.56, previousElo: 1016 }),
       expect.objectContaining({ name: 'C', elo: 970.84, previousElo: 984.74 }),
@@ -143,15 +181,36 @@ describe('route-scoped Supabase reads', () => {
       expect.objectContaining({ name: 'C', wins: 0, totalPoints: 10, elo: 970.84 }),
     ]));
     expect(Store.getMonthlyOverview('2026-08')).toEqual(expect.arrayContaining([
-      expect.objectContaining({ name: 'A', elo: 1016 }),
+      expect.objectContaining({ name: 'A', wins: 1, totalPoints: 13, average: 13, elo: 1016 }),
+      expect.objectContaining({ name: 'C', wins: 0, losses: 1, totalPoints: 12, elo: 984.74 }),
     ]));
 
     const before = fetch.mock.calls.length;
     await supabase.pullForRoute('#/');
-    await backend.pullMonthlyOverview('2026-09', { route: '#/' });
-    await backend.pullMonthlyOverview('2026-08', { route: '#/' });
     await backend.ensureDayMatchesLoaded('2026-09-24');
     expect(fetch.mock.calls.length).toBe(before);
+  });
+
+  it('Home falls back to match + ELO replay when the summary tables are not migrated yet', async () => {
+    const missing = () => respond({ code: 'PGRST205', message: 'missing' }, { status: 404 });
+    vi.stubGlobal('fetch', backendMock({
+      '/rest/v1/player_monthly_summary?': missing,
+      '/rest/v1/player_tournament_elo?': missing,
+    }));
+
+    await supabase.pullForRoute('#/');
+
+    expect(Cache.has('supabase_snapshot_loaded')).toBe(false);
+    const eloCalls = fetch.mock.calls.filter(([url]) => url.includes('/rpc/get_player_elo'));
+    expect(eloCalls).toHaveLength(1);
+    expect(JSON.parse(eloCalls[0][1].body).p_dates.sort()).toEqual(['2026-08-27', '2026-09-24']);
+    expect(Store.getMonthlyOverview('2026-09')).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: 'A', wins: 1, totalPoints: 13, elo: 1030.56 }),
+    ]));
+    expect(Cache.get('home_players_summary')).toEqual([
+      expect.objectContaining({ name: 'A', elo: 1030.56, previousElo: 1016 }),
+      expect.objectContaining({ name: 'C', elo: 970.84, previousElo: 984.74 }),
+    ]);
   });
 
   it('Home builds month overview from the already fetched match and ELO batches instead of reloading the same month', async () => {
@@ -179,10 +238,10 @@ describe('route-scoped Supabase reads', () => {
 
     await supabase.pullForRoute('#/');
 
-    expect(Store.getMatches().map((m) => m.date)).toEqual(['2025-01-02', '2026-08-27', '2026-09-24']);
+    expect(Store.getMatches().map((m) => m.date)).toEqual(['2025-01-02', '2026-09-24']);
   });
 
-  it('Home requests players, index and active tournament concurrently', async () => {
+  it('Home requests players, index, active tournament and month summaries concurrently', async () => {
     const started = [];
     let release;
     const gate = new Promise((resolve) => { release = resolve; });
@@ -194,7 +253,8 @@ describe('route-scoped Supabase reads', () => {
     }));
 
     const pending = supabase.pullForRoute('#/');
-    await vi.waitFor(() => expect(started.length).toBe(3));
+    await vi.waitFor(() => expect(started.length).toBe(4));
+    expect(started.some((url) => url.includes('/rest/v1/player_monthly_summary?'))).toBe(true);
     expect(started.some((url) => url.includes('/rest/v1/players?'))).toBe(true);
     expect(started.some((url) => url.includes('/rest/v1/tournament_index?'))).toBe(true);
     expect(started.find((url) => url.includes('/rest/v1/tournaments?'))).toContain('status=in.(planned,active)');
@@ -222,12 +282,14 @@ describe('route-scoped Supabase reads', () => {
     expect(matchUrls).toHaveLength(1);
     expect(inList(matchUrls[0], 'tournaments.tournament_date')).toEqual(['2026-09-24']);
     expect(requested('/rest/v1/tournaments?')).toEqual([expect.stringContaining('status=in.(planned,active)')]);
-    expect(requested('/rest/v1/player_totals?')).toHaveLength(1);
+    expect(requested('/rest/v1/player_totals_summary?')).toHaveLength(1);
+    expect(requested('/rest/v1/player_totals?')).toHaveLength(0);
+    expect(requested('/rpc/get_current_elo')).toHaveLength(0);
     expect(Store.getMatches()).toEqual([expect.objectContaining({ date: '2026-09-24', team1Player1Name: 'A' })]);
     expect(requested('/rest/v1/doodle_availability?')).toHaveLength(0);
   });
 
-  it('Statistics builds the all-time summary from player_totals and current ELO without matches', async () => {
+  it('Statistics reads precomputed totals and current ELO, never replays ELO or scans matches', async () => {
     vi.stubGlobal('fetch', backendMock());
 
     await supabase.pullForRoute('#/statistics');
@@ -238,11 +300,30 @@ describe('route-scoped Supabase reads', () => {
       wins: 2, losses: 1, points: 36, average: 12, tournaments: 2,
     });
     expect(Store.getPlayersSummary()[1]).toMatchObject({ name: 'B', elo: 1000, previousElo: 1000, wins: 0, average: 0 });
+    expect(requested('/rest/v1/player_totals_summary?')).toHaveLength(1);
+    expect(requested('/rest/v1/player_current_elo?')).toHaveLength(1);
+    expect(requested('/rest/v1/player_totals?')).toHaveLength(0);
+    expect(requested('/rpc/get_current_elo')).toHaveLength(0);
     // Only the latest tournament day (default "Latest" filter) is fetched.
     const matchUrls = requested('/rest/v1/matches?');
     expect(matchUrls).toHaveLength(1);
     expect(inList(matchUrls[0], 'tournaments.tournament_date')).toEqual(['2026-09-24']);
     expect(requested('/rpc/get_player_elo')).toHaveLength(0);
+  });
+
+  it('Statistics falls back to player_totals + get_current_elo when summaries are not migrated', async () => {
+    const missing = () => respond({ code: 'PGRST205', message: 'missing' }, { status: 404 });
+    vi.stubGlobal('fetch', backendMock({
+      '/rest/v1/player_totals_summary?': missing,
+      '/rest/v1/player_current_elo?': missing,
+    }));
+
+    await supabase.pullForRoute('#/statistics');
+
+    expect(Cache.has('supabase_snapshot_loaded')).toBe(false);
+    expect(requested('/rest/v1/player_totals?')).toHaveLength(1);
+    expect(requested('/rpc/get_current_elo')).toHaveLength(1);
+    expect(Store.getPlayersSummary()[0]).toMatchObject({ name: 'A', elo: 1030.56, previousElo: 1016, wins: 2, points: 36 });
   });
 
   it('Statistics attendance months read player_attendance for that range only', async () => {
@@ -289,6 +370,13 @@ describe('route-scoped Supabase reads', () => {
     const matchUrls = requested('/rest/v1/matches?');
     expect(matchUrls).toHaveLength(1);
     expect(inList(matchUrls[0], 'tournaments.tournament_date')).toEqual(['2026-09-24']);
+    expect(requested('/rpc/get_player_elo')).toHaveLength(0);
+    const eloUrls = requested('/rest/v1/player_tournament_elo?');
+    expect(eloUrls).toHaveLength(1);
+    expect(inList(eloUrls[0], 'tournament_date')).toEqual(['2026-09-24']);
+    expect(Store.getMonthlyOverview('2026-09')).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: 'A', elo: 1030.56 }),
+    ]));
   });
 
   it('Create tournament reads recent participation, not matches', async () => {
@@ -311,14 +399,16 @@ describe('route-scoped Supabase reads', () => {
     expect(Store.getMembers().length).toBeGreaterThan(0);
   });
 
-  it('ELO history is fetched per selected player via RPC', async () => {
+  it('ELO history reads precomputed per-player rows, never the replay RPC', async () => {
     vi.stubGlobal('fetch', backendMock());
 
     const result = await backend.pullEloHistoryForPlayerIds(['p1', 'p2']);
 
     expect(requested('/rest/v1/matches?')).toHaveLength(0);
-    const call = fetch.mock.calls.find(([url]) => url.includes('/rpc/get_player_elo'));
-    expect(JSON.parse(call[1].body)).toEqual({ p_player_ids: ['p1', 'p2'] });
+    expect(requested('/rpc/get_player_elo')).toHaveLength(0);
+    const eloUrls = requested('/rest/v1/player_tournament_elo?');
+    expect(eloUrls).toHaveLength(1);
+    expect(inList(eloUrls[0], 'player_id')).toEqual(['p1', 'p2']);
     expect(result).toEqual({ loadedPlayerIds: ['p1'], missingPlayerIds: ['p2'] });
     expect(Cache.get('elo_history_player_p1')).toEqual({
       playerId: 'p1',
@@ -332,6 +422,19 @@ describe('route-scoped Supabase reads', () => {
     const before = fetch.mock.calls.length;
     await backend.pullEloHistoryForPlayerIds(['p1', 'p2']);
     expect(fetch.mock.calls.length).toBe(before);
+  });
+
+  it('ELO history falls back to the replay RPC when the table is not migrated', async () => {
+    vi.stubGlobal('fetch', backendMock({
+      '/rest/v1/player_tournament_elo?': () => respond({ code: 'PGRST205', message: 'missing' }, { status: 404 }),
+    }));
+
+    await backend.pullEloHistoryForPlayerIds(['p1']);
+
+    const call = fetch.mock.calls.find(([url]) => url.includes('/rpc/get_player_elo'));
+    expect(JSON.parse(call[1].body)).toEqual({ p_player_ids: ['p1'] });
+    expect(Cache.get('elo_history_player_p1').points).toHaveLength(2);
+    expect(Cache.has('supabase_snapshot_loaded')).toBe(false);
   });
 
   it('falls back to the full snapshot when the migration is not applied yet', async () => {

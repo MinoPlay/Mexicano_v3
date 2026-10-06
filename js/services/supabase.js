@@ -785,6 +785,16 @@ function isMissingSchemaError(error) {
   return error?.status === 404 || MISSING_SCHEMA_CODES.has(error?.code);
 }
 
+// Prefer a precomputed table/view; use the legacy read if it is not migrated yet.
+async function readPrecomputed(primary, fallback) {
+  try {
+    return await primary();
+  } catch (error) {
+    if (!isMissingSchemaError(error)) throw error;
+    return fallback();
+  }
+}
+
 function snapshotLoaded() {
   return Cache.has('supabase_snapshot_loaded');
 }
@@ -907,7 +917,13 @@ export async function loadEloForDates(dates) {
   if (missing.length) {
     await loadResource(`elo_days_${missing.join(',')}`, async () => {
       const [rows] = await Promise.all([
-        rpc('get_player_elo', { p_dates: missing }),
+        readPrecomputed(
+          () => selectAll(
+            'player_tournament_elo',
+            `select=player_id,tournament_date,elo,previous_elo&tournament_date=in.(${missing.join(',')})`,
+          ),
+          () => rpc('get_player_elo', { p_dates: missing }),
+        ),
         loadPlayers(),
       ]);
       const byId = playersById();
@@ -1053,9 +1069,17 @@ export function loadDoodleMonth(yearMonth = currentYearMonth()) {
 /** All-time rankings: totals and current ELO aggregated server-side. */
 export function loadPlayerSummary() {
   return loadResource('player_summary', async () => {
-    const [totals, currentElo] = await Promise.all([
-      selectAll('player_totals', 'select=player_id,wins,losses,points,games,tournaments'),
-      rpc('get_current_elo', {}),
+    const [[totals, currentElo]] = await Promise.all([
+      readPrecomputed(
+        () => Promise.all([
+          selectAll('player_totals_summary', 'select=player_id,wins,losses,points,games,tournaments'),
+          selectAll('player_current_elo', 'select=player_id,tournament_date,elo,previous_elo'),
+        ]),
+        () => Promise.all([
+          selectAll('player_totals', 'select=player_id,wins,losses,points,games,tournaments'),
+          rpc('get_current_elo', {}),
+        ]),
+      ),
       loadPlayers(),
     ]);
     const totalsById = new Map(totals.map((row) => [row.player_id, row]));
@@ -1089,7 +1113,13 @@ export async function loadEloHistory(playerIds = []) {
   if (!missing.length) return false;
   return loadResource(`elo_histories_${missing.join(',')}`, async () => {
     const [rows] = await Promise.all([
-      rpc('get_player_elo', { p_player_ids: missing }),
+      readPrecomputed(
+        () => selectAll(
+          'player_tournament_elo',
+          `select=player_id,tournament_date,elo,previous_elo&player_id=in.(${missing.join(',')})&order=tournament_date.asc`,
+        ),
+        () => rpc('get_player_elo', { p_player_ids: missing }),
+      ),
       loadPlayers(),
     ]);
     const byId = playersById();
@@ -1130,19 +1160,40 @@ async function loadLatestDay() {
   if (latest) await loadDayMatches([latest]);
 }
 
-async function loadHomeRoute() {
-  await Promise.all([loadPlayers(), loadTournamentIndex(), loadActiveTournament()]);
-  if (snapshotLoaded()) return;
-  const month = currentYearMonth();
-  const previousMonth = yearMonthOffset(month, -1);
+function monthSummaryRowsToOverview(rows, byId) {
+  const byMonth = new Map();
+  for (const row of rows || []) {
+    const name = byId.get(row.player_id)?.name;
+    if (!name) continue;
+    const overview = byMonth.get(row.year_month) || [];
+    overview.push({
+      name,
+      wins: Number(row.wins) || 0,
+      losses: Number(row.losses) || 0,
+      totalPoints: Number(row.points) || 0,
+      average: Number(row.average) || 0,
+      elo: row.elo == null ? null : Number(row.elo),
+    });
+    byMonth.set(row.year_month, overview);
+  }
+  return byMonth;
+}
+
+function setHomePlayersSummary(eloByName) {
+  const byName = new Map((Cache.get('supabase_players_rows') || []).map((p) => [p.name, p]));
+  Cache.set('home_players_summary', Object.entries(eloByName || {})
+    .map(([name, { elo, previousElo }]) => ({ id: byName.get(name)?.id ?? null, name, elo, previousElo }))
+    .sort((a, b) => a.name.localeCompare(b.name)));
+}
+
+// Legacy path (summary tables not migrated): replay ELO for every shown date.
+async function loadHomeRouteFromMatches(month, previousMonth) {
   const latest = latestCompletedDate();
   const dates = uniqueSorted([
     ...tournamentDatesIn(month),
     ...tournamentDatesIn(previousMonth),
     latest,
   ]);
-  // One matches request + one ELO RPC for every date Home shows; the month
-  // projections below then build from cache.
   const [, eloByDate] = await Promise.all([loadDayMatches(dates), loadEloForDates(dates)]);
   if (snapshotLoaded()) return;
 
@@ -1151,10 +1202,63 @@ async function loadHomeRoute() {
   Cache.set('home_matches', homeMatches);
   buildMonthOverviewFromMatches(month, homeMatches, eloByDate);
   buildMonthOverviewFromMatches(previousMonth, homeMatches, eloByDate);
-  const byName = new Map((Cache.get('supabase_players_rows') || []).map((p) => [p.name, p]));
-  Cache.set('home_players_summary', Object.entries(eloByDate[latest] || {})
-    .map(([name, { elo, previousElo }]) => ({ id: byName.get(name)?.id ?? null, name, elo, previousElo }))
-    .sort((a, b) => a.name.localeCompare(b.name)));
+  setHomePlayersSummary(eloByDate[latest]);
+}
+
+// Month tables + latest-day ELO come precomputed from Postgres
+// (player_monthly_summary / player_tournament_elo, rebuilt by triggers), so
+// Home only downloads the latest day's matches for its W/L/points table.
+async function loadHomeRoute() {
+  const month = currentYearMonth();
+  const previousMonth = yearMonthOffset(month, -1);
+  const [, , , monthRows] = await Promise.all([
+    loadPlayers(),
+    loadTournamentIndex(),
+    loadActiveTournament(),
+    selectAll(
+      'player_monthly_summary',
+      `select=year_month,player_id,wins,losses,points,games,average,elo&year_month=in.(${previousMonth},${month})`,
+    ).catch((error) => {
+      if (isMissingSchemaError(error)) return null;
+      throw error;
+    }),
+  ]);
+  if (snapshotLoaded()) return;
+  if (!monthRows) {
+    await loadHomeRouteFromMatches(month, previousMonth);
+    return;
+  }
+
+  const byId = playersById();
+  const overviews = monthSummaryRowsToOverview(monthRows, byId);
+  for (const ym of [previousMonth, month]) Cache.set(`monthly_${ym}`, overviews.get(ym) || []);
+
+  const latest = latestCompletedDate();
+  if (!latest) {
+    Cache.set('home_matches', []);
+    Cache.set('home_players_summary', []);
+    return;
+  }
+  const [dayMatches, eloRows] = await Promise.all([
+    loadDayMatches([latest]),
+    Cache.has(`elo_day_${latest}`)
+      ? Promise.resolve(null)
+      : selectAll(
+        'player_tournament_elo',
+        `select=player_id,tournament_date,elo,previous_elo&tournament_date=eq.${latest}`,
+      ),
+  ]);
+  if (snapshotLoaded()) return;
+  if (eloRows) {
+    const eloByName = {};
+    for (const row of eloRows) {
+      const name = byId.get(row.player_id)?.name;
+      if (name) eloByName[name] = { elo: Number(row.elo), previousElo: Number(row.previous_elo) };
+    }
+    Cache.set(`elo_day_${latest}`, eloByName);
+  }
+  Cache.set('home_matches', dayMatches);
+  setHomePlayersSummary(Cache.get(`elo_day_${latest}`));
 }
 
 function routeScope(hash) {

@@ -26,13 +26,15 @@ The Home tab is the landing page for route `/`. It is available to all users and
 - Sortable columns are `name`, `wl`, `pts`, `avg`, `win`, `elo`, and `change`. Clicking the active sort column toggles direction; clicking a new column sorts names ascending and other columns descending.
 - Current-month sorting has an additional tie-breaker: wins descending, then name ascending.
 - With Supabase configured, `pullForRoute('#/')` (`loadHomeRoute`) fetches players ∥
-  `tournament_index` ∥ active tournament, then only the matches of the current month, previous
-  month and latest completed tournament ∥ `get_player_elo` for those dates (server-side ELO).
-  Never the full match history. See `.github/features/route-data-loading.md`.
-- Home-specific matches and player summary are stored in `Cache` as `home_matches` and
+  `tournament_index` ∥ active tournament ∥ `player_monthly_summary` (previous + current month,
+  precomputed by DB triggers), then the latest completed tournament's matches ∥ its
+  `player_tournament_elo` rows. No ELO replay (`get_player_elo`) and no month match downloads.
+  If the summary tables are missing, it falls back to month + latest-day matches ∥
+  `get_player_elo`. Never the full match history. See `.github/features/route-data-loading.md`.
+- Home-specific matches (latest day only) and player summary are stored in `Cache` as `home_matches` and
   `home_players_summary`; the loaded days are merged into `Store.getMatches()`.
 - Missing latest-day matches can still be loaded through `ensureDayMatchesLoaded(latestDate)`.
-  Current and previous monthly projections are reused through `pullMonthlyOverview()`.
+  Months with no summary rows (e.g. a month without tournaments yet) are retried through `pullMonthlyOverview()`.
 - The title `#home-title` renders `🎾 Mexicano v<APP_VERSION>` and is clickable. After confirmation, it clears the in-memory `matches`, `matches_fully_loaded` and `active_tournament` cache entries, then reloads the page (which re-pulls everything from Supabase).
 - The title also contains `#app-refresh-btn` (refresh icon `↻`). Its click stops propagation (so the clear-cache handler does not fire) and calls `refreshApp()` from `js/version.js`, which clears all caches and reloads.
 - Tournament attendance confirmation is shown only when `shouldShowConfirmationPopup(activeTournament, currentUser)` returns true and no `#tournament-confirm-overlay` exists. Confirmation calls `confirmAttendanceAndPush(currentUser)` (which persists to Supabase), removes the overlay, and best-effort sends a Telegram alert.
@@ -59,7 +61,7 @@ The Home tab is the landing page for route `/`. It is available to all users and
   - `current_user` — current player name used for attendance confirmation.
   - `supabase_config` — enables route-scoped Supabase hydration.
   - cached `home_players_summary` — Home-only player rows with `name`, `elo`, and `previousElo`.
-  - cached `monthly_YYYY-MM` — monthly overview rows derived from canonical matches and runtime ELO.
+  - cached `monthly_YYYY-MM` — monthly overview rows (`name, wins, losses, totalPoints, average, elo`), read from `player_monthly_summary` on Home (or derived from matches + ELO elsewhere).
   - cached `tournaments_index` — entries with at least `date` and `isComplete`.
   - `confirmed` flag on each `active_tournament` player — hydrated from Supabase and used to suppress the confirmation popup.
 - Monthly overview rows are derived from date-scoped canonical matches and runtime ELO:

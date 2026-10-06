@@ -45,7 +45,7 @@ The profile dialog sub-tab state is in local variables only. It starts on `Overv
 
 ## Data
 
-Route load (`pullForRoute('#/statistics')`): `tournament_index` + latest completed day's matches, player summary (`player_totals` view + `get_current_elo` RPC) and manual attendance. Month filters load that month on demand via `pullMonthlyOverview(ym)`; a single day via `ensureDayMatchesLoaded(date)`; Attendance sub-tab months via `pullMonthlyOverviewRaw` (`player_attendance`), fetched in parallel. Full match history is never loaded. See `.github/features/route-data-loading.md`.
+Route load (`pullForRoute('#/statistics')`): `tournament_index` + latest completed day's matches, player summary (`player_totals_summary` table + `player_current_elo` view, precomputed by DB triggers; falls back to `player_totals` + `get_current_elo` if not migrated) and manual attendance. Month filters load that month on demand via `pullMonthlyOverview(ym)`; a single day via `ensureDayMatchesLoaded(date)`; Attendance sub-tab months via `pullMonthlyOverviewRaw` (`player_attendance`), fetched in parallel. Full match history is never loaded. See `.github/features/route-data-loading.md`.
 Raw match rows are stored in `Store.getMatches()` and use flattened player/team fields such as `date`, `team1Player1Name`, `team1Player2Name`, `team2Player1Name`, `team2Player2Name`, `scoreTeam1`, and `scoreTeam2`. Raw match filters compute day/latest/all-time fallback stats with `calculatePlayerStatistics`.
 
 All-time canonical data comes from `players.json`, exposed through `Store.getPlayersSummary()` as camelCase rows like `{ name, elo, previousElo, wins, losses, points, average, tournaments }`. The all-time table maps this to table fields and shows `eloChange` as `elo - 1000`.
