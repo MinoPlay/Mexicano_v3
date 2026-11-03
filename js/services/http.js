@@ -1,7 +1,7 @@
 /**
  * Shared HTTP helpers.
  *
- * Every outbound request in this app talks to api.github.com. Without a hard
+ * Outbound requests must not remain pending forever. Without a hard
  * timeout a stalled connection (common on mobile, even when "online") leaves a
  * fetch pending forever — which is exactly what made the End Tournament
  * progress dialog hang with nothing happening.

@@ -6,10 +6,13 @@ import { renderNav } from './components/nav.js';
 import { resyncPushSubscription } from './services/push.js';
 import { showToast } from './components/toast.js';
 import { showRefreshDialog } from './components/refresh-dialog.js';
-import { pullForRoute } from './services/github.js';
+import { pullForRoute } from './services/backend.js';
 import { showOnboardingDialog } from './components/onboarding-dialog.js';
-import { parsePatFromUrl } from './services/pat-url.js';
+import { captureAuthSessionFromUrl, invalidateReadCache } from './services/supabase.js';
+import { Cache } from './cache.js';
 import { currentDeployId, nsPrefix } from './deploy-env.js';
+import { createRouteLoader } from './services/route-loader.js';
+import { perfStart } from './services/perf.js';
 
 // Pages
 import { renderHome } from './pages/home.js';
@@ -31,32 +34,24 @@ async function loadAdministrators() {
   } catch { /* fall back to empty admin list */ }
 }
 
-// ─── PAT-in-URL bootstrap: read PAT from shareable link, then strip from URL ───
-function loadPatFromUrl() {
-  const { pat, cleanUrl } = parsePatFromUrl(window.location.href);
-  if (!pat) return;
-  Store.setGitHubConfig({ owner: 'MinoPlay', repo: 'DataHub_Mexicano', pat, basePath: 'mexicano_v3/backup-data' });
-  try { history.replaceState(null, '', cleanUrl); } catch { /* ignore */ }
-}
-
-// ─── Dev secrets: auto-inject GitHub config on localhost ───
+// ─── Dev config: auto-inject public Supabase config on localhost ───
 async function loadDevSecrets() {
   const isDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
   if (!isDev) return;
   try {
     const cfg = await fetch('/api/dev-config').then(r => r.ok ? r.json() : {});
-    if (cfg.pat) {
-      Store.setGitHubConfig({ owner: cfg.owner, repo: cfg.repo, pat: cfg.pat, basePath: cfg.basePath });
-      console.log('GitHub config loaded from local-secrets.json');
+    if (cfg.supabaseUrl && cfg.supabaseAnonKey) {
+      Store.setSupabaseConfig({ url: cfg.supabaseUrl, anonKey: cfg.supabaseAnonKey });
+      console.log('Supabase public config loaded from local dev config');
     }
   } catch { /* server not running or no secrets file */ }
 }
 
 // Load local test data if available (dev server with local-config.json)
 async function loadLocalData() {
-  // Skip local data loading on deployed version or if GitHub is already configured
+  // Skip local data loading on deployed version or if Supabase is configured
   const isDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-  if (!isDev || Store.getGitHubConfig()?.pat) return;
+  if (!isDev || Store.getSupabaseConfig()) return;
 
   try {
     const status = await fetch('/api/local-data/status').then(r => {
@@ -66,7 +61,7 @@ async function loadLocalData() {
     if (!status.available) return;
 
     // ─── Matches + players: only on first load ───
-    if (localStorage.getItem('mexicano_local_data_loaded') === 'true') return;
+    if (Store.isMatchesFullyLoaded()) return;
     console.log('Loading local test data…');
     const [matches, players] = await Promise.all([
       fetch('/api/local-data/matches').then(r => r.json()),
@@ -74,32 +69,70 @@ async function loadLocalData() {
     ]);
     if (matches.length > 0) {
       Store.setMatches(matches);
-      localStorage.setItem('mexicano_matches_fully_loaded', JSON.stringify(true));
+      Store.setMatchesFullyLoaded(true);
       if (Array.isArray(players)) {
         const names = players.map(p => p.Name).sort();
         Store.setMembers(names);
       }
-      localStorage.setItem('mexicano_local_data_loaded', 'true');
       console.log(`Loaded ${matches.length} matches from local data`);
-      location.reload();
     }
   } catch { /* not running on dev server, or no local data */ }
 }
 
+// Each route loads only its own data (see js/services/supabase.js routeScope).
+// In-memory Cache is empty on every online page refresh, so the first pull runs
+// fresh; later visits to a route reuse cached resources. After each successful
+// load the Cache is snapshotted so an offline reload can still render.
+const loadRoute = createRouteLoader({
+  pull: (hash) => pullForRoute(hash),
+  render: () => router.resolve(),
+  currentHash: () => window.location.hash,
+  onLoaded: () => Cache.persistSnapshot(),
+  onError: (e) => {
+    console.warn('Supabase auto-pull failed:', e);
+    showToast(`⚠️ Sync failed: ${e.message}`);
+  },
+});
+
+async function loadFromBackend() {
+  if (!Store.getSupabaseConfig()) return;
+  await loadRoute(window.location.hash);
+}
+
+window.addEventListener('hashchange', () => { loadFromBackend(); });
+
+// Data hydrated from the offline snapshot may be stale; refetch on reconnect.
+window.addEventListener('online', () => {
+  invalidateReadCache();
+  loadFromBackend();
+});
+
+captureAuthSessionFromUrl();
+
 async function init() {
-  // One-time migration: remove stale Azure connection string from localStorage
+  // One-time migration: drop Supabase-owned data that older builds persisted
+  // on this device, so it can never shadow the live backend state.
   localStorage.removeItem('mexicano_azure_conn_str');
+  Store.purgeNonPersistedKeys();
+  // Offline start only: render the last loaded data instead of nothing.
+  if (navigator.onLine === false) Cache.hydrateSnapshot();
 
   Store.applyDeviceType();
+  const startupDone = perfStart('startup');
 
-  await loadAdministrators();
-  loadPatFromUrl();
-  await loadDevSecrets();
+  // Returning users already have config + session + role: start the route's
+  // data load immediately instead of waiting for the serial init below.
+  const returningUser = !!(Store.getSupabaseConfig()
+    && Store.getSupabaseSession()?.access_token
+    && Store.getAccessRole());
+  const earlyLoad = returningUser ? loadFromBackend() : null;
+
+  await Promise.all([loadAdministrators(), loadDevSecrets()]);
 
   await showOnboardingDialog();
 
   await loadLocalData();
-  loadFromGitHub();
+  (earlyLoad || loadFromBackend()).then(() => startupDone({ earlyLoad: returningUser }));
 
   // Back-fill the `user` tag on an already-granted push subscription so targeted
   // sends can reach this device without the user re-enabling push. Fire-and-forget.
@@ -107,30 +140,21 @@ async function init() {
 }
 init();
 
-// Cross-tab PAT sync: when another tab saves/clears the GitHub config, reload data here too.
+// Cross-tab Supabase config/session sync.
 window.addEventListener('storage', (e) => {
-  // Event keys are raw (un-namespaced) storage keys.
-  if (e.key !== nsPrefix(currentDeployId()) + 'mexicano_github_config') return;
+  const keys = [
+    'mexicano_supabase_config',
+    'mexicano_supabase_session',
+    'mexicano_access_role',
+  ].map(key => nsPrefix(currentDeployId()) + key);
+  if (!keys.includes(e.key)) return;
   if (e.newValue) {
-    loadFromGitHub();
+    loadFromBackend();
   } else {
     location.reload();
   }
 });
 
-// Auto-pull from GitHub on every page open/refresh if configured.
-// In-memory Cache is empty on every page refresh, so pull always runs fresh.
-async function loadFromGitHub() {
-  if (!Store.getGitHubConfig()?.pat) return;
-  try {
-    await pullForRoute(window.location.hash);
-    // Re-render the current page with freshly pulled data
-    router.resolve();
-  } catch (e) {
-    console.warn('GitHub auto-pull failed:', e);
-    showToast(`⚠️ Sync failed: ${e.message}`);
-  }
-}
 
 // Mount bottom nav
 const app = document.getElementById('app');

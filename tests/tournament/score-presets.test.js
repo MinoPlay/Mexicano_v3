@@ -6,7 +6,8 @@ import { vi, describe, it, expect, beforeEach } from 'vitest';
 
 // ─── Mock dynamic imports used by tournament.js and store.js ───
 
-vi.mock('../../js/services/github.js', () => ({
+vi.mock('../../js/services/backend.js', async (importOriginal) => ({
+  ...await importOriginal(),
   schedulePush: vi.fn(),
   cancelPendingSync: vi.fn(),
   flushPush: vi.fn().mockResolvedValue(undefined),

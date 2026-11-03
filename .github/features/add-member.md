@@ -38,7 +38,7 @@ Settings page → Members section → "Add" button submit.
 
 ## Implementation
 
-### `addPlayerToPlayersJson(name)` — `js/services/github.js`
+### `addPlayerToPlayersJson(name)` — `js/services/backend.js`
 1. Verify GitHub configured — throw if not.
 2. Build `playersPath` via `matchesBase()`.
 3. `readFile(playersPath)` — get array + SHA. Throw if null.

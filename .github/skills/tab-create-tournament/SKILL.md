@@ -37,6 +37,8 @@ It creates a new Mexicano tournament for one date, a fixed player count, optiona
 - `js/pages/doodle.js` — links to `#/create-tournament?date=<date>&names=<comma-separated names>` for prefilled tournament creation.
 
 ## Data
+
+Route load (`pullForRoute('#/create-tournament')`): active tournament and participation (`player_attendance`) for the previous and current month, plus players. `getRecentMembers()` reads `Store.getParticipation()` (falls back to `Store.getMembers()`). No match history. See `.github/features/route-data-loading.md`.
 The page does not write directly to `Store`; it delegates to `js/services/tournament.js`.
 
 `createTournament(date, playerNames, accessCode = null, courts = null)` creates:

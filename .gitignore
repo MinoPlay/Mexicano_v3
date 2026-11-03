@@ -17,3 +17,6 @@ local-config.json
 local-secrets.json
 test-results/.last-run.json
 vitest-output.txt
+
+# Supabase CLI local state (project ref, pooler URL)
+supabase/.temp/

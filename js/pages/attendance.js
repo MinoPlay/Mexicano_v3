@@ -1,4 +1,4 @@
-import { getMonthlyAttendance, getAttendanceStatistics } from '../services/attendance.js';
+import { getMonthlyAttendance, getAttendanceStatistics, getParticipationRows } from '../services/attendance.js';
 import { Store } from '../store.js';
 
 // ─── Helpers ───
@@ -50,11 +50,15 @@ function renderCalendar(el, year, month, monthData) {
 
   // Build lookup: day number → { count, players }
   const lookup = {};
-  if (monthData && monthData.days) {
-    monthData.days.forEach(d => {
-      lookup[d.day] = d;
-    });
-  }
+  const rows = Array.isArray(monthData) ? monthData : monthData?.days || [];
+  rows.forEach((entry) => {
+    const day = entry.day ?? Number(String(entry.date || '').slice(-2));
+    if (!day) return;
+    lookup[day] = {
+      players: entry.players || [],
+      count: entry.count ?? entry.playerCount ?? 0,
+    };
+  });
 
   // Leading empty cells
   for (let i = 0; i < startDay; i++) {
@@ -122,7 +126,12 @@ function showDayPlayers(players, year, month, day) {
 // ─── Stats Table ───
 
 function renderStatsTable(el, allMatches) {
-  const stats = getAttendanceStatistics(allMatches);
+  const stats = getAttendanceStatistics(allMatches).map((row) => ({
+    name: row.playerName,
+    attended: row.attendanceCount,
+    total: row.totalTournaments,
+    rate: row.attendancePercentage / 100,
+  }));
   el.innerHTML = '';
 
   if (!stats || !stats.length) {
@@ -209,7 +218,7 @@ function renderStatsTable(el, allMatches) {
 export function renderAttendance(container, params = {}) {
   container.innerHTML = '';
 
-  let allMatches = Store.getMatches();
+  let allMatches = getParticipationRows();
   const init = getInitialMonth(allMatches);
   let currentYear = init.year;
   let currentMonth = init.month;
@@ -226,20 +235,19 @@ export function renderAttendance(container, params = {}) {
   content.className = 'page-content';
   container.appendChild(content);
 
-  if (!allMatches.length) {
-    const hasSummaryData = Store.getPlayersSummary().length > 0;
-
-    if (hasSummaryData && Store.getGitHubConfig()?.pat) {
+  const needsFullHistory = !!Store.getSupabaseConfig() && !Store.isParticipationComplete();
+  if (!allMatches.length || needsFullHistory) {
+    if (Store.getSupabaseConfig()) {
       content.innerHTML = `<div class="empty-state">
         <div class="empty-state-icon">⏳</div>
         <div class="empty-state-text">Loading match history…</div>
         <p class="text-secondary text-sm">This may take a moment</p>
       </div>`;
 
-      import('../services/github.js').then(({ ensureAllMatchesLoaded }) =>
-        ensureAllMatchesLoaded()
-      ).then(matches => {
-        allMatches = matches;
+      import('../services/backend.js').then(({ ensureParticipationLoaded }) =>
+        ensureParticipationLoaded()
+      ).then(() => {
+        allMatches = getParticipationRows();
         const newInit = getInitialMonth(allMatches);
         currentYear = newInit.year;
         currentMonth = newInit.month;

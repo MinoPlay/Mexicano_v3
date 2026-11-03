@@ -84,7 +84,7 @@ doodle_changelog[yearMonth] = [
 ## File References
 - **Core**: `js/services/doodle.js` (logic, validation, events)
 - **Persistence**: `js/services/local.js` → `writeDoodle()` (dev-server JSON writes)
-- **GitHub sync**: `js/services/github.js` → `pushDoodleNow()`, `pullDoodleMonth()` (remote sync)
+- **GitHub sync**: `js/services/backend.js` → `pushDoodleNow()`, `pullDoodleMonth()` (remote sync)
 - **Store**: `js/store.js` → `getDoodle()`, `setDoodle()`, `getDoodleChangelog()`, `setDoodleChangelog()`, `getCurrentUser()`
 - **UI**: `js/pages/doodle.js` (calendar grid + matrix table + changelog)
 - **Events**: `js/state.js` → `doodle-changed` emitted on save

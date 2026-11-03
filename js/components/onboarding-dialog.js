@@ -1,57 +1,49 @@
-/**
- * Onboarding dialog — shown on first launch when PAT or current_user is missing.
- * Step 1: Enter GitHub PAT → test connection → save config.
- * Step 2: Pick player from members list → save current_user.
- * Returns a Promise that resolves when onboarding is complete.
- */
-
 import { Store } from '../store.js';
-import { testConnection } from '../services/github.js';
+import {
+  bindCurrentPlayer,
+  captureAuthSessionFromUrl,
+  claimAccess,
+  listPlayers,
+  sendMagicLink,
+  syncAccessGrant,
+} from '../services/supabase.js';
 
-const FIXED_CONFIG = {
-  owner:    'MinoPlay',
-  repo:     'DataHub_Mexicano',
-  basePath: 'mexicano_v3/backup-data',
-};
+export function getOnboardingStep(now = Date.now()) {
+  const expiry = Store.getAccessExpiry();
+  const hasActiveGrant = Store.getAccessRole()
+    && (!expiry || Date.parse(expiry) > now);
+  if (!hasActiveGrant) return 'access';
+  if (!Store.getCurrentPlayerId() || !Store.getCurrentUser()) return 'player';
+  return null;
+}
 
-/**
- * Fetch members from players.json using the saved config.
- * Returns sorted array of name strings, or [] on failure.
- */
-async function fetchMembers(pat) {
-  try {
-    const { owner, repo, basePath } = FIXED_CONFIG;
-    const path = `${basePath}/players.json`;
-    const url = `https://api.github.com/repos/${owner}/${repo}/contents/${path}`;
-    const res = await fetch(url, {
-      headers: {
-        Authorization: `Bearer ${pat}`,
-        Accept: 'application/vnd.github+json',
-        'X-GitHub-Api-Version': '2022-11-28',
-      },
-    });
-    if (!res.ok) return [];
-    const file = await res.json();
-    const bytes = Uint8Array.from(atob(file.content.replace(/\n/g, '')), c => c.charCodeAt(0));
-    const decoded = JSON.parse(new TextDecoder().decode(bytes));
-    if (!Array.isArray(decoded)) return [];
-    return decoded.map(p => p.Name).filter(Boolean).sort();
-  } catch {
-    return [];
+export async function ensurePublicConfig() {
+  const response = await fetch('./data/supabase-config.json', { cache: 'no-store' });
+  if (!response.ok) throw new Error('Supabase project configuration could not be loaded');
+  const config = await response.json();
+  if (!config?.url || !config?.anonKey) {
+    throw new Error('Supabase project configuration is incomplete');
   }
+  const current = Store.getSupabaseConfig();
+  const nextUrl = String(config.url).replace(/\/$/, '');
+  if (current && (current.url !== nextUrl || current.anonKey !== config.anonKey)) {
+    Store.clearSupabaseSession();
+    Store.setCurrentUser('');
+  }
+  Store.setSupabaseConfig(config);
 }
 
 function createOverlay() {
   const overlay = document.createElement('div');
   Object.assign(overlay.style, {
-    position:       'fixed',
-    inset:          '0',
-    zIndex:         '10000',
-    background:     'rgba(0,0,0,0.7)',
-    display:        'flex',
-    alignItems:     'center',
+    position: 'fixed',
+    inset: '0',
+    zIndex: '10000',
+    background: 'rgba(0,0,0,0.7)',
+    display: 'flex',
+    alignItems: 'center',
     justifyContent: 'center',
-    padding:        '16px',
+    padding: '16px',
   });
   return overlay;
 }
@@ -59,233 +51,230 @@ function createOverlay() {
 function createCard() {
   const card = document.createElement('div');
   Object.assign(card.style, {
-    background:   'var(--bg-card, #1e1e2e)',
-    color:        'var(--text-primary, #cdd6f4)',
-    border:       '1px solid var(--border, #313244)',
+    background: 'var(--bg-card, #1e1e2e)',
+    color: 'var(--text-primary, #cdd6f4)',
+    border: '1px solid var(--border, #313244)',
     borderRadius: '16px',
-    padding:      '28px 24px',
-    minWidth:     '280px',
-    maxWidth:     '380px',
-    width:        '100%',
-    boxShadow:    '0 8px 40px rgba(0,0,0,0.4)',
+    padding: '28px 24px',
+    minWidth: '280px',
+    maxWidth: '380px',
+    width: '100%',
+    boxShadow: '0 8px 40px rgba(0,0,0,0.4)',
   });
   return card;
 }
 
-function stepDots(current, total) {
-  const wrap = document.createElement('div');
-  Object.assign(wrap.style, {
-    display:        'flex',
-    gap:            '6px',
-    justifyContent: 'center',
-    marginBottom:   '20px',
+function addHeading(card, titleText, description) {
+  const title = document.createElement('h2');
+  title.textContent = titleText;
+  Object.assign(title.style, { margin: '0 0 6px', fontSize: '20px', fontWeight: '700' });
+  const text = document.createElement('p');
+  text.textContent = description;
+  Object.assign(text.style, {
+    margin: '0 0 20px',
+    fontSize: '14px',
+    color: 'var(--text-secondary, #a6adc8)',
+    lineHeight: '1.5',
   });
-  for (let i = 1; i <= total; i++) {
-    const dot = document.createElement('span');
-    Object.assign(dot.style, {
-      width:        '8px',
-      height:       '8px',
-      borderRadius: '50%',
-      background:   i === current
-        ? 'var(--color-primary, #3b82f6)'
-        : 'var(--border, #313244)',
-      display:      'inline-block',
-      transition:   'background 0.2s',
-    });
-    wrap.appendChild(dot);
-  }
-  return wrap;
+  card.append(title, text);
 }
 
-/** Step 1: PAT entry. Resolves with the validated PAT string. */
-function renderStep1(card, totalSteps) {
+function errorElement() {
+  const error = document.createElement('div');
+  Object.assign(error.style, {
+    color: 'var(--color-danger, #f38ba8)',
+    fontSize: '13px',
+    marginBottom: '10px',
+    minHeight: '18px',
+    display: 'none',
+  });
+  return error;
+}
+
+function showError(element, error) {
+  element.textContent = error.message || String(error);
+  element.style.display = 'block';
+}
+
+function renderAccessStep(card, initialError = null) {
   return new Promise((resolve) => {
     card.innerHTML = '';
-    card.appendChild(stepDots(1, totalSteps));
+    addHeading(card, '🔐 Sign in to Mexicano', 'Use an approved email or the shared access code.');
 
-    const title = document.createElement('h2');
-    Object.assign(title.style, { margin: '0 0 6px', fontSize: '20px', fontWeight: '700' });
-    title.textContent = '🔑 Connect GitHub';
+    const email = document.createElement('input');
+    email.type = 'email';
+    email.placeholder = 'Email address';
+    email.autocomplete = 'email';
+    email.className = 'form-input';
+    Object.assign(email.style, { width: '100%', boxSizing: 'border-box', marginBottom: '10px' });
 
-    const sub = document.createElement('p');
-    Object.assign(sub.style, { margin: '0 0 20px', fontSize: '14px', color: 'var(--text-secondary, #a6adc8)', lineHeight: '1.5' });
-    sub.textContent = 'Enter your Personal Access Token with repo scope to connect the data backend.';
+    const magicButton = document.createElement('button');
+    magicButton.textContent = 'Send magic link';
+    magicButton.className = 'btn btn-secondary btn-block';
+    magicButton.style.marginTop = '8px';
 
-    const input = document.createElement('input');
-    input.type          = 'password';
-    input.placeholder   = 'ghp_…';
-    input.autocomplete  = 'off';
-    input.maxLength     = 255;
-    Object.assign(input.style, { width: '100%', boxSizing: 'border-box', marginBottom: '10px' });
-    input.className = 'form-input';
-
-    const errorEl = document.createElement('div');
-    Object.assign(errorEl.style, {
-      color:        'var(--color-danger, #f38ba8)',
-      fontSize:     '13px',
-      marginBottom: '10px',
-      minHeight:    '18px',
-      display:      'none',
+    const divider = document.createElement('div');
+    divider.textContent = 'Use shared access code';
+    Object.assign(divider.style, {
+      margin: '20px 0 10px',
+      textAlign: 'center',
+      color: 'var(--text-secondary, #a6adc8)',
+      fontSize: '13px',
     });
 
-    const btn = document.createElement('button');
-    btn.textContent = 'Connect';
-    btn.className   = 'btn btn-primary btn-block';
+    const codeInput = document.createElement('input');
+    codeInput.type = 'password';
+    codeInput.placeholder = 'Access code';
+    codeInput.autocomplete = 'off';
+    codeInput.maxLength = 255;
+    codeInput.className = 'form-input';
+    Object.assign(codeInput.style, { width: '100%', boxSizing: 'border-box', marginBottom: '10px' });
 
-    async function attempt() {
-      const pat = input.value.trim();
-      if (!pat) { errorEl.textContent = 'PAT is required.'; errorEl.style.display = 'block'; return; }
+    const error = errorElement();
+    const status = document.createElement('div');
+    Object.assign(status.style, {
+      color: 'var(--color-success, #a6e3a1)',
+      fontSize: '13px',
+      marginBottom: '10px',
+      display: 'none',
+    });
+    if (initialError) showError(error, initialError);
 
-      btn.disabled     = true;
-      btn.textContent  = 'Connecting…';
-      errorEl.style.display = 'none';
+    const codeButton = document.createElement('button');
+    codeButton.textContent = 'Connect with access code';
+    codeButton.className = 'btn btn-secondary btn-block';
 
-      Store.setGitHubConfig({ ...FIXED_CONFIG, pat });
-      const result = await testConnection();
-
-      if (result.ok) {
-        btn.textContent = '✓ Connected';
-        setTimeout(() => resolve(pat), 400);
-      } else {
-        Store.clearGitHubConfig();
-        errorEl.textContent   = result.message;
-        errorEl.style.display = 'block';
-        btn.disabled          = false;
-        btn.textContent       = 'Connect';
+    const attemptCode = async () => {
+      const code = codeInput.value.trim();
+      if (!code) {
+        showError(error, new Error('Access code is required.'));
+        return;
       }
-    }
+      error.style.display = 'none';
+      codeButton.disabled = true;
+      codeButton.textContent = 'Connecting…';
+      try {
+        await claimAccess(code);
+        codeInput.value = '';
+        resolve();
+      } catch (claimError) {
+        showError(error, claimError);
+        codeButton.disabled = false;
+        codeButton.textContent = 'Connect with access code';
+      }
+    };
 
-    btn.addEventListener('click', attempt);
-    input.addEventListener('keydown', (e) => { if (e.key === 'Enter') attempt(); });
+    const requestMagicLink = async () => {
+      error.style.display = 'none';
+      status.style.display = 'none';
+      magicButton.disabled = true;
+      magicButton.textContent = 'Sending…';
+      try {
+        const redirectTo = window.location.href.split('#')[0];
+        await sendMagicLink(email.value, redirectTo);
+        status.textContent = 'Check your email for the Mexicano sign-in link.';
+        status.style.display = 'block';
+      } catch (magicError) {
+        showError(error, magicError);
+      } finally {
+        magicButton.disabled = false;
+        magicButton.textContent = 'Send magic link';
+      }
+    };
 
-    card.appendChild(title);
-    card.appendChild(sub);
-    card.appendChild(input);
-    card.appendChild(errorEl);
-    card.appendChild(btn);
-
-    input.focus();
+    magicButton.addEventListener('click', requestMagicLink);
+    codeButton.addEventListener('click', attemptCode);
+    codeInput.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') attemptCode();
+    });
+    card.append(
+      email,
+      magicButton,
+      divider,
+      codeInput,
+      error,
+      status,
+      codeButton,
+    );
+    email.focus();
   });
 }
 
-/** Step 2: Player selection. Resolves when user picks a name. */
-function renderStep2(card, totalSteps, pat) {
-  return new Promise(async (resolve) => {
-    card.innerHTML = '';
-    card.appendChild(stepDots(2, totalSteps));
+async function renderPlayerStep(card) {
+  card.innerHTML = '';
+  addHeading(card, '👤 Who are you?', 'Select your player profile.');
+  const loading = document.createElement('div');
+  loading.textContent = 'Loading players…';
+  Object.assign(loading.style, {
+    textAlign: 'center',
+    padding: '12px 0',
+    color: 'var(--text-secondary, #a6adc8)',
+  });
+  card.appendChild(loading);
 
-    const title = document.createElement('h2');
-    Object.assign(title.style, { margin: '0 0 6px', fontSize: '20px', fontWeight: '700' });
-    title.textContent = '👤 Who are you?';
+  const players = await listPlayers();
+  loading.remove();
+  if (!players.length) throw new Error('No active players are available');
 
-    const sub = document.createElement('p');
-    Object.assign(sub.style, { margin: '0 0 16px', fontSize: '14px', color: 'var(--text-secondary, #a6adc8)' });
-    sub.textContent = 'Select your player profile.';
+  return new Promise((resolve) => {
+    const error = errorElement();
+    const list = document.createElement('div');
+    Object.assign(list.style, {
+      display: 'flex',
+      flexDirection: 'column',
+      gap: '8px',
+      maxHeight: '300px',
+      overflowY: 'auto',
+    });
 
-    const loadingEl = document.createElement('div');
-    Object.assign(loadingEl.style, { textAlign: 'center', padding: '12px 0', fontSize: '14px', color: 'var(--text-secondary, #a6adc8)' });
-    loadingEl.textContent = 'Loading players…';
-
-    card.appendChild(title);
-    card.appendChild(sub);
-    card.appendChild(loadingEl);
-
-    const members = await fetchMembers(pat);
-    loadingEl.remove();
-
-    function pickName(name) {
-      Store.setCurrentUser(name);
-      resolve();
+    for (const player of players) {
+      const button = document.createElement('button');
+      button.textContent = player.name;
+      button.className = 'btn btn-secondary btn-block';
+      Object.assign(button.style, { justifyContent: 'flex-start', fontWeight: '500' });
+      button.addEventListener('click', async () => {
+        error.style.display = 'none';
+        button.disabled = true;
+        try {
+          await bindCurrentPlayer(player.id, player.name);
+          resolve();
+        } catch (bindError) {
+          showError(error, bindError);
+          button.disabled = false;
+        }
+      });
+      list.appendChild(button);
     }
-
-    if (members.length > 0) {
-      const list = document.createElement('div');
-      Object.assign(list.style, {
-        display:       'flex',
-        flexDirection: 'column',
-        gap:           '8px',
-        maxHeight:     '260px',
-        overflowY:     'auto',
-        marginBottom:  '0',
-      });
-
-      members.forEach(name => {
-        const btn = document.createElement('button');
-        btn.textContent = name;
-        btn.className   = 'btn btn-secondary btn-block';
-        Object.assign(btn.style, { justifyContent: 'flex-start', fontWeight: '500' });
-        btn.addEventListener('click', () => pickName(name));
-        list.appendChild(btn);
-      });
-
-      card.appendChild(list);
-    } else {
-      // Fallback: text input
-      sub.textContent = 'Could not load player list. Enter your name manually.';
-
-      const input = document.createElement('input');
-      input.type        = 'text';
-      input.placeholder = 'Your name';
-      input.maxLength   = 50;
-      Object.assign(input.style, { width: '100%', boxSizing: 'border-box', marginBottom: '10px' });
-      input.className = 'form-input';
-
-      const errorEl = document.createElement('div');
-      Object.assign(errorEl.style, {
-        color:        'var(--color-danger, #f38ba8)',
-        fontSize:     '13px',
-        marginBottom: '10px',
-        minHeight:    '18px',
-        display:      'none',
-      });
-
-      const btn = document.createElement('button');
-      btn.textContent = 'Continue';
-      btn.className   = 'btn btn-primary btn-block';
-      btn.addEventListener('click', () => {
-        const name = input.value.trim();
-        if (!name) { errorEl.textContent = 'Name required.'; errorEl.style.display = 'block'; return; }
-        pickName(name);
-      });
-      input.addEventListener('keydown', (e) => { if (e.key === 'Enter') btn.click(); });
-
-      card.appendChild(input);
-      card.appendChild(errorEl);
-      card.appendChild(btn);
-      input.focus();
-    }
+    card.append(error, list);
   });
 }
 
-/**
- * Show the onboarding dialog if PAT or current_user is missing.
- * Resolves when onboarding is complete (or skipped entirely).
- */
 export async function showOnboardingDialog() {
-  const hasPat  = !!Store.getGitHubConfig()?.pat;
-  const hasUser = !!Store.getCurrentUser();
-
-  if (hasPat && hasUser) return;
-
-  // Full onboarding (no PAT) always includes player selection,
-  // even if seed-data.js already wrote a default current_user.
-  const needsUser = !hasUser || !hasPat;
-  const totalSteps = (!hasPat && needsUser) ? 2 : 1;
+  await ensurePublicConfig();
+  const callbackCaptured = captureAuthSessionFromUrl();
+  let authenticationError = null;
+  if ((callbackCaptured || Store.getSupabaseSession()?.access_token) && !Store.getAccessRole()) {
+    try {
+      await syncAccessGrant();
+    } catch (error) {
+      authenticationError = error;
+    }
+  }
+  if (!getOnboardingStep()) return;
 
   const overlay = createOverlay();
-  const card    = createCard();
+  const card = createCard();
   overlay.appendChild(card);
   document.body.appendChild(overlay);
 
-  let pat = Store.getGitHubConfig()?.pat;
-
-  if (!hasPat) {
-    pat = await renderStep1(card, totalSteps);
+  try {
+    if (getOnboardingStep() === 'access') await renderAccessStep(card, authenticationError);
+    if (getOnboardingStep() === 'player') await renderPlayerStep(card);
+  } catch (error) {
+    card.innerHTML = '';
+    addHeading(card, 'Connection unavailable', error.message || 'Supabase onboarding failed');
+    throw error;
+  } finally {
+    if (!getOnboardingStep()) overlay.remove();
   }
-
-  if (needsUser) {
-    await renderStep2(card, totalSteps, pat);
-  }
-
-  overlay.remove();
 }

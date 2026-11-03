@@ -1,18 +1,51 @@
 /**
- * localStorage wrapper for persistent data.
- * All data keyed with 'mexicano_' prefix.
+ * Application state store.
  *
- * Read-only GitHub data (players_summary, tournament_dates, monthly_*,
- * elo_history, tournaments_index) is stored in the ephemeral in-memory Cache
- * instead of localStorage so it is always pulled fresh on every page refresh.
+ * Storage policy (deliberate — do not widen without a good reason):
  *
- * When a GitHub config is present, every set() call schedules a debounced
- * push via the GitHub service (imported lazily to avoid circular deps).
+ *  - localStorage holds ONLY three categories of state, all of which are owned
+ *    by this device and have no representation in Supabase:
+ *      1. backend configuration and authentication state
+ *      2. user and device preferences
+ *      3. page-specific preferences (owned by the individual page modules)
+ *
+ *  - Everything that lives in Supabase (matches, members, tournaments, doodle
+ *    availability and its changelog, manual attendance, player summaries, ELO
+ *    history, monthly projections) is held in the ephemeral in-memory `Cache`.
+ *    It is therefore re-pulled on every page load and can never drift out of
+ *    sync with the backend.
+ *
+ * Network persistence stays explicit through the backend service: writing here
+ * only updates local state, it never starts an implicit remote write.
  */
 
 import { Cache } from './cache.js';
 
 const PREFIX = 'mexicano_';
+
+/**
+ * The complete set of keys this module is allowed to persist. Anything not
+ * listed here is Supabase-owned and belongs in `Cache`.
+ *
+ * Page-specific preferences (`stats_*`, `elo-charts-prefs`, …) are written
+ * directly by their page modules and are intentionally unprefixed, so they are
+ * not listed and not touched here.
+ */
+const PERSISTED_KEYS = new Set([
+  // 1. Backend configuration + authentication state
+  'github_config',
+  'supabase_config',
+  'supabase_session',
+  'access_role',
+  'access_expires_at',
+  'current_player_id',
+  // 2. User + device preferences
+  'current_user',
+  'device_type',
+  'logs_enabled',
+  'theme',
+  'round_log',
+]);
 
 // Administrator names, loaded from data/administrators.json at app init.
 let administrators = [];
@@ -25,7 +58,14 @@ function notifyUserChanged() {
   } catch { /* no window (SSR/test) */ }
 }
 
+function assertPersistable(key) {
+  if (PERSISTED_KEYS.has(key)) return true;
+  console.warn(`[store] refusing to persist "${key}" — Supabase-owned state belongs in Cache`);
+  return false;
+}
+
 export const Store = {
+  /** Read a persisted preference / backend setting. */
   get(key) {
     try {
       const raw = localStorage.getItem(PREFIX + key);
@@ -35,11 +75,11 @@ export const Store = {
     }
   },
 
+  /** Write a persisted preference / backend setting. */
   set(key, value) {
+    if (!assertPersistable(key)) return;
     try {
       localStorage.setItem(PREFIX + key, JSON.stringify(value));
-      // Trigger debounced auto-push (lazy import to avoid circular deps)
-      import('./services/github.js').then(({ schedulePush }) => schedulePush(key)).catch(() => {});
     } catch (e) {
       console.error('Store.set error:', e);
     }
@@ -49,7 +89,7 @@ export const Store = {
     localStorage.removeItem(PREFIX + key);
   },
 
-  /** Get all keys that match a pattern (without prefix) */
+  /** Get all persisted keys that match a pattern (without prefix) */
   keys(pattern) {
     const results = [];
     for (let i = 0; i < localStorage.length; i++) {
@@ -64,72 +104,75 @@ export const Store = {
     return results;
   },
 
-  // ─── Domain-specific helpers ───
+  /**
+   * One-time cleanup for devices upgrading from the build that persisted
+   * Supabase-owned data. Drops every `mexicano_` key outside the allowlist so
+   * stale tournaments, matches and doodles can no longer shadow live data.
+   */
+  purgeNonPersistedKeys() {
+    const stale = this.keys().filter(key => !PERSISTED_KEYS.has(key));
+    stale.forEach(key => this.remove(key));
+    return stale;
+  },
+
+  // ─── Supabase-owned domain data (in-memory only) ───
 
   getMatches() {
-    return this.get('matches') || [];
+    return Cache.get('matches') || [];
   },
 
   setMatches(matches) {
-    this.set('matches', matches);
+    Cache.set('matches', matches);
   },
 
   getMembers() {
-    return Cache.get('members') || this.get('members') || [];
+    return Cache.get('members') || [];
   },
 
   setMembers(members) {
-    this.set('members', members);
     Cache.set('members', members);
   },
 
   getActiveTournament() {
-    return this.get('active_tournament');
+    return Cache.get('active_tournament') || null;
   },
 
   setActiveTournament(tournament) {
-    this.set('active_tournament', tournament);
+    Cache.set('active_tournament', tournament);
   },
 
   clearActiveTournament() {
-    this.remove('active_tournament');
+    Cache.del('active_tournament');
   },
 
   getDoodle(yearMonth) {
-    return this.get(`doodle_${yearMonth}`) || [];
+    return Cache.get(`doodle_${yearMonth}`) || [];
   },
 
   setDoodle(yearMonth, entries) {
-    this.set(`doodle_${yearMonth}`, entries);
-  },
-
-  // ─── Manual (no-tournament) attendance entries ───
-  // Single global synced file: data/attendance_manual.json
-  // Shape: [{ date: 'YYYY-MM-DD', players: ['Name', ...], note: '' }]
-
-  getManualAttendance() {
-    return this.get('attendance_manual') || [];
-  },
-
-  setManualAttendance(entries) {
-    this.set('attendance_manual', entries);
+    Cache.set(`doodle_${yearMonth}`, entries);
   },
 
   getDoodleChangelog(yearMonth) {
-    return this.get(`doodle_changelog_${yearMonth}`) || [];
+    return Cache.get(`doodle_changelog_${yearMonth}`) || [];
   },
 
   setDoodleChangelog(yearMonth, entries) {
-    this.set(`doodle_changelog_${yearMonth}`, entries);
+    Cache.set(`doodle_changelog_${yearMonth}`, entries);
   },
 
-  getChangelog() {
-    return this.get('changelog') || [];
+  // Manual (no-tournament) attendance entries.
+  // Shape: [{ date: 'YYYY-MM-DD', players: ['Name', ...], note: '' }]
+
+  getManualAttendance() {
+    return Cache.get('attendance_manual') || [];
   },
 
-  setChangelog(entries) {
-    this.set('changelog', entries.slice(0, 20));
+  setManualAttendance(entries) {
+    Cache.set('attendance_manual', entries);
   },
+
+  // ─── User identity ───
 
   getCurrentUser() {
     return this.get('current_user') || '';
@@ -150,6 +193,9 @@ export const Store = {
   },
 
   isAdministrator() {
+    if (this.getSupabaseConfig()) {
+      return this.getAccessRole() === 'admin';
+    }
     const user = this.getCurrentUser().toLowerCase();
     return administrators.includes(user);
   },
@@ -202,24 +248,95 @@ export const Store = {
     this.remove('github_config');
   },
 
-  // ─── Summary data (pre-computed from Python scripts, read-only) ───
+  // ─── Supabase Backend config/session ───
 
-  getPlayersSummary() {
-    return Cache.get('players_summary') || this.get('players_summary_cache') || [];
+  getSupabaseConfig() {
+    return this.get('supabase_config') || null;
   },
 
-  /** Persist players_summary to both in-memory Cache and localStorage warm-start cache. */
+  setSupabaseConfig(cfg) {
+    const url = String(cfg?.url || '').replace(/\/$/, '');
+    const anonKey = String(cfg?.anonKey || '');
+    if (!url || !anonKey) throw new Error('Supabase URL and public anon key are required');
+    this.set('supabase_config', { url, anonKey });
+  },
+
+  clearSupabaseConfig() {
+    this.remove('supabase_config');
+  },
+
+  getSupabaseSession() {
+    return this.get('supabase_session');
+  },
+
+  setSupabaseSession(session) {
+    this.set('supabase_session', session);
+  },
+
+  clearSupabaseSession() {
+    this.remove('supabase_session');
+    this.remove('access_role');
+    this.remove('access_expires_at');
+    this.remove('current_player_id');
+    Cache.clearSnapshot();
+  },
+
+  getCurrentPlayerId() {
+    return this.get('current_player_id');
+  },
+
+  setCurrentPlayerId(playerId) {
+    this.set('current_player_id', playerId);
+  },
+
+  setAccessGrant({ role = 'member', expires_at: expiresAt = null } = {}) {
+    this.set('access_role', role);
+    this.set('access_expires_at', expiresAt);
+    notifyUserChanged();
+  },
+
+  getAccessRole() {
+    return this.get('access_role') || '';
+  },
+
+  getAccessExpiry() {
+    return this.get('access_expires_at');
+  },
+
+  // ─── Derived / pre-computed Supabase data (in-memory only) ───
+
+  getPlayersSummary() {
+    return Cache.get('players_summary') || [];
+  },
+
   setPlayersSummaryCache(data) {
     Cache.set('players_summary', data);
-    try { localStorage.setItem(PREFIX + 'players_summary_cache', JSON.stringify(data)); } catch { /* storage full */ }
   },
 
   getTournamentDates() {
-    return Cache.get('tournament_dates') || [];
+    const cached = Cache.get('tournament_dates');
+    if (Array.isArray(cached) && cached.length) return cached;
+    return this.getTournamentsIndex()
+      .map(entry => entry.date || entry.tournament_date)
+      .filter(Boolean)
+      .sort();
   },
 
   getMonthlyOverview(yearMonth) {
     return Cache.get(`monthly_${yearMonth}`) || [];
+  },
+
+  /** Loaded tournament participation: [{ date, players: [names] }], by date. */
+  getParticipation() {
+    return Cache.keys('participation_')
+      .filter(k => /^participation_\d{4}-\d{2}$/.test(k))
+      .sort()
+      .flatMap(k => Cache.get(k) || []);
+  },
+
+  /** True once participation for all history is loaded (not just some months). */
+  isParticipationComplete() {
+    return Cache.has('supabase_res_participation_all') || Cache.has('supabase_snapshot_loaded');
   },
 
   getMonthlyOverviewMonths() {
@@ -230,21 +347,24 @@ export const Store = {
   },
 
   isMatchesFullyLoaded() {
-    return this.get('matches_fully_loaded') === true;
+    return Cache.get('matches_fully_loaded') === true;
+  },
+
+  setMatchesFullyLoaded(loaded) {
+    Cache.set('matches_fully_loaded', !!loaded);
   },
 
   getTournamentsIndex() {
     return Cache.get('tournaments_index') || [];
   },
 
-  /** Write tournaments index to in-memory cache only (managed explicitly via
-   *  updateTournamentIndexEntry in github.js). */
   setTournamentsIndex(entries) {
     Cache.set('tournaments_index', entries);
   },
 
-  // ─── Import / Export ───
+  // ─── Export ───
 
+  /** Snapshot of everything this device persists — diagnostics only. */
   exportAll() {
     const data = {};
     for (let i = 0; i < localStorage.length; i++) {
@@ -259,21 +379,4 @@ export const Store = {
     }
     return data;
   },
-
-  importAll(data) {
-    // Clear existing mexicano data
-    const keysToRemove = [];
-    for (let i = 0; i < localStorage.length; i++) {
-      const k = localStorage.key(i);
-      if (k && k.startsWith(PREFIX)) {
-        keysToRemove.push(k);
-      }
-    }
-    keysToRemove.forEach(k => localStorage.removeItem(k));
-
-    // Import new data
-    for (const [key, value] of Object.entries(data)) {
-      localStorage.setItem(PREFIX + key, JSON.stringify(value));
-    }
-  }
 };

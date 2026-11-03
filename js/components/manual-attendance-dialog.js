@@ -1,16 +1,16 @@
 /**
  * Popup dialog to record manual (no-tournament) attendance for a single date.
- * Invoked from Settings → Add Attendance. Writes data/attendance_manual.json
- * via Store.setManualAttendance (which schedules a GitHub push).
+ * Invoked from Settings → Add Attendance. Persists through the backend service.
  */
 import { Store } from '../store.js';
 import { getMembers } from '../services/members.js';
 import { upsertManualEntry } from '../services/attendance.js';
+import { saveManualAttendance, ensureAttendanceEditData } from '../services/backend.js';
 import { showToast } from './toast.js';
 
-/** All dates in the store that already have a tournament (matches). */
+/** All dates that already have a tournament (index + any loaded matches). */
 function tournamentDates() {
-  const set = new Set();
+  const set = new Set(Store.getTournamentDates());
   for (const m of Store.getMatches()) {
     if (m.date) set.add(m.date);
   }
@@ -22,7 +22,13 @@ function todayISO() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
-export function showManualAttendanceDialog() {
+export async function showManualAttendanceDialog() {
+  try {
+    await ensureAttendanceEditData();
+  } catch (e) {
+    showToast(`Could not load attendance: ${e.message || e}`);
+    return;
+  }
   const overlay = document.createElement('div');
   Object.assign(overlay.style, {
     position: 'fixed', inset: '0', zIndex: '9999',
@@ -196,7 +202,8 @@ export function showManualAttendanceDialog() {
   window.addEventListener('hashchange', close, { once: true });
   card.querySelector('#mad-cancel').addEventListener('click', close);
 
-  card.querySelector('#mad-save').addEventListener('click', () => {
+  card.querySelector('#mad-save').addEventListener('click', async () => {
+    const saveButton = card.querySelector('#mad-save');
     const date = card.querySelector('#mad-date').value;
     const seen = new Set();
     const players = [...card.querySelectorAll('.mad-player-input')]
@@ -205,11 +212,15 @@ export function showManualAttendanceDialog() {
       .filter(n => { const k = n.toLowerCase(); if (seen.has(k)) return false; seen.add(k); return true; });
     try {
       const next = upsertManualEntry(Store.getManualAttendance(), { date, players }, tournamentDates());
-      Store.setManualAttendance(next);
+      saveButton.disabled = true;
+      saveButton.textContent = 'Saving...';
+      await saveManualAttendance(next);
       showToast('Attendance saved');
       close();
     } catch (e) {
       showToast(e.message || 'Could not save');
+      saveButton.disabled = false;
+      saveButton.textContent = 'Save';
     }
   });
 

@@ -23,7 +23,7 @@ const githubMock = vi.hoisted(() => ({
   ensureAllMatchesLoaded: vi.fn().mockResolvedValue([]),
 }));
 
-vi.mock('../../js/services/github.js', () => githubMock);
+vi.mock('../../js/services/backend.js', async (importOriginal) => ({ ...await importOriginal(), ...githubMock }));
 
 vi.mock('../../js/services/local.js', () => ({
   writeTournamentDay: vi.fn().mockResolvedValue(undefined),

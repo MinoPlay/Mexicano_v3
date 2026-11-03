@@ -4,7 +4,7 @@ import { networkFirst, shouldHandleRequest } from './js/sw-fetch.js';
 import { addNotification } from './js/services/notification-store.js';
 import { currentDeployId, getCacheName, isOwnCache } from './js/deploy-env.js';
 
-export const APP_VERSION = 98;
+export const APP_VERSION = 121;
 
 // Main: mexicano-v<N>; preview: mexicano-<slug>-v<N> (see js/deploy-env.js).
 const DEPLOY_ID = currentDeployId();
@@ -82,7 +82,6 @@ if (isServiceWorker) {
     // (GitHub API, Telegram, push) bypass the SW so their AbortController
     // timeouts work and auth'd responses are never cached — otherwise an
     // installed mobile PWA hangs on completion (End Tournament → finalize).
-    // Main SW scope also covers /preview/* — leave those to the preview's own SW.
     if (!shouldHandleRequest(req, self.location.origin, self.location.pathname)) return;
     // Network-first with HTTP-cache bypass (see js/sw-fetch.js): always pull the
     // latest files so updates reach every device; cache is offline fallback only.

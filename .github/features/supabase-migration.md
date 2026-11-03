@@ -1,0 +1,221 @@
+# Supabase Migration
+
+## Goal
+
+Supabase is the canonical writable data source. `DataHub_Mexicano` becomes a generated backup and compatibility export, never a second writable source.
+
+## Confirmed architecture
+
+- Backfill DataHub, run shadow/parity reads, then perform an atomic cutover.
+- Keep onboarding shape: shared app access code, then player selection.
+- Player selection attributes actions but does not grant authorization.
+- Admin actions require a separate, expiring admin elevation.
+- Supabase Auth supports transitional anonymous sessions plus named, pre-approved email users.
+- Approved email users authenticate with a magic link against one Auth identity.
+- Server-side access grants and RLS authorize reads/writes.
+- Cached data may render offline; domain writes are blocked while offline. The last successfully
+  loaded `Cache` is snapshotted to `localStorage` and hydrated only on an offline start
+  (`Cache.persistSnapshot()` / `Cache.hydrateSnapshot()`); it is cleared with the session.
+- Browser never receives Supabase service-role, GitHub relay, Telegram, VAPID private, access-code hash, or admin-code hash secrets.
+
+## Source-of-truth policy
+
+### Canonical
+
+- Player identities and roles.
+- Tournament lifecycle, roster, rounds, match participants, and scores.
+- Doodle availability and manual/tournament attendance.
+- Shared app settings.
+- Push subscriptions.
+- Append-only audit events.
+- Notification outbox records.
+
+### Derived, versioned projections
+
+- Current ELO and tournament ELO changes.
+- ELO history and chart snapshots.
+- Player rankings and statistics.
+- Monthly/player summaries.
+
+Raw matches remain canonical. Derived records carry an ELO calculation version and can be rebuilt deterministically.
+
+### Local-only
+
+- Device UI preferences.
+- Cached route data.
+- Supabase refresh/session state managed by the auth client.
+- Current selected player cache, backed by the server-side access grant.
+- Notification history stored in IndexedDB.
+
+## Canonical model
+
+- `players`, `player_roles`
+- `app_access_grants`
+- `tournaments`, `tournament_players`
+- `matches`, `match_players`
+- `doodle_periods`, `doodle_availability`
+- `attendance_records`, `attendance_players` (manual only, one record per date)
+- `push_subscriptions`
+- `audit_events`
+- `notification_outbox`
+- No stored ELO: ELO and ELO change are calculated at runtime from matches (`js/services/elo.js`).
+
+Removed in `20260930100000_schema_cleanup`: `player_aliases`, `app_settings`,
+`elo_calculation_versions`, `projection_runs`, `backup_runs`, all `source_path`, `legacy_id`,
+`legacy_key`, `version` columns, `tournaments.is_complete` (use `status`), `matches.completed_at`,
+attendance `kind`/`tournament_id`, `attendance_players.confirmed`. Rows are matched by natural
+keys (tournament date, round, match order).
+Matches reference stable player UUIDs. Legacy player names are resolved by exact name; ambiguous identities fail import.
+
+## Access flow
+
+During migration, two identity entry paths share the same authorization layer:
+
+1. Legacy: create/restore an anonymous session, submit the shared code, and receive an expiring
+   `app_access_grants` row.
+2. Named: an administrator pre-provisions an approved email Auth user and its
+   `app_access_grants` row. The user signs in with a magic link.
+3. Fetch active players and bind the chosen `player_id`.
+4. Admin code calls `elevate-admin`; server records a short-lived admin grant.
+5. RLS checks active grants. Selecting an administrator name alone grants nothing.
+
+Shared/admin codes are rate-limited, rotatable, revocable, hashed server-side, and never retained by the app after successful exchange.
+Public email signup is disabled; the service-role provisioning script is the only account creation
+path. See `email-authentication.md`.
+
+## App data boundary
+
+Pages use a domain backend facade, not GitHub or Supabase directly. During migration:
+
+- Supabase adapter is primary when configured.
+- Concurrent consumers share one in-flight canonical hydration; route rendering must not start
+  duplicate full-dataset reads.
+- Parent rows fetch bounded child relations through PostgREST embeds so tournament players,
+  match players, and attendance players do not require separate paginated table scans.
+- Every paginated PostgREST resource uses a deterministic total order ending in a unique key.
+  Shared round/order values must never define match page boundaries by themselves because that
+  can skip or duplicate rows between pages.
+- Routes load only their own resources (see `route-data-loading.md`); the full snapshot is an
+  explicit fallback (`#/__full__`, or when the read RPCs/views are missing). ELO comes from the
+  `get_player_elo` / `get_current_elo` RPCs, not a client-side replay of all matches.
+- Legacy GitHub adapter is read-only and may be used for shadow comparison.
+- localStorage/IndexedDB are caches, not canonical domain storage.
+- Mutations use explicit backend methods and optimistic version checks.
+- `Store.set()` must not trigger implicit network writes.
+
+### Hydration acceptance
+
+- Three concurrent first-load calls => one shared hydration request batch.
+- One hydration batch => six logical PostgREST resources; nested tournament/match/attendance
+  children are returned with their parent rows.
+- Tournament route `#/tournament/2026-09-24` => load active players, tournament metadata, and
+  only matches belonging to `2026-09-24`; do not load doodle availability or attendance records.
+- Home route on `2026-09-25` => load players, `tournament_index`, the active tournament, only the
+  matches of August 2026, September 2026 and the latest completed tournament, and
+  `get_player_elo` for those dates; never the full match history, doodle availability or
+  attendance records.
+- Home startup monthly consumers => reuse the cached month resources (no extra requests).
+- Home tournament metadata => `tournament_index` view, no embedded historical match rows.
+- Partial Home hydration => merge the loaded days into the Store match cache without dropping
+  already loaded days.
+- Re-rendering the same tournament route after its route hydration completes => no second
+  PostgREST batch unless an explicit mutation refresh invalidates it.
+- Routes whose pages own their data request (`#/logs`, `#/settings`) => no canonical snapshot
+  hydration during app startup.
+- More than 1,000 matches with repeated round/order values => pagination orders by tournament,
+  round, match order, then match ID, so every canonical match is hydrated exactly once.
+- Hydrated January matches (ELO calculated at runtime) => `monthly_2026-01` is ready before
+  a month is selected.
+- Hydrated match participation => raw attendance dates are ready without reading legacy
+  `players_overview.json`.
+
+### Legacy tournament import
+
+- `backup-data/tournaments.json` is authoritative for historical tournament membership and
+  completion state.
+- A dated file absent from `tournaments.json` is not imported as historical data merely because
+  it contains a stale `{ tournament: ... }` snapshot.
+- At most one unfinished tournament snapshot may be imported as active: the newest unfinished
+  dated file whose date is later than the latest indexed completed tournament.
+- Active snapshot rounds are normalized into canonical matches and match-player rows; opening an
+  imported active tournament must not produce “No tournament found”.
+- A successful DataHub-to-Supabase sync refreshes the `mexicano-v1` ELO projection after the
+  canonical import, so the newest tournament is immediately available to Home, Statistics, and
+  ELO consumers without a separate projection job.
+
+## Notifications
+
+Database mutation and `notification_outbox` insertion occur in one transaction. A server-side dispatcher triggers retained DataHub GitHub Actions relays using a server-held GitHub token.
+
+Rules:
+
+- Persist first, notify second.
+- Every logical notification has an idempotency key.
+- Retry state and permanent failures are visible in audit/admin logs.
+- Push subscriptions live in Supabase and are excluded from GitHub backups.
+- Browser no longer dispatches GitHub events with a PAT.
+
+## ELO
+
+- Initial ELO: 1000.
+- K-factor: 32.
+- Combined opponent strength: RMS.
+- Preserve current sequential player update order and two-decimal rounding.
+- Incomplete `0-0` matches do not affect ELO.
+- Calculation rules have an immutable version identifier.
+- Normal UI reads use the server-side replay RPCs (`get_player_elo`, `get_current_elo`) that
+  return only the requested rows; nothing is persisted, so there is no staleness.
+- The SQL replay must match `js/services/elo.js` (PGlite parity test over full history).
+- Embedded legacy match ELO is export compatibility data, not canonical match data.
+
+## DataHub backup
+
+Workflow lives in `DataHub_Mexicano`.
+
+- Scheduled Tuesday/Thursday at 08:15 `Europe/Copenhagen`.
+- Two UTC cron triggers (`06:15`, `07:15`) plus Copenhagen local-time guard.
+- Manual dispatch supported.
+- Writes legacy-compatible JSON and sanitized canonical snapshots.
+- Manifest includes schema version, source watermark, row counts, and file hashes.
+- Excludes auth/access secrets, sessions, service credentials, and Web Push endpoint/key material.
+- Validates completeness before commit; run result is logged (manifest SHA-256), not stored in the DB.
+- Restore verification must recreate counts, checksums, and projections in an empty database.
+
+## Cutover
+
+1. Import and reconcile all legacy records.
+2. Build and validate projections.
+3. Run Supabase/GitHub shadow reads.
+4. Stop legacy-only writes for final reconciliation.
+5. Create and verify an on-demand DataHub backup.
+6. Switch the app to Supabase and publish a service-worker version bump.
+7. Keep GitHub compatibility reads only during stabilization.
+
+Rollback requires exporting current Supabase data first. Old GitHub mutation code must not be re-enabled against a stale scheduled backup.
+
+## Acceptance
+
+- DataHub inventory with 316 tournament files => importer reports all 316 files and every contained match.
+- Missing required match field => importer reports a validation error; it does not coerce the field to `0`.
+- Same import run twice => second run creates no duplicate canonical identities, tournaments, matches, or participants.
+- Exact player name => match references that player UUID.
+- Ambiguous/unmapped name => import fails with the name.
+- Supabase matches up to 2026-05-12 (`tests/fixtures/elo-matches.json`) => runtime ELO equals the C# reference values.
+- `save_tournament` with fewer matches than stored => missing (round, order) matches are deleted;
+  an empty matches payload never deletes anything.
+- Anonymous session without access grant => protected read/write denied.
+- Approved email user using a magic link => same Auth user ID and active member grant.
+- Unapproved email => no public signup and no protected access.
+- Revoked approved email => existing Auth session cannot read or mutate protected data.
+- Ordinary grant + selected admin player => admin mutation denied.
+- Valid admin elevation => admin mutation allowed until expiry.
+- Offline cached route => route renders cached data.
+- Offline mutation => blocked before local success UI or notification.
+- Failed domain transaction => no notification outbox row and no relay.
+- Retried outbox item => one logical relay dispatch.
+- Concurrent dispatchers => each outbox row is claimed once (`claim_notification_outbox`, `FOR UPDATE SKIP LOCKED`); rows stuck in `processing` > 10 min are reclaimed.
+- Manual attendance save failure (e.g. unknown player) => previous list unchanged (`replace_manual_attendance` RPC, one transaction).
+- Member enqueue of push, admin-only Telegram kinds, or a Telegram `target` => rejected server-side.
+- Backup trigger at Danish summer/winter => exactly one run at local 08:15.
+- Backup export => legacy JSON plus canonical manifest; no auth secrets or push endpoint/key material.
+- Shadow read mismatch => discrepancy is logged and cutover remains blocked.

@@ -18,7 +18,7 @@ const mocks = vi.hoisted(() => ({
   sendTournamentCompletedPush: vi.fn().mockResolvedValue(undefined),
 }));
 
-vi.mock('../../js/services/github.js', () => ({
+vi.mock('../../js/services/backend.js', () => ({
   schedulePush: vi.fn(),
   cancelPendingSync: vi.fn(),
   flushPush: vi.fn().mockResolvedValue(undefined),

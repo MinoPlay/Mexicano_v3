@@ -27,6 +27,11 @@ export function getRecentMembers() {
   const prevPrefix = `${prevYear}-${String(prevMonth).padStart(2, '0')}`;
 
   const playerSet = new Set();
+  for (const row of Store.getParticipation()) {
+    if (row.date.startsWith(curPrefix) || row.date.startsWith(prevPrefix)) {
+      row.players.forEach(name => playerSet.add(name));
+    }
+  }
   for (const m of Store.getMatches()) {
     if (!m.date) continue;
     if (m.date.startsWith(curPrefix) || m.date.startsWith(prevPrefix)) {
