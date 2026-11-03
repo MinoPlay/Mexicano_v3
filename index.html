@@ -18,7 +18,11 @@
   <link rel="stylesheet" href="css/pages.css">
   <link rel="stylesheet" href="css/desktop.css">
 </head>
-<body>
+<body class="app-loading">
+  <div class="app-loader" role="status" aria-live="polite">
+    <div class="app-loader-bar"></div>
+    <div class="app-loader-pill">Loading data…</div>
+  </div>
   <div id="app">
     <div id="page-container" class="page-content"></div>
   </div>

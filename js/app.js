@@ -94,7 +94,12 @@ const loadRoute = createRouteLoader({
     console.warn('Supabase auto-pull failed:', e);
     showToast(`⚠️ Sync failed: ${e.message}`);
   },
+  onLoadingChange: setAppLoading,
 });
+
+function setAppLoading(isLoading) {
+  document.body.classList.toggle('app-loading', isLoading);
+}
 
 async function loadFromBackend() {
   if (!Store.getSupabaseConfig()) return;
@@ -133,7 +138,9 @@ async function init() {
   await showOnboardingDialog();
 
   await loadLocalData();
-  (earlyLoad || loadFromBackend()).then(() => startupDone({ earlyLoad: returningUser }));
+  // Startup loader (set in index.html) must clear even when no backend pull runs.
+  (earlyLoad || loadFromBackend()).then(() => startupDone({ earlyLoad: returningUser }))
+    .finally(() => setAppLoading(false));
 
   // Back-fill the `user` tag on an already-granted push subscription so targeted
   // sends can reach this device without the user re-enabling push. Fire-and-forget.

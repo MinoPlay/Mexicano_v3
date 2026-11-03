@@ -58,6 +58,10 @@ Resource loaders, each cached in memory (`supabase_res_<key>`) with in-flight de
 ## Rules
 - Navigation (`hashchange`) runs the route loader (`js/services/route-loader.js`); the page
   re-renders once only if new data arrived **and** the user is still on that route.
+- While any route load is in flight, `body.app-loading` shows a global loader (top progress bar +
+  "Loading data…" pill, markup in `index.html`). The class is set in static HTML so the loader is
+  visible from first paint, and is cleared when the last overlapping load finishes (success or
+  failure) or when startup completes without a backend pull.
 - Returning users (config + session + role) start the route load at app start, in parallel
   with admins/dev-config/onboarding.
 - `selectAll` fetches page 1 with `Prefer: count=exact`, then remaining pages in parallel.
@@ -82,3 +86,5 @@ startup, each route load, every `selectAll` (rows, pages) and RPC.
 - Tournaments list = one request to `tournament_index`.
 - Attendance never requests `/rest/v1/matches`.
 - Navigating away mid-load does not repaint the old route.
+- Loader signals `onLoadingChange(true)` when a load starts and `false` after render or failure;
+  overlapping loads stay "loading" until the last one finishes.

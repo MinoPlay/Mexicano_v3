@@ -73,4 +73,48 @@ describe('route loader', () => {
 
     expect(onLoaded).not.toHaveBeenCalled();
   });
+
+  it('signals loading while the pull is pending and clears it after render', async () => {
+    const gate = deferred();
+    const events = [];
+    const load = createRouteLoader({
+      pull: () => gate.promise,
+      render: () => events.push('render'),
+      currentHash: () => '#/',
+      onLoadingChange: (v) => events.push(v),
+    });
+
+    const pending = load('#/');
+    expect(events).toEqual([true]);
+    gate.resolve(true);
+    await pending;
+
+    expect(events).toEqual([true, 'render', false]);
+  });
+
+  it('clears loading on failure', async () => {
+    const onLoadingChange = vi.fn();
+    const load = createRouteLoader({ pull: vi.fn().mockRejectedValue(new Error('x')), render: vi.fn(), currentHash: () => '#/', onLoadingChange });
+
+    await load('#/');
+
+    expect(onLoadingChange.mock.calls).toEqual([[true], [false]]);
+  });
+
+  it('stays loading until all overlapping loads finish', async () => {
+    const a = deferred();
+    const b = deferred();
+    const gates = [a, b];
+    const onLoadingChange = vi.fn();
+    const load = createRouteLoader({ pull: () => gates.shift().promise, render: vi.fn(), currentHash: () => '#/', onLoadingChange });
+
+    const p1 = load('#/');
+    const p2 = load('#/');
+    a.resolve(false);
+    await p1;
+    expect(onLoadingChange.mock.calls).toEqual([[true]]);
+    b.resolve(false);
+    await p2;
+    expect(onLoadingChange.mock.calls).toEqual([[true], [false]]);
+  });
 });
