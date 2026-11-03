@@ -214,52 +214,38 @@ setMatchScore(tournament, roundNumber, matchId, s1, s2)
 startNextRound(tournament)
   → saveTournamentState(tournament)           [in-memory Cache only]
   → persistTournamentState(tournament)        → Supabase WRITE: save_tournament mutation
-  → flushPush()                               → GitHub WRITE: YYYY/YYYY-MM/YYYY-MM-DD.json
-                                                              (updated { tournament: {...} } field)
 ```
 
-### 4. End Tournament (`completeTournament`)
+### 4. End Tournament (`runTournamentCompletion` → `completeTournament`)
 
 ```
+[page] drop unscored matches / empty rounds
 completeTournament(tournament)
-  → Store.setMatches(allMatches)              → Cache: matches (in-memory only)
-  → Store.setActiveTournament(tournament)     → Cache: keeps tournament (isCompleted: true)
-  → writeTournamentDay(date, matches)         → local dev server only (no-op in prod)
-  → markMatchDateDirty(date)
-  → flushPush()                               → GitHub WRITE: YYYY/YYYY-MM/YYYY-MM-DD.json
-                                                              (completed format: { matches: [...] }
-                                                               no `tournament` field)
+  → isCompleted = true, completedAt = now
+  → resolveEloBaseline(date)                  → cached summary / previous day matches (≤1 read)
+  → Store.setMatches(allMatches)              → Cache: matches + client-side post-match ELO
+  → Store.setPlayersSummaryCache(...)         → Cache: participants' new ELO (UI only)
+  → Store.setTournamentsIndex(...)            → Cache: index entry marked complete
+  → writeTournamentDay / writeTournamentsIndex → local dev server only (no-op in prod)
+  → pushCompletedTournament(date, dayMatches) → Supabase WRITE: save_tournament mutation
+       tables: tournaments (status=completed), tournament_players, matches
+               (upsert + delete rows missing from payload), match_players, audit_events
+       triggers rebuild: player_tournament_elo, player_monthly_summary,
+               player_totals_summary, home_route_summary
   ─── ON SUCCESS ───
   → Store.clearActiveTournament()             → Cache: active_tournament (removed, in-memory)
-  → generateMonthlyOverviews(yearMonth)       → GitHub WRITE: YYYY/YYYY-MM/players_overview.json  ← MUST come first
-  → generatePlayersJson({ playerNames })      → GitHub WRITE: players.json                         ← runs only after overview succeeds
-                                              → only participant entries recomputed;
-                                                non-participants keep existing players.json values
-                                              → GitHub WRITE: players_meta.json
-  → updateTournamentIndexEntry(...)           → GitHub READ+WRITE: tournaments.json
   ─── ON FAILURE ───
-  → in-memory Cache preserved (tournament + matches intact for this session only)
+  → in-memory Cache preserved — retry from the open page (not across a refresh)
+then (independent of save result):
+  → sendTournamentCompletedAlert()            → enqueue_notification → notification_outbox (Telegram)
+  → sendTournamentCompletedPush()             → enqueue_notification → notification_outbox (Web Push)
 ```
 
-> **Retry guarantee**: `Store.clearActiveTournament()` is called ONLY after the push
-> succeeds. If the push fails, the in-memory copy is preserved so the user can retry from the
-> open page. `completeTournament()` is idempotent — calling it on an already-completed
-> tournament simply retries the push without re-processing matches. Nothing is buffered on the
-> device across a page refresh; a refresh re-hydrates state from Supabase.
->
-> **Ordering guarantee**: `generateMonthlyOverviews` is chained with `.then()` before
-> `generatePlayersJson`. This is intentional and must not be reversed. The Statistics
-> page reads ELO from `players_overview.json`; the Home page reads from `players.json`.
-> Writing the overview first and aborting the chain on failure keeps both files consistent
-> — `players.json` is never updated unless the overview write succeeds.
->
-> **Partial-update rule**: `completeTournament` passes `{ playerNames: participantNames }`
-> to `generatePlayersJson`. Only tournament participants are recomputed from monthly overviews;
-> all other player entries are kept unchanged. The Settings full-rebuild button does NOT pass
-> `playerNames` and always recomputes all players.
->
-> **Tournaments field**: counts individual tournament days (one ELO snapshot per day in the
-> monthly overview), not calendar months. Fallback to month count only for old scalar-ELO data.
+> **Retry guarantee**: `Store.clearActiveTournament()` is called ONLY after the save
+> succeeds. `completeTournament()` is idempotent — calling it on an already-completed
+> tournament simply retries the save. Nothing is buffered on the device across a page
+> refresh; a refresh re-hydrates state from Supabase. Client-computed ELO is display-only;
+> Supabase triggers recompute the authoritative ELO tables.
 
 ---
 
@@ -544,44 +530,38 @@ setMatchScore(tournament, roundNumber, matchId, s1, s2)
 startNextRound(tournament)
   → saveTournamentState(tournament)           [in-memory Cache only]
   → persistTournamentState(tournament)        → Supabase WRITE: save_tournament mutation
-  → flushPush()                               → GitHub WRITE: data/active_tournament.json
-                                              → GitHub WRITE: YYYY/YYYY-MM/YYYY-MM-DD.json (dirty date)
 ```
 
-### 4. End Tournament (`completeTournament`)
+### 4. End Tournament (`runTournamentCompletion` → `completeTournament`)
 
 ```
+[page] drop unscored matches / empty rounds
 completeTournament(tournament)
-  → Store.setMatches(allMatches)              → Cache: matches (in-memory only)
-  → Store.setActiveTournament(tournament)     → Cache: keeps tournament (isCompleted: true)
-  → writeTournamentDay(date, matches)         → local dev server only (no-op in prod)
-  → markMatchDateDirty(date)
-  → flushPush()                               → GitHub WRITE: YYYY/YYYY-MM/YYYY-MM-DD.json
+  → isCompleted = true, completedAt = now
+  → resolveEloBaseline(date)                  → cached summary / previous day matches (≤1 read)
+  → Store.setMatches(allMatches)              → Cache: matches + client-side post-match ELO
+  → Store.setPlayersSummaryCache(...)         → Cache: participants' new ELO (UI only)
+  → Store.setTournamentsIndex(...)            → Cache: index entry marked complete
+  → writeTournamentDay / writeTournamentsIndex → local dev server only (no-op in prod)
+  → pushCompletedTournament(date, dayMatches) → Supabase WRITE: save_tournament mutation
+       tables: tournaments (status=completed), tournament_players, matches
+               (upsert + delete rows missing from payload), match_players, audit_events
+       triggers rebuild: player_tournament_elo, player_monthly_summary,
+               player_totals_summary, home_route_summary
   ─── ON SUCCESS ───
   → Store.clearActiveTournament()             → Cache: active_tournament (removed, in-memory)
-  → generateMonthlyOverviews(yearMonth)       → GitHub WRITE: YYYY/YYYY-MM/players_overview.json  ← MUST come first
-  → generatePlayersJson({ playerNames })      → GitHub WRITE: players.json                         ← runs only after overview succeeds
-                                              → only participant entries recomputed;
-                                                non-participants keep existing players.json values
-                                              → GitHub WRITE: players_meta.json
-  → updateTournamentIndexEntry(...)           → GitHub READ+WRITE: tournaments.json
   ─── ON FAILURE ───
   → in-memory Cache preserved — retry from the open page (not across a refresh)
+then (independent of save result):
+  → sendTournamentCompletedAlert()            → enqueue_notification → notification_outbox (Telegram)
+  → sendTournamentCompletedPush()             → enqueue_notification → notification_outbox (Web Push)
 ```
 
-> **Ordering guarantee**: `generateMonthlyOverviews` is chained with `.then()` before
-> `generatePlayersJson`. This is intentional and must not be reversed. The Statistics
-> page reads ELO from `players_overview.json`; the Home page reads from `players.json`.
-> Writing the overview first and aborting the chain on failure keeps both files consistent
-> — `players.json` is never updated unless the overview write succeeds.
->
-> **Partial-update rule**: `completeTournament` passes `{ playerNames: participantNames }`
-> to `generatePlayersJson`. Only tournament participants are recomputed from monthly overviews;
-> all other player entries are kept unchanged. The Settings full-rebuild button does NOT pass
-> `playerNames` and always recomputes all players.
->
-> **Tournaments field**: counts individual tournament days (one ELO snapshot per day in the
-> monthly overview), not calendar months. Fallback to month count only for old scalar-ELO data.
+> **Retry guarantee**: `Store.clearActiveTournament()` is called ONLY after the save
+> succeeds. `completeTournament()` is idempotent — calling it on an already-completed
+> tournament simply retries the save. Nothing is buffered on the device across a page
+> refresh; a refresh re-hydrates state from Supabase. Client-computed ELO is display-only;
+> Supabase triggers recompute the authoritative ELO tables.
 
 ---
 
