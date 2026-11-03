@@ -109,6 +109,15 @@ describe('backend mutations', () => {
     ]);
   });
 
+  it('reports the completed-tournament write as a single save step', async () => {
+    const steps = [];
+    await pushCompletedTournament('2026-10-06', [], { isComplete: true }, {
+      onStep: (id, status) => steps.push(`${id}:${status}`),
+    });
+
+    expect(steps).toEqual(['save:running', 'save:success']);
+  });
+
   it('serializes tournament writes per date and coalesces queued states to the latest', async () => {
     const first = deferred();
     invoke.mockReset();

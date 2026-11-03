@@ -488,8 +488,8 @@ export function renderTournament(container, params) {
           tournament.rounds = tournament.rounds.filter(r => r.matches.length > 0);
         }
 
-        // Orchestrated in the service layer: finalize → day-file push → index
-        // → Telegram → Web Push, each with its own visible, timed step. Never
+        // Orchestrated in the service layer: finalize → Supabase save
+        // → Telegram → Web Push, each with its own visible step. Never
         // rejects, so the dialog always reaches a terminal state.
         await runTournamentCompletion(tournament, (id, status, detail) => api.setStep(id, status, detail));
 
