@@ -39,6 +39,7 @@ const PERSISTED_KEYS = new Set([
   'access_role',
   'access_expires_at',
   'current_player_id',
+  'last_auth_email',
   // 2. User + device preferences
   'current_user',
   'device_type',
@@ -283,6 +284,14 @@ export const Store = {
 
   getCurrentPlayerId() {
     return this.get('current_player_id');
+  },
+
+  getLastAuthEmail() {
+    return this.get('last_auth_email') || '';
+  },
+
+  setLastAuthEmail(email) {
+    this.set('last_auth_email', email);
   },
 
   setCurrentPlayerId(playerId) {

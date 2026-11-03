@@ -3,6 +3,7 @@ import {
   bindCurrentPlayer,
   captureAuthSessionFromUrl,
   claimAccess,
+  consumeAuthCallbackError,
   listPlayers,
   sendMagicLink,
   syncAccessGrant,
@@ -106,6 +107,7 @@ function renderAccessStep(card, initialError = null) {
     email.placeholder = 'Email address';
     email.autocomplete = 'email';
     email.className = 'form-input';
+    email.value = Store.getLastAuthEmail();
     Object.assign(email.style, { width: '100%', boxSizing: 'border-box', marginBottom: '10px' });
 
     const magicButton = document.createElement('button');
@@ -252,7 +254,7 @@ async function renderPlayerStep(card) {
 export async function showOnboardingDialog() {
   await ensurePublicConfig();
   const callbackCaptured = captureAuthSessionFromUrl();
-  let authenticationError = null;
+  let authenticationError = consumeAuthCallbackError();
   if ((callbackCaptured || Store.getSupabaseSession()?.access_token) && !Store.getAccessRole()) {
     try {
       await syncAccessGrant();

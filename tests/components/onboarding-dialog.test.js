@@ -76,4 +76,31 @@ describe('Supabase onboarding state', () => {
     expect(document.querySelector('input[type="email"]')).not.toBeNull();
     expect(document.querySelector('input[placeholder="Password"]')).toBeNull();
   });
+
+  it('explains a reused magic link and prefills the last email', async () => {
+    Store.setLastAuthEmail('approved@example.com');
+    window.history.replaceState(
+      null,
+      '',
+      '/Mexicano_v3/#error=access_denied&error_code=otp_expired'
+        + '&error_description=Email+link+is+invalid+or+has+expired',
+    );
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        url: 'https://btyfcijkkwjhtcecrggm.supabase.co',
+        anonKey: 'public-anon-key',
+      }),
+    }));
+
+    onboarding.showOnboardingDialog();
+
+    await vi.waitFor(() => {
+      expect(document.body.textContent).toContain(
+        'This sign-in link was already used or has expired. Send a new magic link below.',
+      );
+    });
+    expect(document.querySelector('input[type="email"]').value).toBe('approved@example.com');
+    expect(window.location.hash).toBe('#/');
+  });
 });

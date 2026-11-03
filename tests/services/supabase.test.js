@@ -124,4 +124,37 @@ describe('Supabase browser access', () => {
     }));
     expect(window.location.hash).toBe('#/');
   });
+
+  it('keeps a used/expired magic-link error for onboarding and cleans the URL', async () => {
+    const supabase = await loadSupabaseModule();
+    window.history.replaceState(
+      null,
+      '',
+      '/Mexicano_v3/#error=access_denied&error_code=otp_expired'
+        + '&error_description=Email+link+is+invalid+or+has+expired',
+    );
+
+    expect(supabase.captureAuthSessionFromUrl()).toBe(false);
+    expect(window.location.hash).toBe('#/');
+    expect(Store.getSupabaseSession()).toBeNull();
+
+    const error = supabase.consumeAuthCallbackError();
+    expect(error.message).toBe(
+      'This sign-in link was already used or has expired. Send a new magic link below.',
+    );
+    expect(supabase.consumeAuthCallbackError()).toBeNull();
+  });
+
+  it('remembers the last magic-link email for the next sign-in', async () => {
+    Store.setSupabaseConfig({
+      url: 'https://example.supabase.co',
+      anonKey: 'public-anon-key',
+    });
+    const supabase = await loadSupabaseModule();
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: async () => ({}) }));
+
+    await supabase.sendMagicLink(' Approved@Example.com ', 'https://minoplay.github.io/Mexicano_v3/');
+
+    expect(Store.getLastAuthEmail()).toBe('approved@example.com');
+  });
 });

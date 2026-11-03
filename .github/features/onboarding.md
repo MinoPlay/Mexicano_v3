@@ -21,6 +21,12 @@ public application configuration.
 
 - Magic-link requests set `create_user: false`; callback tokens are captured before hash routing,
   then the user's existing access grant is loaded.
+- Magic links are single-use (Supabase-enforced, ~1h expiry) and cannot be made reusable. A reused or
+  expired link returns `#error=...&error_code=otp_expired`; the error is captured before hash routing,
+  the URL is cleaned to `#/`, and onboarding shows "This sign-in link was already used or has expired.
+  Send a new magic link below." Other callback errors show their `error_description`.
+- The last successfully requested magic-link email is persisted (`last_auth_email`, survives sign-out)
+  and prefilled in the email field.
 - Transitional shared-code access creates/restores an anonymous session and calls `claim-access`.
 - Successful authentication stores role/expiry only; passwords and access codes are never persisted.
 - Players are loaded from Supabase after the grant succeeds.
@@ -64,6 +70,7 @@ session, access grant, and selected-player binding before onboarding continues.
 - no grant => magic-link and shared-code choices shown.
 - approved email + magic-link callback => ordinary grant restored and player selection shown.
 - unknown magic-link email => no account is created.
+- reused/expired magic link (`#error_code=otp_expired`) => URL cleaned to `#/`, step 1 shows "already used or has expired" error, email prefilled with last requested email.
 - valid code => ordinary grant stored, raw code absent from storage.
 - invalid code => remain on step 1 with error.
 - persisted config for another project + current deployed config => deployed config stored and old project session/grant/player binding cleared.

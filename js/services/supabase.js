@@ -45,11 +45,35 @@ function normalizeEmail(email) {
   return normalized;
 }
 
+// Magic links are single-use; a reused/expired link redirects back with
+// #error=...&error_code=otp_expired instead of tokens.
+let pendingAuthCallbackError = null;
+
+function authCallbackError(params) {
+  if (params.get('error_code') === 'otp_expired') {
+    return new Error('This sign-in link was already used or has expired. Send a new magic link below.');
+  }
+  const description = params.get('error_description') || params.get('error') || 'unknown error';
+  return new Error(`Sign-in link failed: ${description}. Send a new magic link below.`);
+}
+
+export function consumeAuthCallbackError() {
+  const error = pendingAuthCallbackError;
+  pendingAuthCallbackError = null;
+  return error;
+}
+
 export function captureAuthSessionFromUrl() {
   if (typeof window === 'undefined' || !window.location.hash) return false;
   const params = new URLSearchParams(window.location.hash.slice(1));
   const accessToken = params.get('access_token');
-  if (!accessToken) return false;
+  if (!accessToken) {
+    if (params.get('error') || params.get('error_code')) {
+      pendingAuthCallbackError = authCallbackError(params);
+      window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}#/`);
+    }
+    return false;
+  }
 
   const expiresIn = Number(params.get('expires_in') || 3600);
   Store.setSupabaseSession({
@@ -151,6 +175,7 @@ export async function sendMagicLink(email, redirectTo) {
   if (!response.ok) {
     throw new Error(await parseError(response, `Magic-link request failed (${response.status})`));
   }
+  Store.setLastAuthEmail(normalizedEmail);
 }
 
 async function createAnonymousSession() {

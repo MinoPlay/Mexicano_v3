@@ -161,6 +161,8 @@ an empty result because RLS no longer sees active access. Edge Function mutation
   page as its redirect URL.
 - Magic-link callback fragment => session is stored, auth parameters are removed from the URL, and
   the existing member grant is restored.
+- Reused/expired magic-link callback (`#error_code=otp_expired`) => no session stored, URL cleaned,
+  and onboarding explains the link is single-use and asks for a new one.
 - Unapproved identity => remain on authentication with an inline error.
 - An unapproved email cannot self-register.
 - Revocation blocks reads and writes without deleting the identity.
