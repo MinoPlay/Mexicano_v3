@@ -347,7 +347,37 @@ input, select, textarea {
 .tournament-desktop { display: grid; grid-template-columns: minmax(0, 7fr) minmax(24rem, 5fr); gap: var(--space-lg); align-items: start; }
 .tournament-desktop > .tournament-side { position: sticky; top: 88px; }
 .tournament-desktop .match-card { margin-bottom: 0; }
-.tournament-desktop .round-matches { display: grid; grid-template-columns: repeat(auto-fill, minmax(21rem, 1fr)); gap: var(--space-md); }
+/* Matches panel: one grid for the whole list sized from the panel width (intrinsic tracks, no fixed widths).
+   Columns: round label | court | team 1 | score | team 2. Rounds, court lists and cards inherit them via subgrid,
+   so every row lines up; the team columns share the remaining width and only shrink (…) when the panel is too narrow. */
+.tournament-desktop .round-list {
+  display: grid;
+  grid-template-columns: max-content max-content minmax(0, auto) max-content minmax(0, auto);
+  column-gap: var(--space-sm);
+}
+.tournament-desktop .round-list > * { grid-column: 1 / -1; }
+.tournament-desktop .round-section { display: grid; grid-template-columns: subgrid; align-items: center; }
+.tournament-desktop .round-label { grid-column: 1; text-align: center; }
+.tournament-desktop .round-title { font-size: var(--font-size-base); white-space: nowrap; }
+.tournament-desktop .round-matches { grid-column: 2 / -1; display: grid; grid-template-columns: subgrid; row-gap: var(--space-sm); }
+.tournament-desktop .round-matches .match-card {
+  grid-column: 1 / -1; display: grid; grid-template-columns: subgrid;
+  align-items: center; min-height: 2.75rem;
+  padding: var(--space-sm) var(--space-md);
+}
+.tournament-desktop .round-matches .match-court { margin-top: 0; text-align: left; }
+.tournament-desktop .round-matches .match-team { flex-direction: row; gap: var(--space-sm); min-width: 0; }
+.tournament-desktop .round-matches .match-team-left { justify-content: flex-end; }
+.tournament-desktop .round-matches .match-team-right { justify-content: flex-start; }
+.tournament-desktop .round-matches .match-team-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.tournament-desktop .round-matches .match-team-name + .match-team-name::before { content: '& '; color: var(--text-tertiary); font-weight: var(--font-weight-normal); }
+.tournament-desktop .round-matches .match-score { margin-top: 0; gap: var(--space-xs); }
+.tournament-desktop .round-matches .match-score-value { width: auto; min-width: 2ch; font-variant-numeric: tabular-nums; }
+.tournament-desktop .round-matches .match-vs { padding: 0; }
+.tournament-desktop .round-matches .match-hint { font-size: var(--font-size-xs); color: var(--text-secondary); white-space: nowrap; }
+.tournament-desktop .round-section + .round-section,
+.tournament-desktop .round-actions + .round-section { margin-top: var(--space-xl); }
+.tournament-desktop .round-actions { max-width: 21rem; margin-inline: auto; }
 
 /* Create tournament: slots grid */
 .player-slots { display: grid; grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr)); gap: var(--space-sm); }

@@ -65,7 +65,8 @@ function getStatusBadge(tournament) {
 export function renderTournament(container, params) {
   const date = params.date;
   let tournament = null;
-  let viewingRound = -1; // -1 means latest
+  let matchesOrder = 'asc'; // 'desc' = last round first, 'asc' = first round first
+  let playerFilter = ''; // '' = all players, otherwise the exact player name
   let unsubscribe = null;
   let isLoading = false;
 
@@ -151,13 +152,6 @@ export function renderTournament(container, params) {
     return tournament && tournament.rounds ? tournament.rounds.length : 0;
   }
 
-  function getViewingRoundIndex() {
-    const total = getTotalRounds();
-    if (total === 0) return -1;
-    if (viewingRound < 0 || viewingRound >= total) return total - 1;
-    return viewingRound;
-  }
-
   function render() {
     if (isLoading) {
       container.innerHTML = `
@@ -194,8 +188,6 @@ export function renderTournament(container, params) {
     }
 
     const totalRounds = getTotalRounds();
-    const roundIdx = getViewingRoundIndex();
-    const isLatestRound = roundIdx === totalRounds - 1;
 
     // Tournament prev/next navigation
     const isAdmin = Store.isAdministrator();
@@ -211,7 +203,7 @@ export function renderTournament(container, params) {
         <button class="btn btn-ghost btn-sm" id="tournament-prev" ${prevDate ? `data-date="${prevDate}"` : 'disabled'} aria-label="Previous tournament">◀</button>
         <div style="text-align:center;flex:1">
           <h1 style="font-size:var(--font-size-base)">${formatDate(date)}</h1>
-          <span class="text-sm text-secondary">${totalRounds > 0 ? `Round ${roundIdx + 1}/${totalRounds}` : 'No rounds'}</span>
+          <span class="text-sm text-secondary">${totalRounds > 0 ? `${totalRounds} round${totalRounds === 1 ? '' : 's'}` : 'No rounds'}</span>
         </div>
         <div style="display:flex;align-items:center;gap:var(--space-xs)">
           ${getStatusBadge(tournament)}
@@ -227,7 +219,11 @@ export function renderTournament(container, params) {
       </div>
 
       <div class="page-content tournament-desktop">
-        <section class="panel"><div class="panel-header"><span class="panel-title">Matches</span></div>
+        <section class="panel"><div class="panel-header"><span class="panel-title">Matches</span>
+          <div class="panel-actions">
+            ${totalRounds > 0 ? '<select id="matches-player-filter" aria-label="Filter by player" style="width:auto"></select>' : ''}
+            <div class="panel-actions" id="matches-order" role="group" aria-label="Round order"></div>
+          </div></div>
           <div class="panel-body" id="tournament-content"></div></section>
         <aside class="panel tournament-side"><div class="panel-header"><span class="panel-title">Leaderboard</span></div>
           <div class="panel-body flush" id="tournament-leaderboard"></div></aside>
@@ -270,14 +266,68 @@ export function renderTournament(container, params) {
       });
     }
 
-    const content = container.querySelector('#tournament-content');
-
-    renderMatchesTab(content, roundIdx, totalRounds, isLatestRound);
+    renderMatchesPanel();
     renderLeaderboardTab(container.querySelector('#tournament-leaderboard')).catch(() => {});
   }
 
+  // ─── Matches panel: player filter + order control + all rounds ───
+  // Re-rendered on its own when the order/filter changes so the leaderboard is not reloaded.
+  function renderMatchesPanel() {
+    const names = getPlayerNames();
+    // The picked player can vanish (e.g. rounds regenerated) — fall back to everyone
+    if (playerFilter && !names.includes(playerFilter)) playerFilter = '';
+    renderPlayerFilter(names);
+    renderOrderToggle();
+    renderMatchesTab(container.querySelector('#tournament-content'));
+  }
+
+  // Everyone who has a match on this day, alphabetically
+  function getPlayerNames() {
+    const names = new Set();
+    for (const round of tournament?.rounds || []) {
+      for (const m of round.matches || []) {
+        [m.player1, m.player2, m.player3, m.player4].forEach(p => { if (p?.name) names.add(p.name); });
+      }
+    }
+    return [...names].sort((a, b) => a.localeCompare(b));
+  }
+
+  function renderPlayerFilter(names) {
+    const select = container.querySelector('#matches-player-filter');
+    if (!select) return;
+    select.innerHTML = `<option value="">All players</option>`
+      + names.map(n => `<option value="${esc(n)}">${esc(n)}</option>`).join('');
+    select.value = playerFilter;
+    select.addEventListener('change', () => {
+      playerFilter = select.value;
+      renderMatchesTab(container.querySelector('#tournament-content'));
+    });
+  }
+
+  function renderOrderToggle() {
+    const el = container.querySelector('#matches-order');
+    if (!el) return;
+    // Nothing to reorder with fewer than two rounds
+    if (getTotalRounds() < 2) {
+      el.innerHTML = '';
+      return;
+    }
+    const option = (order, label) => `
+      <button type="button" class="btn btn-sm ${matchesOrder === order ? 'btn-primary' : 'btn-secondary'}"
+        data-order="${order}" aria-pressed="${matchesOrder === order}">${label}</button>`;
+    el.innerHTML = option('desc', 'Last round first') + option('asc', 'First round first');
+    el.querySelectorAll('[data-order]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        if (btn.dataset.order === matchesOrder) return;
+        matchesOrder = btn.dataset.order;
+        renderMatchesPanel();
+      });
+    });
+  }
+
   // ─── Matches Tab ───
-  function renderMatchesTab(content, roundIdx, totalRounds, isLatestRound) {
+  function renderMatchesTab(content) {
+    const totalRounds = getTotalRounds();
     if (totalRounds === 0) {
       content.innerHTML = `
         <div class="empty-state">
@@ -288,10 +338,9 @@ export function renderTournament(container, params) {
       return;
     }
 
-    const round = tournament.rounds[roundIdx];
-    const matches = round.matches || [];
-    const roundComplete = round && isRoundComplete(round);
-    const isPastRound = !isLatestRound;
+    const rounds = tournament.rounds;
+    const latestIdx = totalRounds - 1;
+    const canScore = Store.isAdministrator() && !tournament.isCompleted;
 
     const confirmedNames = new Set(
       (tournament.players || [])
@@ -305,6 +354,64 @@ export function renderTournament(container, params) {
       return side === 'left' ? `${check} ${esc(name)}` : `${esc(name)} ${check}`;
     };
 
+    // One line per match: court | team 1 | score vs score | team 2.
+    // Indexes stay the original round/match ones so a filtered card scores the right match.
+    const roundSectionHtml = (roundIdx) => {
+      const cards = (rounds[roundIdx].matches || []).map((match, idx) => {
+        const team1Name1 = match.player1?.name || '?';
+        const team1Name2 = match.player2?.name || '?';
+        const team2Name1 = match.player3?.name || '?';
+        const team2Name2 = match.player4?.name || '?';
+        if (playerFilter && ![team1Name1, team1Name2, team2Name1, team2Name2].includes(playerFilter)) return '';
+
+        const completed = isMatchComplete(match);
+        let scoreCell = '<span class="match-vs">vs</span>';
+        if (completed) {
+          scoreCell = `<span class="match-score-value">${match.team1Score}</span>${scoreCell}<span class="match-score-value">${match.team2Score}</span>`;
+        } else if (canScore) {
+          scoreCell = '<span class="match-hint">Tap to score</span>';
+        }
+
+        return `
+        <div class="match-card ${completed ? 'completed' : ''}" data-round-idx="${roundIdx}" data-match-idx="${idx}">
+          <div class="match-court">Court ${tournament.courts?.[idx] ?? idx + 1}</div>
+          <div class="match-team match-team-left">
+            <span class="match-team-name">${nameWithCheck(team1Name1, 'left')}</span>
+            <span class="match-team-name">${nameWithCheck(team1Name2, 'left')}</span>
+          </div>
+          <div class="match-score">${scoreCell}</div>
+          <div class="match-team match-team-right">
+            <span class="match-team-name">${nameWithCheck(team2Name1)}</span>
+            <span class="match-team-name">${nameWithCheck(team2Name2)}</span>
+          </div>
+        </div>`;
+      }).join('');
+
+      // A round without any match of the picked player (sat out) is not shown
+      if (!cards) return '';
+      return `
+        <div class="round-section" data-round-idx="${roundIdx}">
+          <div class="round-label"><span class="round-title">Round ${roundIdx + 1}</span></div>
+          <div class="round-matches">${cards}</div>
+        </div>`;
+    };
+
+    // Admin actions belong to the latest round, wherever it sits in the list
+    const adminActionsHtml = () => {
+      const allScored = rounds.every(r => isRoundComplete(r));
+
+      let out = '<div class="round-actions mt-lg flex flex-col gap-sm">';
+      if (isRoundComplete(rounds[latestIdx])) {
+        out += `<button class="btn btn-primary btn-block" id="next-round-btn">Next Round</button>`;
+      }
+      out += `<button class="btn btn-danger btn-block" id="end-tournament-btn">End Tournament</button>`;
+      if (!allScored) {
+        out += `<p class="text-sm text-secondary text-center">Unscored matches will be removed when ending</p>`;
+      }
+      out += `<button class="btn btn-ghost btn-block" id="delete-tournament-btn" style="color:var(--color-danger)">Delete Tournament</button>`;
+      return out + '</div>';
+    };
+
     let html = '';
 
     // Confirm-attendance button (any player, self-confirm) — active tournament only
@@ -316,95 +423,26 @@ export function renderTournament(container, params) {
       html += `<button class="btn btn-success btn-block mb-md" id="confirm-attendance-btn">✅ Confirm attendance</button>`;
     }
 
-    // Round navigation
-    if (totalRounds > 1) {
-      html += `
-        <div class="round-header">
-          <button class="btn btn-ghost btn-sm" id="prev-round" ${roundIdx <= 0 ? 'disabled' : ''}>◀</button>
-          <span class="round-title">Round ${roundIdx + 1}</span>
-          <button class="btn btn-ghost btn-sm" id="next-round" ${roundIdx >= totalRounds - 1 ? 'disabled' : ''}>▶</button>
-        </div>
-      `;
-    }
-
-    if (isPastRound) {
+    // Editing an earlier round regenerates the later ones — warn once, up front
+    if (canScore && totalRounds > 1) {
       html += `<div class="card mb-md" style="background:var(--color-warning-light);border-color:var(--color-warning);padding:var(--space-sm) var(--space-md)">
-        <span class="text-sm" style="color:var(--color-warning)">⚠ Editing will regenerate subsequent rounds</span>
+        <span class="text-sm" style="color:var(--color-warning)">⚠ Editing a previous round will regenerate subsequent rounds</span>
       </div>`;
     }
 
-    // Match cards
-    html += '<div class="round-matches">';
-    matches.forEach((match, idx) => {
-      const completed = isMatchComplete(match);
-      const team1Name1 = match.player1?.name || '?';
-      const team1Name2 = match.player2?.name || '?';
-      const team2Name1 = match.player3?.name || '?';
-      const team2Name2 = match.player4?.name || '?';
-
-      html += `
-        <div class="match-card ${completed ? 'completed' : ''}" data-match-idx="${idx}">
-          <div class="match-court">Court ${tournament.courts?.[idx] ?? idx + 1}</div>
-          <div class="match-teams">
-            <div class="match-team">
-              <span class="match-team-name">${nameWithCheck(team1Name1, 'left')}</span>
-              <span class="match-team-name">${nameWithCheck(team1Name2, 'left')}</span>
-            </div>
-            <span class="match-vs">vs</span>
-            <div class="match-team" style="text-align:right">
-              <span class="match-team-name">${nameWithCheck(team2Name1)}</span>
-              <span class="match-team-name">${nameWithCheck(team2Name2)}</span>
-            </div>
-          </div>
-          ${completed
-            ? `<div class="match-score">
-                <span class="match-score-value">${match.team1Score}</span>
-                <span class="match-score-separator">–</span>
-                <span class="match-score-value">${match.team2Score}</span>
-              </div>`
-            : tournament.isCompleted
-              ? ''
-              : Store.isAdministrator() ? `<div class="text-center text-sm text-secondary mt-sm">Tap to score</div>` : ''
-          }
-        </div>
-      `;
+    // Every round, in the chosen order. Courts keep their order inside a round.
+    // One .round-list grid: rounds, courts and cards line up on its columns (subgrid).
+    const roundOrder = rounds.map((_, i) => i);
+    if (matchesOrder === 'desc') roundOrder.reverse();
+    html += '<div class="round-list">';
+    roundOrder.forEach(roundIdx => {
+      html += roundSectionHtml(roundIdx);
+      if (canScore && roundIdx === latestIdx) html += adminActionsHtml();
     });
-
     html += '</div>';
-
-    // Action buttons (admin only)
-    if (Store.isAdministrator() && isLatestRound && !tournament.isCompleted) {
-      const allScored = tournament.rounds.every(r => isRoundComplete(r));
-
-      html += '<div class="mt-lg flex flex-col gap-sm">';
-      if (roundComplete) {
-        html += `<button class="btn btn-primary btn-block" id="next-round-btn">Next Round</button>`;
-      }
-      html += `<button class="btn btn-danger btn-block" id="end-tournament-btn">End Tournament</button>`;
-      if (!allScored) {
-        html += `<p class="text-sm text-secondary text-center">Unscored matches will be removed when ending</p>`;
-      }
-      html += `<button class="btn btn-ghost btn-block" id="delete-tournament-btn" style="color:var(--color-danger)">Delete Tournament</button>`;
-      html += '</div>';
-    } else if (Store.isAdministrator() && !tournament.isCompleted) {
-      // Not the latest round view but still an incomplete tournament — allow delete
-      html += '<div class="mt-lg flex flex-col gap-sm">';
-      html += `<button class="btn btn-ghost btn-block" id="delete-tournament-btn" style="color:var(--color-danger)">Delete Tournament</button>`;
-      html += '</div>';
-    }
 
     content.innerHTML = html;
     fitNamesToMaxWidth(content, '.match-team-name');
-
-    // Event: round navigation
-    content.querySelector('#prev-round')?.addEventListener('click', () => {
-      viewingRound = roundIdx - 1;
-      render();
-    });
-    content.querySelector('#next-round')?.addEventListener('click', () => {
-      viewingRound = roundIdx + 1;
-      render();
-    });
 
     // Event: confirm attendance (self-confirm, any player)
     content.querySelector('#confirm-attendance-btn')?.addEventListener('click', async () => {
@@ -443,11 +481,10 @@ export function renderTournament(container, params) {
     });
 
     // Event: click match to score (disabled for completed tournaments or non-admin)
-    if (Store.isAdministrator() && !tournament.isCompleted) {
+    if (canScore) {
       content.querySelectorAll('.match-card').forEach(card => {
         card.addEventListener('click', () => {
-          const matchIdx = parseInt(card.dataset.matchIdx, 10);
-          openScoreSheet(roundIdx, matchIdx);
+          openScoreSheet(parseInt(card.dataset.roundIdx, 10), parseInt(card.dataset.matchIdx, 10));
         });
       });
     }
@@ -456,7 +493,6 @@ export function renderTournament(container, params) {
     content.querySelector('#next-round-btn')?.addEventListener('click', () => {
       try {
         startNextRound(tournament);
-        viewingRound = -1;
         showToast('Next round started!');
         render();
       } catch (err) {

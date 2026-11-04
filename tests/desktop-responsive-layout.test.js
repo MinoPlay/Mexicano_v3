@@ -27,6 +27,38 @@ describe('desktop responsive layout', () => {
     expect(css).toMatch(/\.data-table table\s*\{[^}]*width:\s*max-content[^}]*min-width:\s*100%/s);
   });
 
+  it('sizes the tournament match list from the Matches panel with one intrinsic grid', () => {
+    const css = read('css/desktop.css');
+    const list = css.match(/\.tournament-desktop \.round-list\s*\{([^}]*)\}/)?.[1] ?? '';
+    const columns = list.match(/grid-template-columns:\s*([^;]*);/)?.[1] ?? '';
+
+    expect(list).toMatch(/display:\s*grid/);
+    // label | court | team 1 | score | team 2 — content-sized, team columns share what is left
+    expect(columns.trim().split(/\s+(?![^(]*\))/)).toEqual([
+      'max-content', 'max-content', 'minmax(0, auto)', 'max-content', 'minmax(0, auto)',
+    ]);
+    expect(css).toMatch(/\.tournament-desktop \.round-list > \*\s*\{[^}]*grid-column:\s*1 \/ -1/);
+  });
+
+  it('lines rounds, court lists and match cards up on the list columns (subgrid, no fixed widths)', () => {
+    const css = read('css/desktop.css');
+    const rule = (sel) => css.match(new RegExp(`${sel.replace(/[.]/g, '\\.')}\\s*\\{([^}]*)\\}`))?.[1] ?? '';
+    const section = rule('.tournament-desktop .round-section');
+    const matches = rule('.tournament-desktop .round-matches');
+    const card = rule('.tournament-desktop .round-matches .match-card');
+
+    for (const r of [section, matches, card]) {
+      expect(r).toMatch(/display:\s*grid/);
+      expect(r).toMatch(/grid-template-columns:\s*subgrid/);
+      expect(r).not.toMatch(/width:|flex:/);
+    }
+    expect(rule('.tournament-desktop .round-label')).toMatch(/grid-column:\s*1\b/);
+    expect(matches).toMatch(/grid-column:\s*2 \/ -1/);
+    expect(card).toMatch(/grid-column:\s*1 \/ -1/);
+    expect(css).not.toMatch(/\.tournament-desktop \.round-header/);
+    expect(css).not.toMatch(/42rem/);
+  });
+
   it('gives the Players table priority and keeps selected-player cards compact', () => {
     const css = read('css/desktop.css');
 
