@@ -6,6 +6,7 @@ import { calculateAllEloRankings, getEloSnapshots } from '../js/services/elo.js'
 import { loadAllMatches } from './helpers/load-matches.js';
 
 const MIGRATION = path.resolve('supabase/migrations/20260930150000_route_scoped_reads.sql');
+const PERF_MIGRATION = path.resolve('supabase/migrations/20261104080000_tournament_index_perf.sql');
 
 const BASE_SCHEMA = `
   create role anon; create role authenticated; create role service_role;
@@ -85,6 +86,7 @@ async function freshDb() {
   const db = new PGlite();
   await db.exec(BASE_SCHEMA);
   await db.exec(fs.readFileSync(MIGRATION, 'utf8'));
+  await db.exec(fs.readFileSync(PERF_MIGRATION, 'utf8'));
   return db;
 }
 
