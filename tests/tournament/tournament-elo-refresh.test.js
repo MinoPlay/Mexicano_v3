@@ -50,6 +50,7 @@ import {
 import { Store } from '../../js/store.js';
 import { State } from '../../js/state.js';
 import { Cache } from '../../js/cache.js';
+import { calculateTournamentMatchEloChanges } from '../../js/services/elo.js';
 
 const DATE = '2025-07-01';
 const PLAYERS_4 = ['Alice', 'Bob', 'Carol', 'Dave'];
@@ -88,15 +89,35 @@ describe('players summary refresh after tournament completion', () => {
     for (const name of winners) {
       expect(byName[name].elo).toBe(1016);
       expect(byName[name].previousElo).toBe(1000);
+      expect(byName[name].eloDate).toBe(DATE);
     }
     for (const name of losers) {
       expect(byName[name].elo).toBe(984.74);
       expect(byName[name].previousElo).toBe(1000);
+      expect(byName[name].eloDate).toBe(DATE);
     }
 
     // Non-participants untouched
     expect(byName['Zoe'].elo).toBe(1234);
     expect(byName['Zoe'].previousElo).toBe(1200);
+    expect(byName['Zoe'].eloDate).toBeUndefined();
+  });
+
+  it('keeps the Matches-tab per-match ELO changes correct after completion (baseline = previousElo)', async () => {
+    Store.setPlayersSummaryCache(PLAYERS_4.map(name => ({ name, elo: 1000, previousElo: 950, eloDate: '2025-06-01' })));
+
+    const t = createTournament(DATE, PLAYERS_4);
+    startTournament(t);
+    setMatchScore(t, 1, 1, 15, 10);
+    const changesBefore = calculateTournamentMatchEloChanges(t, Store.getPlayersSummary());
+    const match = t.rounds[0].matches[0];
+    expect(changesBefore.get(match)).toEqual([16, 16, -15.26, -15.26]);
+
+    await completeTournament(t);
+
+    // Summary now holds post-tournament ELO (1016 / 984.74) with eloDate = DATE
+    expect(calculateTournamentMatchEloChanges(t, Store.getPlayersSummary()).get(t.rounds[0].matches[0]))
+      .toEqual([16, 16, -15.26, -15.26]);
   });
 
   it('adds summary entries for players missing from the cached summary', async () => {
@@ -111,5 +132,6 @@ describe('players summary refresh after tournament completion', () => {
     const summary = Store.getPlayersSummary();
     const names = summary.map(p => p.name).sort();
     expect(names).toEqual(['Alice', 'Bob', 'Carol', 'Dave', 'Zoe']);
+    expect(summary.find(p => p.name === 'Alice').eloDate).toBe(DATE);
   });
 });

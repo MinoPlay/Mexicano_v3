@@ -17,6 +17,7 @@ import {
 } from '../services/tournament.js';
 import { showErrorDialog } from '../components/error-dialog.js';
 import { rankPlayers } from '../services/ranking.js';
+import { calculateTournamentMatchEloChanges } from '../services/elo.js';
 import { State } from '../state.js';
 import { Store } from '../store.js';
 import { showToast } from '../components/toast.js';
@@ -60,6 +61,15 @@ function getStatusBadge(tournament) {
   if (tournament.isCompleted) return '<span class="badge badge-success">Completed</span>';
   if (tournament.isStarted) return '<span class="badge badge-primary">In Progress</span>';
   return '<span class="badge badge-warning">Not Started</span>';
+}
+
+// ▲/▼ + one-decimal amount; a change that rounds to 0.0 shows a bare dash.
+function formatEloChange(delta) {
+  const rounded = Math.round(delta * 10) / 10;
+  const cls = rounded > 0 ? 'positive' : rounded < 0 ? 'negative' : 'neutral';
+  const icon = rounded > 0 ? '▲' : rounded < 0 ? '▼' : '–';
+  const value = rounded !== 0 ? Math.abs(rounded).toFixed(1) : '';
+  return `<span class="elo-change ${cls}">${icon}${value}</span>`;
 }
 
 export function renderTournament(container, params) {
@@ -354,6 +364,15 @@ export function renderTournament(container, params) {
       return side === 'left' ? `${check} ${esc(name)}` : `${esc(name)} ${check}`;
     };
 
+    // Per-match ELO change badge sits on the inner side of the name, next to the score
+    const eloChanges = calculateTournamentMatchEloChanges(tournament, Store.getPlayersSummary());
+    const nameWithElo = (name, side, delta) => {
+      const label = nameWithCheck(name, side);
+      if (delta == null) return label;
+      const badge = formatEloChange(delta);
+      return side === 'left' ? `${label} ${badge}` : `${badge} ${label}`;
+    };
+
     // One line per match: court | team 1 | score vs score | team 2.
     // Indexes stay the original round/match ones so a filtered card scores the right match.
     const roundSectionHtml = (roundIdx) => {
@@ -365,6 +384,7 @@ export function renderTournament(container, params) {
         if (playerFilter && ![team1Name1, team1Name2, team2Name1, team2Name2].includes(playerFilter)) return '';
 
         const completed = isMatchComplete(match);
+        const deltas = eloChanges.get(match) || [];
         let scoreCell = '<span class="match-vs">vs</span>';
         if (completed) {
           scoreCell = `<span class="match-score-value">${match.team1Score}</span>${scoreCell}<span class="match-score-value">${match.team2Score}</span>`;
@@ -376,13 +396,13 @@ export function renderTournament(container, params) {
         <div class="match-card ${completed ? 'completed' : ''}" data-round-idx="${roundIdx}" data-match-idx="${idx}">
           <div class="match-court">Court ${tournament.courts?.[idx] ?? idx + 1}</div>
           <div class="match-team match-team-left">
-            <span class="match-team-name">${nameWithCheck(team1Name1, 'left')}</span>
-            <span class="match-team-name">${nameWithCheck(team1Name2, 'left')}</span>
+            <span class="match-team-name">${nameWithElo(team1Name1, 'left', deltas[0])}</span>
+            <span class="match-team-name">${nameWithElo(team1Name2, 'left', deltas[1])}</span>
           </div>
           <div class="match-score">${scoreCell}</div>
           <div class="match-team match-team-right">
-            <span class="match-team-name">${nameWithCheck(team2Name1)}</span>
-            <span class="match-team-name">${nameWithCheck(team2Name2)}</span>
+            <span class="match-team-name">${nameWithElo(team2Name1, 'right', deltas[2])}</span>
+            <span class="match-team-name">${nameWithElo(team2Name2, 'right', deltas[3])}</span>
           </div>
         </div>`;
       }).join('');

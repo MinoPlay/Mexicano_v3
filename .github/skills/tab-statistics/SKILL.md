@@ -63,6 +63,8 @@ Raw match rows are stored in `Store.getMatches()` and use flattened player/team 
 
 `STAT_COLUMNS` are rank, name, W/T, points, average, win rate, ELO, and WLO/ELO change. Player clicks are route navigations to the Players hub.
 
+All-time canonical data comes from `players.json`, exposed through `Store.getPlayersSummary()` as camelCase rows like `{ name, elo, previousElo, eloDate, wins, losses, points, average, tournaments }` (`eloDate` = tournament date of the player's latest ELO row; the Tournament page uses it for the per-match ELO indicators).
+
 ## Sub-tabs / Sections
 There are no top-level sub-tabs. Sections are:
 

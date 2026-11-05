@@ -55,6 +55,10 @@ There is no round navigation (◀ Round N ▶) any more and no `viewingRound` st
 - Names never wrap. Only when the panel is narrower than the longest teams do the team columns
   shrink (shorter column kept whole first) and names end with `…`. Wider panel => fewer/no cuts
   (measured on real days: 0 cut names at 1920px wide and in the single-column ≤1100px layout).
+- Completed matches also show a per-player ELO change badge (`▲16.0` / `▼15.3` / `–`) inside each
+  `.match-team-name`, on the inner side of the name (left team `Alice ▲16.0`, right team
+  `▼15.3 Charlie`). It only adds text to the name cell: the 4-cell card and the grid columns are
+  unchanged. Rules: `.github/features/tournament-management.md` → "Match ELO Change Indicators".
 - The round title sits to the left of its cards (see "All rounds visible"), not above them.
 - The admin action group (Next Round / End Tournament / Delete Tournament) is capped to `21rem`
   and centered (`.round-actions`).
