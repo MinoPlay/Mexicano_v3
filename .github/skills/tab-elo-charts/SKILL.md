@@ -29,7 +29,7 @@ Charts:
 - Latest Tournament chart uses `getEloHistoryForLatestTournament(allMatches, [...selectedMembers], seedElos)`. Seed ELOs come from `Store.getPlayersSummary().previousElo`.
 - ELO History chart loads per-player files through `pullEloHistoryForPlayerIds(selectedIds)` and `getCachedEloHistoryForPlayerIds(selectedIds)`, then merges with `mergePlayerHistoryFiles(files)`.
 - History intervals are `1m`, `3m`, `6m`, `all`, and `custom`; `3m` is default. Filters call `eloHistoryForPeriod()` or `eloHistoryForDateRange()`.
-- The page still uses its local `drawLineChart()` implementation for these two ELO canvases, not the shared `createLineChart`.
+- The page still uses its local `drawLineChart()` implementation for these two ELO canvases, not the shared `createLineChart`. The chart helpers (`drawLineChart`, `drawEmptyChart`, `setupTooltip`, `buildDatasets`) are exported because the Tournament detail page reuses the Latest Tournament chart for its ELO Progression panel (see `tab-tournament`); keep their signatures stable.
 - `Δᴸ` and `Δᴴ` toggle delta labels for Latest Tournament and ELO History separately.
 - Tooltips are installed by `setupTooltip(canvas)`.
 
@@ -47,7 +47,7 @@ Empty states:
 - Empty selected history shows "No ELO history data for selected player(s). Generate history in Settings."
 
 ## Key Files & Symbols
-- `js/pages/elo-charts.js` — exports `renderEloCharts`, `ELO_ENTRY_COLORS`, `colorForEntryIndex`, `buildEntryColorMap`, `updateEloCache`, `removeFromEloCache`, and `filterMemberSuggestions`; local helpers include `renderRankingTable`, `renderMemberPicker`, `drawLineChart`, `drawEmptyChart`, `setupTooltip`, `buildDatasets`, `mergePlayerHistoryFiles`, `eloHistoryForPeriod`, and `eloHistoryForDateRange`.
+- `js/pages/elo-charts.js` — exports `renderEloCharts`, `ELO_ENTRY_COLORS`, `colorForEntryIndex`, `buildEntryColorMap`, `drawLineChart`, `drawEmptyChart`, `setupTooltip`, `buildDatasets`, `updateEloCache`, `removeFromEloCache`, and `filterMemberSuggestions`; local helpers include `renderRankingTable`, `renderMemberPicker`, `mergePlayerHistoryFiles`, `eloHistoryForPeriod`, and `eloHistoryForDateRange`.
 - `js/services/elo.js` — `calculateCombinedOpponentElo`, `calculateExpectedScore`, `calculateClassicElo`, `processMatchElo`, `getEloHistoryForLatestTournament`, `getEloHistoryForPeriod`, and `getEloHistoryForDateRange`.
 - `js/services/backend.js` — `pullEloHistoryForPlayerIds`, `getCachedEloHistoryForPlayerIds`, and route-scoped `pullForRoute('#/elo-charts')`.
 - `js/services/members.js` — `getMembers`.
@@ -95,6 +95,7 @@ There are no sub-tabs. Sections are:
 - `.github/features/elo-rating-system.md` — ELO math and latest-tournament history behavior.
 - `.github/features/per-player-elo-history.md` — per-player ELO history storage and selection behavior.
 - `.github/features/desktop-ui.md` — two-column ELO layout and side-panel ranking.
+- `.github/features/tournament-elo-progression.md` — Tournament page ELO Progression panel that reuses this page's exported chart helpers.
 
 ## Update Protocol
 Update this skill whenever `js/pages/elo-charts.js` layout, selection, chart rendering, filters, ranking table, data shape, or route hydration changes, or when the linked feature MDs change.

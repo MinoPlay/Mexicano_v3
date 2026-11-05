@@ -85,7 +85,7 @@ ELO fields represent each player's ELO **after** this match, embedded at tournam
 - **Rounding**: All ELO values to 2 decimals
 - **Post-completion cache refresh**: On tournament completion, `applyTournamentEloToSummary` writes the freshly computed ELOs back into the cached players summary (`Store.setPlayersSummaryCache`): participants get `elo` = post-tournament value, `previousElo` = pre-tournament value and `eloDate` = the tournament date; non-participants are untouched, unknown players are appended. Without this the Home "Latest Tournament" / Statistics tables keep showing the stale cached `players.json` ELO until a manual app refresh (pulls skip re-fetch while `players_summary` is cached).
 - **`eloDate` on summary entries**: tournament date of the player's latest ELO row (`player_current_elo.tournament_date`, or the last snapshot date). Because the database rebuilds ELO after every scored match, a summary loaded mid-tournament already contains that tournament's partial results in `elo` while `previousElo` is the true pre-tournament ELO. `eloDate` tells which one is the baseline for a given tournament date (`resolvePreTournamentElo()`): `eloDate === date` → `previousElo`; earlier/missing → `elo`; later → unknown.
-- **Per-match changes while a tournament runs**: `calculateTournamentMatchEloChanges(tournament, summary)` replays the tournament's completed matches (rounds by `roundNumber`, then match order) with `processMatchElo()` from the pre-tournament baseline and returns each player's before/after difference per match. Example (all 1000): 15–10 → +16, +16, −15.26, −15.26 (team 2 is processed against team 1's already-updated ELO, so changes are not zero-sum).
+- **Per-match changes while a tournament runs**: `calculateTournamentMatchEloChanges(tournament, summary)` replays the tournament's completed matches (rounds by `roundNumber`, then match order) with `processMatchElo()` from the pre-tournament baseline and returns each player's before/after difference per match. Example (all 1000): 15–10 → +16, +16, −15.26, −15.26 (team 2 is processed against team 1's already-updated ELO, so changes are not zero-sum). `calculateTournamentEloProgression(tournament, summary)` runs the same replay and returns the ELO after each round instead (round 0 = baseline), for the Tournament page's ELO Progression chart (`tournament-elo-progression.md`).
 - **Monthly seed — skipped months**: When generating a month's `players_overview.json`, player ELO seeds are read from each player's individual `elo_history/elo_history_{id}.json` file (via `players.json` for name→id lookup). The last entry strictly before the target month is used. This correctly handles players who skip months. Players with no prior history default to 1000.
 
 ## Constraints
@@ -116,6 +116,7 @@ ELO fields represent each player's ELO **after** this match, embedded at tournam
 | `applyTournamentEloToSummary(summary, names, before, after, date)` | Refresh cached players summary after completion (`js/services/tournament.js`); `date` is stamped as `eloDate` |
 | `resolvePreTournamentElo(summary, date, names)` | Pre-tournament ELO per player from the players summary (`eloDate` rule); `null` when unknown |
 | `calculateTournamentMatchEloChanges(tournament, summary)` | Per-match ELO change of the four players for every completed match, chained round by round; drives the Matches-tab indicators |
+| `calculateTournamentEloProgression(tournament, summary)` | ELO of every player per round, round 0 = pre-tournament baseline (`{ players: { name: [{ round, elo, delta }] }, rounds }`, same replay as the line above); drives the Tournament page's ELO Progression chart; `null` when a baseline is unknown |
 | `generateMonthlyOverviews(yearMonth)` | Generate `players_overview.json` with walk-back ELO seed backfill |
 
 ## File References
@@ -124,6 +125,7 @@ ELO fields represent each player's ELO **after** this match, embedded at tournam
 - **Math tests**: `tests/elo/elo-math.test.js` (RMS, expected score, new ELO)
 - **Process tests**: `tests/elo/elo-process.test.js` (match handling, history)
 - **Tournament match ELO tests**: `tests/elo/tournament-match-elo.test.js` (`resolvePreTournamentElo`, `calculateTournamentMatchEloChanges`); page behavior in `tests/tournament/match-elo-indicators.test.js`
+- **Tournament ELO progression tests**: `tests/elo/tournament-elo-progression.test.js` (`calculateTournamentEloProgression`); page behavior in `tests/tournament/elo-progression-chart.test.js`
 - **Monthly tests**: `tests/elo/elo-monthly.test.js` (date range filtering)
 - **Parity tests**: `tests/elo/elo-parity.test.js` (C# compatibility)
 - **Monthly overview tests**: `tests/scripts/generate-monthly-overviews.test.js` (seed backfill)

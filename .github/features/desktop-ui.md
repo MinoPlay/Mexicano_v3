@@ -124,7 +124,9 @@ Zero-zero matches (0-0) ignored everywhere (same as statistics service).
   The year select contains All time plus the current year and two previous years, defaulting to the current year.
   Results for the selected year load automatically; changing the filter loads only that year's tournament days.
   All time loads all tournament days without loading unrelated full-snapshot data.
-- **Tournament** — Matches panel | Leaderboard aside, no sub-tabs; Matches shows every round at once
+- **Tournament** — Matches panel | right column (Leaderboard, then an ELO Progression chart with
+  player toggle chips, see `tournament-elo-progression.md`; the column is sticky and scrolls
+  internally when taller than the viewport, static below 1100px), no sub-tabs; Matches shows every round at once
   (player filter + order toggle in panel header, see `tournament-matches-panel.md`) as
   one-line rows (court, team 1, score vs score, team 2) filling the panel on one shared
   `.round-list` grid (subgrid, intrinsic columns), with the round label on the left spanning that

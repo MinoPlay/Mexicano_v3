@@ -410,14 +410,13 @@ const matchPlayerNames = (match) =>
   [match.player1, match.player2, match.player3, match.player4].map(p => p?.name);
 
 /**
- * ELO change of each player in every completed match of a tournament, as
- * Map<match, [p1, p2, p3, p4]>. Rounds are replayed in order from the
+ * Replays the completed matches of a tournament round by round from the
  * pre-tournament ELO (the same chain the completion flow uses), so editing a
- * result also moves the later rounds. Keyed by the match object because match
- * ids repeat across rounds. Empty when a baseline is unknown.
+ * result also moves the later rounds. Returns null when a baseline is unknown,
+ * else { baseline, steps }: every completed match in play order with the ELO
+ * of its four players before and after it.
  */
-export function calculateTournamentMatchEloChanges(tournament, summary) {
-  const changes = new Map();
+function replayTournamentElo(tournament, summary) {
   const scored = [];
   const rounds = [...(tournament.rounds || [])].sort((a, b) => a.roundNumber - b.roundNumber);
   for (const round of rounds) {
@@ -430,12 +429,12 @@ export function calculateTournamentMatchEloChanges(tournament, summary) {
 
   const allNames = [...new Set(scored.flatMap(({ match }) => matchPlayerNames(match)))];
   const baseline = resolvePreTournamentElo(summary, tournament.tournamentDate, allNames);
-  if (!baseline) return changes;
+  if (!baseline) return null;
 
   const players = {};
   for (const name of allNames) players[name] = { name, elo: baseline[name], history: [] };
 
-  for (const { match, roundNumber } of scored) {
+  const steps = scored.map(({ match, roundNumber }) => {
     const names = matchPlayerNames(match);
     const before = names.map(name => players[name].elo);
     processMatchElo({
@@ -448,7 +447,46 @@ export function calculateTournamentMatchEloChanges(tournament, summary) {
       date: tournament.tournamentDate,
       roundNumber,
     }, players);
-    changes.set(match, names.map((name, i) => Math.round((players[name].elo - before[i]) * 100) / 100));
+    return { match, roundNumber, names, before, after: names.map(name => players[name].elo) };
+  });
+  return { baseline, steps };
+}
+
+/**
+ * ELO change of each player in every completed match of a tournament, as
+ * Map<match, [p1, p2, p3, p4]>. Keyed by the match object because match ids
+ * repeat across rounds. Empty when a baseline is unknown.
+ */
+export function calculateTournamentMatchEloChanges(tournament, summary) {
+  const changes = new Map();
+  for (const { match, before, after } of replayTournamentElo(tournament, summary)?.steps ?? []) {
+    changes.set(match, after.map((elo, i) => Math.round((elo - before[i]) * 100) / 100));
   }
   return changes;
+}
+
+/**
+ * ELO of every player through the rounds of a tournament, for a progression
+ * chart. Same shape as getEloHistoryForLatestTournament: round 0 is the
+ * pre-tournament ELO, then one point per round in which the player played a
+ * completed match (a sit-out round has no point); delta is the change vs the
+ * previous point, 1 decimal. Replays like calculateTournamentMatchEloChanges,
+ * so chart and match badges agree. Null when a baseline is unknown.
+ */
+export function calculateTournamentEloProgression(tournament, summary) {
+  const replay = replayTournamentElo(tournament, summary);
+  if (!replay) return null;
+
+  const players = {};
+  for (const [name, elo] of Object.entries(replay.baseline)) players[name] = [{ round: 0, elo, delta: 0 }];
+  for (const { roundNumber, names, after } of replay.steps) {
+    names.forEach((name, i) => {
+      const points = players[name];
+      const previous = points[points.length - 1];
+      points.push({ round: roundNumber, elo: after[i], delta: Math.round((after[i] - previous.elo) * 10) / 10 });
+    });
+  }
+
+  const rounds = [...new Set(replay.steps.map(step => step.roundNumber))];
+  return { players, rounds: rounds.length ? [0, ...rounds] : [] };
 }

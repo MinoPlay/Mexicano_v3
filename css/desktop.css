@@ -345,7 +345,21 @@ input, select, textarea {
 
 /* Tournament detail: matches + leaderboard side by side */
 .tournament-desktop { display: grid; grid-template-columns: minmax(0, 7fr) minmax(24rem, 5fr); gap: var(--space-lg); align-items: start; }
-.tournament-desktop > .tournament-side { position: sticky; top: 88px; }
+.tournament-desktop > .tournament-side {
+  position: sticky;
+  top: 88px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-lg);
+  max-height: calc(100vh - 104px);
+  overflow-y: auto;
+}
+.tournament-desktop > .tournament-side > .panel { flex: none; }
+/* ELO progression: player chips + chart reused from the ELO Charts page */
+.tournament-elo-chart .elo-cache-picker,
+.tournament-elo-chart .tournament-elo-note { padding: var(--space-sm) var(--space-md); margin: 0; }
+.tournament-elo-chart .chart-container-bleed { margin-bottom: 0; border-bottom: 0; }
+.tournament-elo-chart .chart-canvas { display: block; height: 18rem; }
 .tournament-desktop .match-card { margin-bottom: 0; }
 /* Matches panel: one grid for the whole list sized from the panel width (intrinsic tracks, no fixed widths).
    Columns: round label | court | team 1 | score | team 2. Rounds, court lists and cards inherit them via subgrid,

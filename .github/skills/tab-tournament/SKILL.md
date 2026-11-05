@@ -2,8 +2,8 @@
 name: tab-tournament
 description: >
   Reference skill for the Tournament detail tab (route /tournament/:date) of the Mexicano PWA,
-  including the side-by-side Matches and Leaderboard panels. Covers purpose, rules, key files,
-  data flow. Use when working on the tournament detail page.
+  including the side-by-side Matches panel and the right column (Leaderboard + ELO Progression
+  chart). Covers purpose, rules, key files, data flow. Use when working on the tournament detail page.
 ---
 
 # Tournament (detail) tab
@@ -11,10 +11,10 @@ description: >
 ## Purpose
 The Tournament detail tab renders one tournament at `#/tournament/:date`, where `:date` is a `yyyy-MM-dd` tournament date. The route is mapped in `js/app.js` to `renderTournament(container, params)` from `js/pages/tournament.js`.
 
-The desktop page is a live tournament workspace and historical viewer with Matches and Leaderboard visible side by side in `.tournament-desktop`. It no longer uses route-level or in-page Matches/Leaderboard tabs.
+The desktop page is a live tournament workspace and historical viewer with Matches on the left and a right column (`aside.tournament-side`: **Leaderboard**, then **ELO Progression**) side by side in `.tournament-desktop`. It no longer uses route-level or in-page Matches/Leaderboard tabs.
 
 ## Rules / Logic
-`renderTournament(container, params)` owns page-local state: `date`, `tournament`, `matchesOrder` (`'desc'` = last round first; `'asc'` = first round first, the default; not persisted), `isLoading`, and the `State.on('tournament-changed')` subscription.
+`renderTournament(container, params)` owns page-local state: `date`, `tournament`, `matchesOrder` (`'desc'` = last round first; `'asc'` = first round first, the default; not persisted), `eloHidden` (Set of player names whose curve is switched off in the ELO Progression chart; not persisted, survives re-renders), `eloChartCleanup`, `isLoading`, and the `State.on('tournament-changed')` subscription. All of it is declared before `initLoad()` because `initLoad()` renders synchronously.
 
 Loading rules:
 
@@ -61,9 +61,20 @@ Leaderboard panel rules:
 - If no match history is loaded, it falls back to `rankPlayers(tournament.players)` and renders inline standings from active/in-progress player stats.
 - Leaderboard player names navigate to the Players hub rather than opening the old Statistics profile dialog.
 
+ELO Progression panel rules (under the Leaderboard, `#tournament-elo`, subtitle `Round 0 = before the tournament`; spec: `.github/features/tournament-elo-progression.md`):
+
+- `renderEloPanel()` runs on every `render()` right after `renderMatchesPanel()`; `render()` first calls `cleanupEloChart()` (releases the previous panel's resize listener, animation frame and tooltip), and the page's returned cleanup calls it too. Visible to everyone.
+- Data: `calculateTournamentEloProgression(tournament, Store.getPlayersSummary())` (`js/services/elo.js`) → `{ players: { name: [{ round, elo, delta }] }, rounds: [0, 1, …] }`. Round 0 = pre-tournament ELO (`resolvePreTournamentElo`), then one point per round the player played a completed match (a sit-out round has no point). It replays rounds exactly like `calculateTournamentMatchEloChanges` (shared private `replayTournamentElo`), so the chart and the match badges always agree.
+- The chart is the ELO Charts page's "Latest Tournament" chart, not a copy: `drawLineChart`, `drawEmptyChart`, `setupTooltip`, `buildDatasets`, `buildEntryColorMap` are imported from `js/pages/elo-charts.js` (point labels `Round N`, smooth lines, round numbers on the X axis, tooltip with ELO and delta). `draw()` skips until the canvas has a width.
+- One `button.elo-cache-chip` per player with data (alphabetical, inside `.elo-member-picker.elo-cache-picker`), a colour dot (`.elo-member-chip-dot`), `.active` + `aria-pressed` = curve visible. Clicking toggles the player in `eloHidden`, syncs the chip and redraws synchronously (chips are not rebuilt, so focus stays). Colours come from `buildEntryColorMap(all names, alphabetical)`, so hiding a player never recolours the others. Hiding everyone shows `No players selected`.
+- Matches player filter drives the chart: on `#matches-player-filter` change, `eloHidden` is reset — a picked player => every other player with data hidden; `All players` => nothing hidden — then the ELO panel is cleaned up and re-rendered (Leaderboard not reloaded). Chips toggle freely afterwards.
+- `Δ` toggle (`#tournament-elo-deltas`, `.elo-header-smooth-btn`, rendered by `renderEloPanel()` into the header slot `#tournament-elo-actions`, only when there is data): page-local `eloShowDeltas` (default `false`, not persisted, survives re-renders) passed as `showDeltas` to `drawLineChart`. The player filter sets it (`!!playerFilter`: on for a picked player, off for `All players`); clicking flips it and redraws.
+- Empty states (no chips/canvas, text in `#tournament-elo-body`): nothing scored → `No ELO data yet`; baseline unknown (player missing from the summary, or a later tournament already rewrote the player's ELO row) → `ELO progression not available for this tournament`.
+
 ## Key Files & Symbols
-- `js/pages/tournament.js` — exports `renderTournament`; local helpers include `fitNamesToMaxWidth`, `formatDate`, `getStatusBadge`, `renderMatchesPanel`, `getPlayerNames`, `renderPlayerFilter`, `renderOrderToggle`, `renderMatchesTab`, `renderLeaderboardTab`, `openScoreSheet`, `showConfirmDialog`, `showProgressConfirmDialog`, `esc`, `nameWithCheck`, `nameWithElo`, and `formatEloChange`.
-- `js/services/elo.js` — `calculateTournamentMatchEloChanges(tournament, summary)` and `resolvePreTournamentElo(summary, date, names)` feed the per-match ELO indicators; `processMatchElo()` is the shared algorithm.
+- `js/pages/tournament.js` — exports `renderTournament`; local helpers include `fitNamesToMaxWidth`, `formatDate`, `getStatusBadge`, `renderMatchesPanel`, `getPlayerNames`, `renderPlayerFilter`, `renderOrderToggle`, `renderMatchesTab`, `renderEloPanel`, `cleanupEloChart`, `renderLeaderboardTab`, `openScoreSheet`, `showConfirmDialog`, `showProgressConfirmDialog`, `esc`, `nameWithCheck`, `nameWithElo`, and `formatEloChange`.
+- `js/services/elo.js` — `calculateTournamentMatchEloChanges(tournament, summary)` and `resolvePreTournamentElo(summary, date, names)` feed the per-match ELO indicators; `calculateTournamentEloProgression(tournament, summary)` feeds the ELO Progression chart (both replay through the private `replayTournamentElo`); `processMatchElo()` is the shared algorithm.
+- `js/pages/elo-charts.js` — exports reused here: `drawLineChart`, `drawEmptyChart`, `setupTooltip`, `buildDatasets`, `buildEntryColorMap` (do not copy the chart; change it there).
 - `js/pages/statistics.js` — `renderDayStatsInto` renders the rich completed-day leaderboard.
 - `js/services/tournament.js` — `getActiveTournament`, `setMatchScore`, `startNextRound`, `runTournamentCompletion`, `COMPLETION_STEPS`, `loadTournamentByDate`, `getLatestCompleteTournamentDate`, `updateAccessCode`, `deleteTournament`, `confirmAttendanceAndPush`, `isMatchComplete`, and `isRoundComplete`.
 - `js/services/ranking.js` — `rankPlayers` for fallback active-tournament standings.
@@ -72,7 +83,7 @@ Leaderboard panel rules:
 - `js/store.js` — active tournament, matches, tournaments index, current user, admin state, and Supabase config.
 - `js/state.js` — `State.on` and `State.emit` for tournament changes.
 - `js/app.js` — registers `/tournament/:date`.
-- `css/desktop.css` — `tournament-desktop`, `tournament-side`, `panel`, and desktop match layout classes (`round-list`, `round-section`, `round-label`, `round-matches`, `round-actions`).
+- `css/desktop.css` — `tournament-desktop`, `tournament-side` (sticky flex column, `max-height: calc(100vh - 104px)` + `overflow-y: auto`; static at ≤1100px), `tournament-elo-chart` (chip row / chart box / `18rem` canvas), `panel`, and desktop match layout classes (`round-list`, `round-section`, `round-label`, `round-matches`, `round-actions`). The chip and chart classes (`elo-member-picker`, `elo-cache-picker`, `elo-cache-chip`, `elo-member-chip-dot`, `chart-container-bleed`, `chart-canvas`) are global in `css/pages.css`.
 
 ## Data
 The page reads active tournament objects with `tournamentDate`, `accessCode`, `courts`, `players`, `rounds`, `currentRoundNumber`, `isStarted`, and `isCompleted`.
@@ -101,6 +112,7 @@ There are no sub-tabs. The page sections are:
 - Toolbar — access code display/editor.
 - Matches panel — player filter + round-order control (panel header), all rounds with one-line match cards, score sheet, confirmation button, and admin actions.
 - Leaderboard side panel — completed-day rich stats or active-player fallback.
+- ELO Progression side panel (under the Leaderboard) — player toggle chips + ELO-per-round chart starting at Round 0.
 - Dialogs/sheets — score bottom sheet, delete/overwrite confirmation, and completion progress dialog.
 
 ## Related Feature Docs
@@ -109,6 +121,7 @@ There are no sub-tabs. The page sections are:
 - `.github/features/tournament-round-logs.md` — completion/error logging contract.
 - `.github/features/desktop-ui.md` — side-by-side Tournament detail layout.
 - `.github/features/tournament-matches-panel.md` — all-rounds Matches panel, round label on the left, one-line court rows on one shared subgrid, player filter, round-order control.
+- `.github/features/tournament-elo-progression.md` — ELO Progression chart under the Leaderboard (Round 0 start, player toggle chips, reused ELO Charts chart).
 
 ## Update Protocol
 Update this skill whenever `js/pages/tournament.js` render/scoring/round logic, side-by-side layout, leaderboard navigation, data shape, or routing changes, or when the linked feature MDs change.

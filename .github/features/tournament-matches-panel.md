@@ -35,7 +35,7 @@ There is no round navigation (◀ Round N ▶) any more and no `viewingRound` st
 - `desc` = latest round on top, round 1 at the bottom. `asc` = round 1 on top.
 - Only the **round sections** swap. Court cards inside a round always stay in court order
   (Court 1, Court 2, …).
-- Switching order re-renders only the Matches panel (the Leaderboard is not reloaded).
+- Switching order re-renders only the Matches panel (the Leaderboard and the ELO Progression chart are not reloaded).
 - Order is page-local state (`matchesOrder`): default `asc` every time a tournament is opened.
   Not persisted.
 
@@ -79,7 +79,9 @@ There is no round navigation (◀ Round N ▶) any more and no `viewingRound` st
 - Admin actions (Next Round / End Tournament / Delete) and their "latest round fully scored"
   logic are computed from ALL rounds, not the filtered view. They keep the latest round's slot even
   when the filter hides that round.
-- Switching the filter re-renders only the Matches panel (Leaderboard not reloaded).
+- Switching the filter re-renders only the Matches panel and the ELO Progression chart, which then
+  shows only the picked player's curve with ELO change labels on (all curves, labels off, for
+  `All players`; see `tournament-elo-progression.md`). Leaderboard not reloaded.
 - Page-local state (`playerFilter`, default `""`), not persisted. It survives full re-renders
   (e.g. after scoring); if the chosen player no longer appears in any match the filter resets to
   `All players`.

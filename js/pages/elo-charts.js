@@ -51,7 +51,7 @@ export function buildEntryColorMap(orderedNames) {
 
 // ─── Reusable Line Chart ───
 
-function drawLineChart(canvas, datasets, options = {}) {
+export function drawLineChart(canvas, datasets, options = {}) {
   const ctx = canvas.getContext('2d');
   const dpr = window.devicePixelRatio || 1;
   const rect = canvas.getBoundingClientRect();
@@ -194,7 +194,7 @@ function drawLineChart(canvas, datasets, options = {}) {
   canvas._chartMeta = { pad, plotW, plotH, yMin, yRange, xCount, datasets, xLabels };
 }
 
-function drawEmptyChart(canvas, message) {
+export function drawEmptyChart(canvas, message) {
   const ctx = canvas.getContext('2d');
   const dpr = window.devicePixelRatio || 1;
   const rect = canvas.getBoundingClientRect();
@@ -220,7 +220,7 @@ function drawEmptyChart(canvas, message) {
 
 // ─── Tooltip ───
 
-function setupTooltip(canvas, formatLabel) {
+export function setupTooltip(canvas, formatLabel) {
   let stickyTooltip = null;
   let stickyDismiss = null;
 
@@ -367,7 +367,7 @@ function filterHistoryToSelected(history, selectedNames) {
 
 // ─── Build datasets ───
 
-function buildDatasets(history, colorMap, labelFn) {
+export function buildDatasets(history, colorMap, labelFn) {
   const players = Object.keys(history.players || {});
   const xKeys = history.dates || history.rounds || [];
 

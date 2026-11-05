@@ -17,11 +17,12 @@ import {
 } from '../services/tournament.js';
 import { showErrorDialog } from '../components/error-dialog.js';
 import { rankPlayers } from '../services/ranking.js';
-import { calculateTournamentMatchEloChanges } from '../services/elo.js';
+import { calculateTournamentMatchEloChanges, calculateTournamentEloProgression } from '../services/elo.js';
 import { State } from '../state.js';
 import { Store } from '../store.js';
 import { showToast } from '../components/toast.js';
 import { renderDayStatsInto } from './statistics.js';
+import { drawLineChart, drawEmptyChart, setupTooltip, buildDatasets, buildEntryColorMap } from './elo-charts.js';
 
 // Shrinks matched elements' font-size so a name plus its confirmation checkmark
 // never exceeds the on-screen width of our longest real player name — keeps
@@ -77,6 +78,9 @@ export function renderTournament(container, params) {
   let tournament = null;
   let matchesOrder = 'asc'; // 'desc' = last round first, 'asc' = first round first
   let playerFilter = ''; // '' = all players, otherwise the exact player name
+  const eloHidden = new Set(); // players switched off in the ELO progression chart (kept across re-renders)
+  let eloShowDeltas = false; // ELO change labels in the ELO progression chart; set by the Matches player filter
+  let eloChartCleanup = null;
   let unsubscribe = null;
   let isLoading = false;
 
@@ -163,6 +167,8 @@ export function renderTournament(container, params) {
   }
 
   function render() {
+    cleanupEloChart();
+
     if (isLoading) {
       container.innerHTML = `
         <div class="page-header">
@@ -235,8 +241,13 @@ export function renderTournament(container, params) {
             <div class="panel-actions" id="matches-order" role="group" aria-label="Round order"></div>
           </div></div>
           <div class="panel-body" id="tournament-content"></div></section>
-        <aside class="panel tournament-side"><div class="panel-header"><span class="panel-title">Leaderboard</span></div>
-          <div class="panel-body flush" id="tournament-leaderboard"></div></aside>
+        <aside class="tournament-side">
+          <section class="panel"><div class="panel-header"><span class="panel-title">Leaderboard</span></div>
+            <div class="panel-body flush" id="tournament-leaderboard"></div></section>
+          <section class="panel tournament-elo-chart" id="tournament-elo"><div class="panel-header"><span class="panel-title">ELO Progression</span>
+            <span class="panel-actions"><span class="panel-subtitle">Round 0 = before the tournament</span><span id="tournament-elo-actions"></span></span></div>
+            <div class="panel-body flush" id="tournament-elo-body"></div></section>
+        </aside>
       </div>
     `;
 
@@ -277,6 +288,7 @@ export function renderTournament(container, params) {
     }
 
     renderMatchesPanel();
+    renderEloPanel();
     renderLeaderboardTab(container.querySelector('#tournament-leaderboard')).catch(() => {});
   }
 
@@ -311,6 +323,14 @@ export function renderTournament(container, params) {
     select.addEventListener('change', () => {
       playerFilter = select.value;
       renderMatchesTab(container.querySelector('#tournament-content'));
+      eloHidden.clear();
+      eloShowDeltas = !!playerFilter;
+      if (playerFilter) {
+        const others = Object.keys(calculateTournamentEloProgression(tournament, Store.getPlayersSummary())?.players || {});
+        others.filter(n => n !== playerFilter).forEach(n => eloHidden.add(n));
+      }
+      cleanupEloChart();
+      renderEloPanel();
     });
   }
 
@@ -567,6 +587,110 @@ export function renderTournament(container, params) {
         }
       });
     });
+  }
+
+  // ─── ELO progression panel: every player's ELO per round, round 0 = before the tournament ───
+  // Chart and chips are the ones of the ELO Charts page (Latest Tournament). Chips show/hide a player's
+  // curve; colours follow the alphabetical chip order so a curve keeps its colour while others toggle.
+  function cleanupEloChart() {
+    if (eloChartCleanup) { eloChartCleanup(); eloChartCleanup = null; }
+  }
+
+  function renderEloPanel() {
+    const body = container.querySelector('#tournament-elo-body');
+    if (!body) return;
+    const actions = container.querySelector('#tournament-elo-actions');
+    if (actions) actions.replaceChildren();
+
+    const history = calculateTournamentEloProgression(tournament, Store.getPlayersSummary());
+    const names = Object.keys(history?.players || {}).sort((a, b) => a.localeCompare(b));
+    if (!names.length) {
+      const note = history ? 'No ELO data yet' : 'ELO progression not available for this tournament';
+      body.innerHTML = `<p class="tournament-elo-note text-secondary text-sm">${note}</p>`;
+      return;
+    }
+
+    const colors = buildEntryColorMap(names);
+    const picker = document.createElement('div');
+    picker.className = 'elo-member-picker elo-cache-picker';
+    picker.setAttribute('role', 'group');
+    picker.setAttribute('aria-label', 'Players shown in the chart');
+
+    const canvas = document.createElement('canvas');
+    canvas.className = 'chart-canvas';
+    canvas.setAttribute('role', 'img');
+    canvas.setAttribute('aria-label', 'ELO of each player per round');
+    const chartBox = document.createElement('div');
+    chartBox.className = 'chart-container-bleed';
+    chartBox.appendChild(canvas);
+
+    const draw = () => {
+      if (!canvas.getBoundingClientRect().width) return; // not laid out (yet)
+      const players = {};
+      for (const name of names) if (!eloHidden.has(name)) players[name] = history.players[name];
+      if (!Object.keys(players).length) {
+        drawEmptyChart(canvas, 'No players selected');
+        return;
+      }
+      const datasets = buildDatasets({ players, rounds: history.rounds }, colors, pt => `Round ${pt.round}`);
+      drawLineChart(canvas, datasets, { xLabels: history.rounds, smooth: true, showXLabels: true, showDeltas: eloShowDeltas });
+    };
+
+    const deltaBtn = document.createElement('button');
+    deltaBtn.type = 'button';
+    deltaBtn.id = 'tournament-elo-deltas';
+    deltaBtn.className = 'elo-header-smooth-btn';
+    deltaBtn.title = 'Toggle ELO change labels';
+    deltaBtn.textContent = 'Δ';
+    const syncDeltaBtn = () => {
+      deltaBtn.classList.toggle('active', eloShowDeltas);
+      deltaBtn.setAttribute('aria-pressed', String(eloShowDeltas));
+    };
+    syncDeltaBtn();
+    deltaBtn.addEventListener('click', () => {
+      eloShowDeltas = !eloShowDeltas;
+      syncDeltaBtn();
+      draw();
+    });
+    actions?.appendChild(deltaBtn);
+
+    for (const name of names) {
+      const chip = document.createElement('button');
+      chip.type = 'button';
+      chip.className = 'elo-cache-chip';
+      const dot = document.createElement('span');
+      dot.className = 'elo-member-chip-dot';
+      dot.style.background = colors[name];
+      chip.append(dot, name);
+      const sync = () => {
+        const shown = !eloHidden.has(name);
+        chip.classList.toggle('active', shown);
+        chip.setAttribute('aria-pressed', String(shown));
+      };
+      sync();
+      chip.addEventListener('click', () => {
+        if (!eloHidden.delete(name)) eloHidden.add(name);
+        sync();
+        draw();
+      });
+      picker.appendChild(chip);
+    }
+
+    body.replaceChildren(picker, chartBox);
+
+    let frame = 0;
+    const redraw = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(draw);
+    };
+    window.addEventListener('resize', redraw);
+    const stopTooltip = setupTooltip(canvas);
+    eloChartCleanup = () => {
+      cancelAnimationFrame(frame);
+      window.removeEventListener('resize', redraw);
+      stopTooltip();
+    };
+    redraw();
   }
 
   // ─── Leaderboard Tab ───
@@ -891,6 +1015,7 @@ export function renderTournament(container, params) {
   // Cleanup
   return () => {
     if (unsubscribe) unsubscribe();
+    cleanupEloChart();
     // Remove any stray sheets/overlays
     document.querySelectorAll('.bottom-sheet-overlay, .bottom-sheet, .dialog-overlay').forEach(el => el.remove());
   };
