@@ -296,10 +296,10 @@ describe('route-scoped Supabase reads', () => {
 
     expect(Store.getPlayersSummary()[0]).toEqual({
       id: 'p1', name: 'A', email: null, matchPadelId: 11,
-      elo: 1030.56, previousElo: 1016,
+      elo: 1030.56, previousElo: 1016, eloDate: '2026-09-24',
       wins: 2, losses: 1, points: 36, average: 12, tournaments: 2,
     });
-    expect(Store.getPlayersSummary()[1]).toMatchObject({ name: 'B', elo: 1000, previousElo: 1000, wins: 0, average: 0 });
+    expect(Store.getPlayersSummary()[1]).toMatchObject({ name: 'B', elo: 1000, previousElo: 1000, eloDate: null, wins: 0, average: 0 });
     expect(requested('/rest/v1/player_totals_summary?')).toHaveLength(1);
     expect(requested('/rest/v1/player_current_elo?')).toHaveLength(1);
     expect(requested('/rest/v1/player_totals?')).toHaveLength(0);
@@ -323,7 +323,7 @@ describe('route-scoped Supabase reads', () => {
     expect(Cache.has('supabase_snapshot_loaded')).toBe(false);
     expect(requested('/rest/v1/player_totals?')).toHaveLength(1);
     expect(requested('/rpc/get_current_elo')).toHaveLength(1);
-    expect(Store.getPlayersSummary()[0]).toMatchObject({ name: 'A', elo: 1030.56, previousElo: 1016, wins: 2, points: 36 });
+    expect(Store.getPlayersSummary()[0]).toMatchObject({ name: 'A', elo: 1030.56, previousElo: 1016, eloDate: '2026-09-24', wins: 2, points: 36 });
   });
 
   it('Statistics attendance months read player_attendance for that range only', async () => {

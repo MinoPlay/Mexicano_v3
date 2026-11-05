@@ -32,7 +32,7 @@ Loading rules:
 - If `getActiveTournament()` matches the route date, use it first.
 - With Supabase configured, startup and navigation call `pullForRoute('#/tournament/:date')`. This
   route loads `tournament_index`, the active tournament, matches for only the requested date and
-  the player summary (`player_totals_summary` + `player_current_elo`, precomputed; fallback `player_totals` + `get_current_elo`); no doodle or attendance data.
+  the player summary (`player_totals_summary` + `player_current_elo`, precomputed; fallback `player_totals` + `get_current_elo`); no doodle or attendance data. Summary entries carry `eloDate` (tournament date of the player's latest ELO row) next to `elo` / `previousElo`.
 - The completed route hydration is cached for the page session. The page's background
   `fetchActiveTournamentJson()` / `ensureDayMatchesLoaded(date)` calls reuse it instead of
   starting a second PostgREST batch.
@@ -67,6 +67,7 @@ Matches tab rules:
 - Match cards are rendered inline in `js/pages/tournament.js`; the page does not import `js/components/match-card.js`.
 - Court labels use `tournament.courts?.[idx] ?? idx + 1`.
 - Confirmation checkmarks are computed from `tournament.players[].confirmed` and appended by the local `nameWithCheck()` helper.
+- ELO change indicators: at the top of `renderMatchesTab()` the page calls `calculateTournamentMatchEloChanges(tournament, Store.getPlayersSummary())` (`js/services/elo.js`) once per render. For every **completed** match the local `nameWithElo()` helper adds `<span class="elo-change positive|negative|neutral">▲16.0</span>` (`▼15.3`, `–` for 0.0) inside the `.match-team-name` span, on the inner side of the name (left team `✅ Alice ▲16.0`, right team `▼15.3 Bob ✅`). Shown to admins and non-admins, for active and completed tournaments; nothing for unscored matches. Because they are recomputed on every `render()`, scoring or editing a result (including a past round) updates them. Baseline comes from the players summary via `resolvePreTournamentElo()` (`eloDate` rule, see `elo-rating-system.md`); if any player of a completed match has no known baseline (summary missing the player, or a later tournament already rewrote `eloDate`) no indicators are rendered for the tournament.
 - A non-completed match shows "Tap to score" only for admins and only when the tournament is not completed.
 - Match-card click listeners are attached only for admins and incomplete tournaments.
 
@@ -116,7 +117,8 @@ Admin gating:
 
 ## Key Files & Symbols
 
-- `js/pages/tournament.js` — exports `renderTournament(container, params)`; local helpers include `formatDate()`, `getStatusBadge()`, `renderMatchesTab()`, `renderLeaderboardTab()`, `openScoreSheet()`, `showConfirmDialog()`, `showProgressConfirmDialog()`, and `esc()`.
+- `js/pages/tournament.js` — exports `renderTournament(container, params)`; local helpers include `formatDate()`, `getStatusBadge()`, `renderMatchesTab()`, `renderLeaderboardTab()`, `openScoreSheet()`, `showConfirmDialog()`, `showProgressConfirmDialog()`, `esc()`, `nameWithCheck()`, `nameWithElo()` and `formatEloChange()`.
+- `js/services/elo.js` — `calculateTournamentMatchEloChanges(tournament, summary)` and `resolvePreTournamentElo(summary, date, names)` feed the per-match ELO indicators; `processMatchElo()` is the shared algorithm.
 - `js/app.js` — route table maps `'/tournament/:date'` to `renderTournament`.
 - `js/services/tournament.js` — lifecycle and persistence symbols: `getActiveTournament()`, `setMatchScore()`, `startNextRound()`, `completeTournament()`, `runTournamentCompletion()`, `COMPLETION_STEPS`, `resolveEloBaseline()`, `ELO_BASELINE_KEY`, `loadTournamentByDate()`, `saveTournamentState()`, `persistTournamentState()`, `isTournamentEditable()`, `updateAccessCode()`, `deleteTournament()`, `confirmAttendance()`, `createRound1Matches()`, and `createMexicanoMatches()`. Pure shape helpers `isMatchComplete()`, `isRoundComplete()` and `recalculateAllPlayerStats()` live in `js/services/tournament-shape.js` and are re-exported here.
 - `js/services/ranking.js` — `rankPlayers(players)` for player standings and next-round seeding.

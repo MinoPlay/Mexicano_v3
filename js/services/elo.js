@@ -3,6 +3,7 @@
  * K=32, initial=1000, combined opponent ELO via RMS.
  */
 import { Store } from '../store.js';
+import { isMatchComplete } from './tournament-shape.js';
 
 const K = 32;
 const INITIAL_ELO = 1000;
@@ -383,4 +384,71 @@ export function getEloForMonth(snapshots, yearMonth) {
     };
   }
   return result;
+}
+
+/**
+ * Pre-tournament ELO per player, read from the players summary.
+ * `eloDate` is the tournament date of a player's latest ELO row. When it equals
+ * the tournament date the row already holds (part of) that tournament, so the
+ * baseline is `previousElo`; when it is earlier, `elo` is the baseline.
+ * Returns null if any baseline is unknown: a player missing from the summary,
+ * or a later tournament that already rewrote the player's ELO.
+ */
+export function resolvePreTournamentElo(summary, date, names) {
+  const byName = new Map((summary || []).map(p => [p.name, p]));
+  const baseline = {};
+  for (const name of names) {
+    const entry = byName.get(name);
+    if (!entry) return null;
+    if (entry.eloDate && entry.eloDate > date) return null;
+    baseline[name] = (entry.eloDate === date ? entry.previousElo : entry.elo) ?? INITIAL_ELO;
+  }
+  return baseline;
+}
+
+const matchPlayerNames = (match) =>
+  [match.player1, match.player2, match.player3, match.player4].map(p => p?.name);
+
+/**
+ * ELO change of each player in every completed match of a tournament, as
+ * Map<match, [p1, p2, p3, p4]>. Rounds are replayed in order from the
+ * pre-tournament ELO (the same chain the completion flow uses), so editing a
+ * result also moves the later rounds. Keyed by the match object because match
+ * ids repeat across rounds. Empty when a baseline is unknown.
+ */
+export function calculateTournamentMatchEloChanges(tournament, summary) {
+  const changes = new Map();
+  const scored = [];
+  const rounds = [...(tournament.rounds || [])].sort((a, b) => a.roundNumber - b.roundNumber);
+  for (const round of rounds) {
+    for (const match of round.matches || []) {
+      if (isMatchComplete(match) && matchPlayerNames(match).every(Boolean)) {
+        scored.push({ match, roundNumber: round.roundNumber });
+      }
+    }
+  }
+
+  const allNames = [...new Set(scored.flatMap(({ match }) => matchPlayerNames(match)))];
+  const baseline = resolvePreTournamentElo(summary, tournament.tournamentDate, allNames);
+  if (!baseline) return changes;
+
+  const players = {};
+  for (const name of allNames) players[name] = { name, elo: baseline[name], history: [] };
+
+  for (const { match, roundNumber } of scored) {
+    const names = matchPlayerNames(match);
+    const before = names.map(name => players[name].elo);
+    processMatchElo({
+      team1Player1Name: names[0],
+      team1Player2Name: names[1],
+      team2Player1Name: names[2],
+      team2Player2Name: names[3],
+      scoreTeam1: match.team1Score,
+      scoreTeam2: match.team2Score,
+      date: tournament.tournamentDate,
+      roundNumber,
+    }, players);
+    changes.set(match, names.map((name, i) => Math.round((players[name].elo - before[i]) * 100) / 100));
+  }
+  return changes;
 }

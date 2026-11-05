@@ -70,11 +70,13 @@ describe('Supabase domain hydration', () => {
       name: 'A',
       elo: 1016,
       previousElo: 1000,
+      eloDate: '2026-01-01',
     });
     expect(Store.getPlayersSummary()[2]).toMatchObject({
       name: 'C',
       elo: 984.74,
       previousElo: 1000,
+      eloDate: '2026-01-01',
     });
     expect(Cache.get('elo_history_player_p3')).toEqual({
       playerId: 'p3',

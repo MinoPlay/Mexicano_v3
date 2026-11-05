@@ -278,6 +278,11 @@
   display: inline-block;
 }
 
+/* em (not xs) so the badge shrinks together with a name fitted by fitNamesToMaxWidth */
+.match-team-name .elo-change {
+  font-size: 0.85em;
+}
+
 .match-vs {
   font-size: var(--font-size-xs);
   color: var(--text-tertiary);

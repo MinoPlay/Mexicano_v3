@@ -117,6 +117,36 @@ The **Leaderboard** tab on a completed (or in-progress) tournament shows the sam
 - ELO data loaded from cached match history or per-player history files
 - Falls back to a basic `Pts / W / L / PPG / Win%` table if no match data is available in the store (e.g. active tournament before data is loaded)
 
+## Match ELO Change Indicators
+
+On the **Matches** tab every **completed** match card shows, next to each of the four names, how much ELO that player gained or lost from that match. Visible to everyone (admins and read-only viewers), for the active and for completed tournaments.
+
+- **Format**: `▲16.0` (green, `.elo-change.positive`) gain, `▼15.3` (red, `.negative`) loss, `–` (grey, `.neutral`) when the change rounds to 0.0. The number is the absolute change, 1 decimal.
+- **Placement**: inside the `.match-team-name` span, on the **inner** side of the name (toward "vs"): left team `Alice ▲16.0`, right team `▼15.3 Bob`. The attendance ✅ stays on the outer side. The indicator is sized in `em`, so `fitNamesToMaxWidth()` shrinks it together with the name.
+- **Unscored matches** show nothing.
+- **Live update**: indicators are recomputed on every render from the current tournament state. Entering a result, or changing one (also in a past round — later rounds are then regenerated and unscored), re-renders the page and the indicators follow.
+- **Algorithm** — `calculateTournamentMatchEloChanges(tournament, playersSummary)` (`js/services/elo.js`): seed every player of a completed match with the pre-tournament ELO, walk rounds in `roundNumber` order and matches in order, apply `processMatchElo()` (the same function `completeTournament()` uses, so the per-match changes of a player add up to the tournament ELO change on the Leaderboard tab). Change = ELO after − ELO before the match, rounded to 2 decimals. Returns a `Map<match object, [p1, p2, p3, p4]>`; incomplete matches are absent.
+- **Pre-tournament baseline** — `resolvePreTournamentElo(summary, date, names)` (`js/services/elo.js`) reads the cached players summary (no network). Each summary entry carries `eloDate`, the tournament date of the player's latest ELO row (`loadPlayerSummary()`, `buildPlayerSummary()`, `applyTournamentEloToSummary()` set it):
+  - `eloDate === date` → the summary already includes this tournament (e.g. app reloaded mid-tournament, or tournament just completed) → baseline is `previousElo`.
+  - `eloDate` earlier than `date`, or no `eloDate` (no ELO history, ELO 1000) → baseline is `elo`.
+  - `eloDate` later than `date`, or a participant missing from the summary → baseline unknown → **no indicators** for that tournament (older tournaments show none; the Leaderboard tab has their history).
+
+### Acceptance: match ELO change indicators
+
+All baselines are summary entries with `eloDate` before the tournament date unless stated. Team 1 = player1 + player2, team 2 = player3 + player4.
+
+| Input | Expected |
+|---|---|
+| A, B, C, D all `elo: 1000`; R1 A+B vs C+D scored 15–10 | A `▲16.0`, B `▲16.0`, C `▼15.3`, D `▼15.3` (raw +16, +16, −15.26, −15.26) |
+| Same match changed to 10–15 | A `▼16.0`, B `▼16.0`, C `▲15.3`, D `▲15.3` (raw −16, −16, +15.26, +15.26) |
+| R1 15–10, then R2 A+B vs C+D scored 10–15 | R1 as above; R2 A `▼17.4`, B `▼17.4`, C `▲16.6`, D `▲16.6` (raw −17.44, −17.44, +16.64, +16.64 — chained from 1016/1016/984.74/984.74) |
+| A 1100, B 1000, C 950, D 1020; A+B vs C+D scored 15–10 | A `▲10.9`, B `▲15.3`, C `▼10.9`, D `▼14.0` (raw +10.92, +15.34, −10.92, −13.98) |
+| A, B `elo: 2200`, C, D `elo: 1000`; A+B vs C+D scored 15–10 | all four show `–` (raw +0.03, +0.03, −0.03, −0.03 round to 0.0) |
+| Match not scored | no indicator on any name |
+| A, B, C, D `elo: 1016/1016/984.74/984.74`, `previousElo: 1000`, `eloDate` = tournament date; R1 A+B vs C+D scored 15–10 | A `▲16.0`, B `▲16.0`, C `▼15.3`, D `▼15.3` (baseline = `previousElo`, not the already-updated `elo`) |
+| A, B, C, D `eloDate` later than the tournament date, or a player missing from the summary | no indicators |
+| Viewer is not an administrator | indicators shown exactly as for an admin |
+
 
 
 `Store.isAdministrator()` gates tournament create/modify/run actions.
@@ -391,6 +421,10 @@ An **incomplete** tournament can be deleted. A **completed** tournament cannot.
 | `js/services/tournament.js` | Core lifecycle: create, start, score entry, round advance, completion. Match generation. Player stat recalculation. |
 | `js/services/ranking.js` | Player ranking algorithm (totalPoints, wins, PPG, name). Used for Round 2+ seeding. |
 | `tests/tournament/tournament-lifecycle.test.js` | Full lifecycle tests: create → start → setScore → nextRound → complete. Validates Store & State emissions. |
+| `js/services/elo.js` | `resolvePreTournamentElo()` / `calculateTournamentMatchEloChanges()` — pre-tournament baseline + per-match ELO changes behind the Matches-tab indicators. |
+| `tests/elo/tournament-match-elo.test.js` | Unit tests for the baseline rule (`eloDate`) and the chained per-match ELO changes (hardcoded values). |
+| `tests/tournament/match-elo-indicators.test.js` | Matches-tab DOM tests: badges per name, live update when a result changes, round navigation, neutral dash, viewer/completed tournament, unknown baseline. |
+| `tests/tournament/tournament-elo-refresh.test.js` | Post-completion summary refresh stamps `eloDate`; per-match changes stay identical after completion. |
 
 ## Integration Points
 
