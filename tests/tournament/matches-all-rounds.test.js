@@ -9,6 +9,8 @@
  * See .github/features/tournament-matches-panel.md.
  */
 import { vi, describe, it, expect, beforeEach } from 'vitest';
+import fs from 'node:fs';
+import path from 'node:path';
 
 vi.mock('../../js/services/backend.js', async (importOriginal) => ({
   ...await importOriginal(),
@@ -375,6 +377,29 @@ describe('Tournament Matches panel — player filter', () => {
     pickPlayer(container, '');
     expect(container.querySelectorAll('.match-card')).toHaveLength(6);
     expect(filterSelect(container).value).toBe('');
+  });
+
+  it('highlights the picked player name in every visible card', () => {
+    const highlighted = (c) => [...c.querySelectorAll('.match-card')].map(card => {
+      const hits = [...card.querySelectorAll('.match-team-name.is-filtered-player')];
+      const names = [...card.querySelectorAll('.match-team-name')];
+      return hits.map(h => `${h.textContent.trim()}@${names.indexOf(h)}`).join('|');
+    });
+    const container = renderAs('Zed');
+    expect(container.querySelectorAll('.is-filtered-player')).toHaveLength(0);
+
+    pickPlayer(container, 'Dave');
+    expect(highlighted(container)).toEqual(['Dave@3', 'Dave@0', 'Dave@2']);
+
+    pickPlayer(container, 'Frank');
+    clickOrder(container, 'desc');
+    expect(highlighted(container)).toEqual(['Frank@3', 'Frank@1', 'Frank@1']);
+
+    pickPlayer(container, '');
+    expect(container.querySelectorAll('.is-filtered-player')).toHaveLength(0);
+
+    const css = fs.readFileSync(path.resolve('css/pages.css'), 'utf8');
+    expect(css).toMatch(/\.match-team-name\.is-filtered-player\s*\{[^}]*color:\s*var\(--color-primary\)/);
   });
 
   it('combines with the round order', () => {

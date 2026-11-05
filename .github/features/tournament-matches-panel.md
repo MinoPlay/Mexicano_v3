@@ -70,6 +70,9 @@ There is no round navigation (◀ Round N ▶) any more and no `viewingRound` st
 - Shown whenever the tournament has 1+ rounds; not rendered with no rounds.
 - Choosing a player keeps ONLY the match cards that player is in (any seat, partner or opponent).
   Rounds where the player has no match (sit-out) are hidden entirely.
+- The picked player's name in every visible card is highlighted (blue = `var(--color-primary)`,
+  bold) via `.match-team-name.is-filtered-player`, so their seat/team is easy to spot. Only that
+  one name per card; partner/opponents stay normal. `All players` => no highlight.
 - Cards keep their real court label and `data-round-idx` / `data-match-idx`, so clicking a
   filtered card still scores/edits the exact right match.
 - Works together with the order control (filter first, order applies to what is left).
@@ -149,6 +152,11 @@ round 3 `18-7` and one unscored match.
 - Pick `Dave` => 3 cards, titles `Round 1, Round 2, Round 3`, scores `15–10, 16–9, (none)`,
   courts `Court 1, Court 2, Court 2` (Dave sits in seat 4, 1 and 3).
 - Pick `Frank` => scores `14–11, 16–9, 18–7`, courts `Court 2, Court 2, Court 1`.
+- Highlight: default (`All players`) => 0 `.is-filtered-player`. Pick `Dave` => each of the 3 cards
+  has exactly one `.match-team-name.is-filtered-player` reading `Dave`, at name index `3, 0, 2`
+  (of the card's 4 names). Pick `Frank`, then **Last round first** => `Frank` at `3, 1, 1`.
+  Back to `All players` => 0. `css/pages.css` has `.match-team-name.is-filtered-player` with
+  `color: var(--color-primary)`.
 - Pick `Alice`, then **Last round first** => scores `18–7, 13–12, 15–10`.
 - Pick `All players` again => all 6 cards.
 - Admin picks `Frank`, clicks the `14–11` card => score sheet prefilled `14` / `11`

@@ -262,6 +262,12 @@
   display: inline-block;
 }
 
+/* Player picked in the Matches filter — easy to spot in each card */
+.match-team-name.is-filtered-player {
+  color: var(--color-primary);
+  font-weight: var(--font-weight-bold);
+}
+
 /* em (not xs) so the badge shrinks together with a name fitted by fitNamesToMaxWidth */
 .match-team-name .elo-change {
   font-size: 0.85em;

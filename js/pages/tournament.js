@@ -392,17 +392,22 @@ export function renderTournament(container, params) {
           scoreCell = '<span class="match-hint">Tap to score</span>';
         }
 
+        const nameCell = (name, side, delta) => {
+          const cls = playerFilter && name === playerFilter ? 'match-team-name is-filtered-player' : 'match-team-name';
+          return `<span class="${cls}">${nameWithElo(name, side, delta)}</span>`;
+        };
+
         return `
         <div class="match-card ${completed ? 'completed' : ''}" data-round-idx="${roundIdx}" data-match-idx="${idx}">
           <div class="match-court">Court ${tournament.courts?.[idx] ?? idx + 1}</div>
           <div class="match-team match-team-left">
-            <span class="match-team-name">${nameWithElo(team1Name1, 'left', deltas[0])}</span>
-            <span class="match-team-name">${nameWithElo(team1Name2, 'left', deltas[1])}</span>
+            ${nameCell(team1Name1, 'left', deltas[0])}
+            ${nameCell(team1Name2, 'left', deltas[1])}
           </div>
           <div class="match-score">${scoreCell}</div>
           <div class="match-team match-team-right">
-            <span class="match-team-name">${nameWithElo(team2Name1, 'right', deltas[2])}</span>
-            <span class="match-team-name">${nameWithElo(team2Name2, 'right', deltas[3])}</span>
+            ${nameCell(team2Name1, 'right', deltas[2])}
+            ${nameCell(team2Name2, 'right', deltas[3])}
           </div>
         </div>`;
       }).join('');
