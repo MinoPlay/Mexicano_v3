@@ -9,10 +9,7 @@ import {
 } from '../services/supabase.js';
 
 export function getOnboardingStep(now = Date.now()) {
-  const expiry = Store.getAccessExpiry();
-  const hasActiveGrant = Store.getAccessRole()
-    && (!expiry || Date.parse(expiry) > now);
-  if (!hasActiveGrant) return 'access';
+  if (!Store.getAccessRole(now)) return 'access';
   if (!Store.getCurrentPlayerId() || !Store.getCurrentUser()) return 'player';
   return null;
 }

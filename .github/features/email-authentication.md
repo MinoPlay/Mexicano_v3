@@ -23,6 +23,51 @@ pre-approved users.
   separately after all users have moved.
 - The service-role key is used only by local/admin scripts and never shipped to the browser.
 
+## Persistent sign-in
+
+- Magic-link and shared-code sign-in lasts until explicit logout, server-side revocation,
+  or removal of the browser's saved credentials. Normal JWT expiry silently refreshes the same
+  identity; it must not create a replacement anonymous user.
+- Network errors, rate limits, and temporary Auth failures preserve the saved session, player,
+  and access grant and surface an error. A later request retries renewal. Only a definitive
+  invalid/revoked Auth session requires signing in again.
+- Refreshes are serialized, including concurrent HTTP 401 retries and same-deployment browser
+  tabs (Web Locks where available). A late response cannot restore a session after logout.
+- Membership is an existing, non-revoked `app_access_grants` row. Member grants store PostgreSQL
+  `infinity` in `expires_at`; for admin grants that column is only the elevation deadline.
+  Expired admin elevation falls back to member access, never to the login screen.
+- Main and preview deployments keep their existing isolated browser storage.
+
+Supabase's [session contract](https://supabase.com/docs/guides/auth/sessions) allows indefinite
+sessions with rotating refresh tokens. Refresh errors accept both Auth response formats:
+`code`/`message` and the unversioned `error_code`/`msg` format (whose numeric `code` is HTTP status).
+
+### Deployment
+
+Apply `supabase/migrations/20261109120000_persistent_member_access.sql`, deploy the updated
+`claim-access` and `domain-mutation` Edge Functions, then publish the browser changes. The migration
+preserves identities/player bindings and revocations, removes old member deadlines, and retains
+existing admin deadlines. Use the updated provisioning script for future email approvals;
+`APP_ACCESS_DAYS` and `AUTH_USER_ACCESS_DAYS` no longer limit membership.
+
+In Supabase Authentication -> Sessions, keep time-boxed sessions and inactivity timeout disabled,
+and single-session-per-user enforcement off. These live project settings cannot be verified from
+the repository. Access JWTs should remain short-lived; refresh-token rotation stays enabled.
+
+### Persistence acceptance pairs
+
+- Expired magic-link or shared-code JWT + valid refresh token => same user, new token pair,
+  unchanged player and membership.
+- Refresh HTTP 429/503 or network failure => request rejects; saved credentials/grant survive;
+  next successful refresh restores requests without another login.
+- Two requests rejected with HTTP 401 => one refresh; both retry using the new access token.
+- Two tabs renewing the same session => one refresh under the shared lock; second tab reuses it.
+- Logout during refresh => late response does not write credentials back.
+- Confirmed `refresh_token_not_found` => sign-in error, cleared session, no anonymous signup.
+- Old member deadline or expired admin elevation => onboarding stays complete; admin actions
+  are denied after the elevation deadline while member actions still work.
+- Revoked grant => protected reads and writes remain denied.
+
 ## Rollout plan
 
 1. Apply `supabase/migrations/20260929133000_approved_email_auth.sql`, then
@@ -104,7 +149,7 @@ left join public.app_access_grants g on g.user_id = a.user_id
 order by a.email;
 ```
 
-Expected: an approved user has no `revoked_at`, has a `member` grant, and has a future `expires_at`.
+Expected: an approved user has no `revoked_at`, has a `member` grant, and has `expires_at = infinity`.
 
 ## Scenario tests
 
@@ -116,7 +161,7 @@ Use a non-production test user first.
 | Unknown magic link | Request a magic link for an unapproved email | No Auth user is created and no usable link grants access; response may be generic to prevent email enumeration |
 | Revoked user | Sign in, run `revoke`, retry a protected read and mutation | Existing token remains an identity, but RLS returns no protected rows and mutation rejects active access |
 | Re-approved user | Run `approve` again, refresh/sign in again | Access works with the original Auth user ID |
-| Expired grant | Temporarily set test grant expiry to the past | Protected reads and writes are denied |
+| Expired admin elevation | Set an admin grant's expiry to the past | Member access remains; admin operations are denied |
 | Anonymous transition | Complete old shared-code flow while anonymous sign-ins remain enabled | Existing onboarding still works during migration |
 | Admin separation | Sign in as approved member and select an admin player without elevation | Admin mutation remains denied |
 
@@ -139,20 +184,21 @@ Invoke-RestMethod `
 Expected: the email arrives. The link must target an allowed redirect URL. Complete end-to-end
 verification after the app callback/session handling is implemented.
 
-### Revocation and expiry tests
+### Revocation and admin-expiry tests
 
 ```sql
--- Test expiry. Replace the address, then restore by running the approve script again.
+-- Test admin expiry using a test admin. Membership must remain active.
 update public.app_access_grants g
 set expires_at = now() - interval '1 minute'
 from public.approved_auth_users a
 where a.user_id = g.user_id
+  and g.role = 'admin'
   and lower(a.email) = lower('approved@example.com');
 ```
 
-After expiry or revocation, repeat the protected `players` request with the existing token. Expected:
-an empty result because RLS no longer sees active access. Edge Function mutations must return
-`Active app access is required`.
+After admin expiry, the protected `players` request still works; admin mutations return
+`Admin access is required`. After explicit revocation, protected reads return no rows and
+mutations return `Active app access is required`.
 
 ## Acceptance
 
