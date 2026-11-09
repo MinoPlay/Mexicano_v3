@@ -71,17 +71,24 @@ Matches reference stable player UUIDs. Legacy player names are resolved by exact
 
 During migration, two identity entry paths share the same authorization layer:
 
-1. Legacy: create/restore an anonymous session, submit the shared code, and receive an expiring
-   `app_access_grants` row.
+1. Legacy: create/restore an anonymous session, submit the shared code, and receive a persistent,
+   revocable `app_access_grants` row.
 2. Named: an administrator pre-provisions an approved email Auth user and its
    `app_access_grants` row. The user signs in with a magic link.
 3. Fetch active players and bind the chosen `player_id`.
-4. Admin code calls `elevate-admin`; server records a short-lived admin grant.
-5. RLS checks active grants. Selecting an administrator name alone grants nothing.
+4. Admin code calls `elevate-admin`; server records a short-lived admin elevation. Its expiry
+   removes admin privileges, not membership or sign-in.
+5. RLS checks non-revoked membership; admin checks additionally require an unexpired elevation.
+   Selecting an administrator name alone grants nothing.
 
 Shared/admin codes are rate-limited, rotatable, revocable, hashed server-side, and never retained by the app after successful exchange.
 Public email signup is disabled; the service-role provisioning script is the only account creation
 path. See `email-authentication.md`.
+
+Member `expires_at` is PostgreSQL `infinity`; admin `expires_at` is only the elevation deadline.
+The persistence migration also preserves member access for previously expired grants, without
+reactivating explicitly revoked grants. Auth refresh failures must never silently replace the
+user with a fresh anonymous identity.
 
 ## App data boundary
 

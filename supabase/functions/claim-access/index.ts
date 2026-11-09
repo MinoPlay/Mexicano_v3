@@ -20,8 +20,7 @@ Deno.serve(async (request) => {
     await recordAttempt(client, user.id, 'member', valid);
     if (!valid) return json({ message: 'Invalid access code' }, 401);
 
-    const days = Number(Deno.env.get('APP_ACCESS_DAYS') || 30);
-    const expiresAt = new Date(Date.now() + days * 86400000).toISOString();
+    const expiresAt = 'infinity';
     const { error } = await client.rpc('grant_app_access', {
       p_user_id: user.id,
       p_expires_at: expiresAt,

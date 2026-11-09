@@ -21,6 +21,26 @@ describe('Supabase onboarding state', () => {
     expect(onboarding.getOnboardingStep()).toBe(null);
   });
 
+  it.each([
+    ['member', '2020-01-01T00:00:00Z'],
+    ['member', 'infinity'],
+    ['admin', '2020-01-01T00:00:00Z'],
+  ])('keeps membership with role %s and deadline %s without retaining expired admin rights', (role, expiry) => {
+    Store.setSupabaseConfig({ url: 'https://example.supabase.co', anonKey: 'public-key' });
+    Store.setAccessGrant({ role, expires_at: expiry });
+    Store.setCurrentPlayerId('player-1');
+    Store.setCurrentUser('Mattijs');
+
+    expect(onboarding.getOnboardingStep()).toBeNull();
+    expect(Store.getAccessRole()).toBe('member');
+    expect(Store.isAdministrator()).toBe(false);
+  });
+
+  it('keeps admin access only until the elevation deadline', () => {
+    Store.setAccessGrant({ role: 'admin', expires_at: '2099-01-01T00:00:00Z' });
+    expect(Store.getAccessRole()).toBe('admin');
+  });
+
   it('replaces stale project config and clears project-bound browser state', async () => {
     Store.setSupabaseConfig({
       url: 'https://edasyhcgpdhsynufbcll.supabase.co',
