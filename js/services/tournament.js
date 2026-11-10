@@ -448,10 +448,11 @@ export async function runTournamentCompletion(tournament, report = () => {}) {
 
 /**
  * Merge post-tournament ELO values into a players summary array.
- * Participants get elo (post) + previousElo (pre-tournament); everyone else is
- * untouched. Players missing from the summary are appended.
+ * Participants get elo (post) + previousElo (pre-tournament) + eloDate (the
+ * tournament date those values belong to); everyone else is untouched. Players
+ * missing from the summary are appended.
  */
-export function applyTournamentEloToSummary(summary, playerNames, eloBefore, eloAfter) {
+export function applyTournamentEloToSummary(summary, playerNames, eloBefore, eloAfter, date) {
   const result = (summary || []).map(p => ({ ...p }));
   const byName = new Map(result.map(p => [p.name, p]));
   for (const name of playerNames || []) {
@@ -462,8 +463,9 @@ export function applyTournamentEloToSummary(summary, playerNames, eloBefore, elo
     if (existing) {
       existing.elo = elo;
       existing.previousElo = previousElo;
+      existing.eloDate = date;
     } else {
-      result.push({ id: null, name, elo, previousElo });
+      result.push({ id: null, name, elo, previousElo, eloDate: date });
     }
   }
   return result;
@@ -567,6 +569,7 @@ async function finalizeCompletedTournament(tournament, onProgress) {
     tournament.players.map(p => p.name),
     eloBefore,
     eloAfter,
+    tournament.tournamentDate,
   ));
 
   // Snapshot the post-tournament ELO (and its pre-tournament baseline) so a

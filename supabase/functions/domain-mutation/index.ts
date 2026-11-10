@@ -16,11 +16,12 @@ async function requireGrant(client: any, userId: string): Promise<Grant> {
     .eq('user_id', userId)
     .maybeSingle();
   if (error) throw error;
-  if (!data || data.revoked_at || Date.parse(data.expires_at) <= Date.now()) {
+  if (!data || data.revoked_at) {
     throw new Error('Active app access is required');
   }
   return {
     ...data,
+    role: data.role === 'admin' && Date.parse(data.expires_at) > Date.now() ? 'admin' : 'member',
     selected_player_id: await effectivePlayerId(client, userId, data.selected_player_id),
   };
 }

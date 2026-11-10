@@ -295,8 +295,10 @@ export const Store = {
     notifyUserChanged();
   },
 
-  getAccessRole() {
-    return this.get('access_role') || '';
+  getAccessRole(now = Date.now()) {
+    const role = this.get('access_role') || '';
+    if (role === 'admin' && !(Date.parse(this.getAccessExpiry()) > now)) return 'member';
+    return role;
   },
 
   getAccessExpiry() {

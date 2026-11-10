@@ -4,8 +4,13 @@ import { calculatePlayerStatistics } from './statistics.js';
 import { buildTournamentFromRows } from './tournament-shape.js';
 import { getEloSnapshots } from './elo.js';
 import { perfStart } from './perf.js';
+import { currentDeployId, nsPrefix } from '../deploy-env.js';
 
 const EXPIRY_SKEW_SECONDS = 30;
+const INVALID_SESSION_CODES = new Set([
+  'refresh_token_not_found', 'refresh_token_already_used',
+  'session_not_found', 'session_expired', 'user_not_found', 'user_banned',
+]);
 const snapshotPromises = new Map();
 
 function getConfig() {
@@ -31,9 +36,9 @@ async function parseError(response, fallback) {
 // detect a missing view/function (migration not applied yet).
 async function requestError(response, fallback) {
   const body = await response.json().catch(() => null);
-  const error = new Error(body?.message || body?.error_description || body?.error || fallback);
+  const error = new Error(body?.message || body?.msg || body?.error_description || body?.error || fallback);
   error.status = response.status;
-  error.code = body?.code ?? null;
+  error.code = body?.error_code ?? body?.code ?? null;
   return error;
 }
 
@@ -76,8 +81,8 @@ async function fetchCurrentAuthUser(session) {
   return response.json();
 }
 
-export async function syncAccessGrant(session = Store.getSupabaseSession()) {
-  if (!session?.access_token) throw new Error('Supabase session is missing.');
+export async function syncAccessGrant() {
+  let session = await ensureAnonymousSession();
   const config = getConfig();
   const user = session.user || await fetchCurrentAuthUser(session);
   if (!user?.id) throw new Error('Supabase session has no user identity.');
@@ -102,7 +107,7 @@ export async function syncAccessGrant(session = Store.getSupabaseSession()) {
     throw new Error(await parseError(response, `Access grant lookup failed (${response.status})`));
   }
   const [grant] = await response.json();
-  if (!grant || grant.revoked_at || Date.parse(grant.expires_at) <= Date.now()) {
+  if (!grant || grant.revoked_at) {
     Store.clearSupabaseSession();
     throw new Error('This email address does not have active Mexicano access.');
   }
@@ -175,7 +180,9 @@ async function createAnonymousSession() {
 
 async function refreshSession(session) {
   const config = getConfig();
-  if (!session?.refresh_token) return createAnonymousSession();
+  if (!session?.refresh_token) {
+    throw new Error('Your session cannot be renewed. Please sign in again.');
+  }
   const response = await fetch(`${config.url}/auth/v1/token?grant_type=refresh_token`, {
     method: 'POST',
     headers: {
@@ -185,24 +192,48 @@ async function refreshSession(session) {
     body: JSON.stringify({ refresh_token: session.refresh_token }),
   });
   if (!response.ok) {
-    Store.clearSupabaseSession();
-    return createAnonymousSession();
+    const error = await requestError(response, `Session renewal failed (${response.status})`);
+    if (Store.getSupabaseSession()?.refresh_token !== session.refresh_token) {
+      throw new Error('Session changed while refreshing. Please retry.');
+    }
+    if (INVALID_SESSION_CODES.has(error.code)) {
+      Store.clearSupabaseSession();
+      error.message = 'Your session is no longer valid. Please sign in again.';
+    }
+    throw error;
   }
   const refreshed = await response.json();
+  if (Store.getSupabaseSession()?.refresh_token !== session.refresh_token) {
+    throw new Error('Session changed while refreshing. Please retry.');
+  }
+  if (!refreshed?.access_token || !refreshed?.refresh_token) {
+    throw new Error('Session renewal returned an incomplete session. Please retry.');
+  }
   Store.setSupabaseSession(refreshed);
   return refreshed;
 }
 
 let sessionPromise = null;
 
-// Parallel route reads share one refresh/sign-in instead of racing on the
-// same refresh token.
-export async function ensureAnonymousSession() {
+// Include forced 401 refreshes in the same queue; Web Locks coordinate other tabs.
+export async function ensureAnonymousSession(rejectedAccessToken = null) {
   const session = Store.getSupabaseSession();
-  if (sessionIsUsable(session)) return session;
+  if (sessionIsUsable(session) && session.access_token !== rejectedAccessToken) return session;
   if (!sessionPromise) {
-    sessionPromise = (session?.refresh_token ? refreshSession(session) : createAnonymousSession())
-      .finally(() => { sessionPromise = null; });
+    const renew = async () => {
+      const current = Store.getSupabaseSession();
+      if (sessionIsUsable(current) && current.access_token !== rejectedAccessToken) return current;
+      if (!current && (session || rejectedAccessToken)) {
+        throw new Error('Session changed while refreshing. Please retry.');
+      }
+      return current ? refreshSession(current) : createAnonymousSession();
+    };
+    const renewal = typeof navigator !== 'undefined' && navigator.locks
+      ? navigator.locks.request(
+        `${nsPrefix(currentDeployId())}mexicano-auth:${getConfig().url}`, renew,
+      )
+      : renew();
+    sessionPromise = renewal.finally(() => { sessionPromise = null; });
   }
   return sessionPromise;
 }
@@ -220,7 +251,7 @@ async function authenticatedFetch(url, options = {}, retry = true) {
     },
   });
   if (response.status === 401 && retry) {
-    await refreshSession(Store.getSupabaseSession());
+    await ensureAnonymousSession(session.access_token);
     return authenticatedFetch(url, options, false);
   }
   return response;
@@ -418,6 +449,7 @@ function buildPlayerSummary(dataset, appMatches, eloByName) {
       matchPadelId: player.match_padel_id ?? null,
       elo: Number(elo?.elo ?? 1000),
       previousElo: Number(elo?.previous_elo ?? 1000),
+      eloDate: elo?.date ?? null,
       wins: playerStats.wins,
       losses: playerStats.losses,
       points: playerStats.points,
@@ -1095,6 +1127,7 @@ export function loadPlayerSummary() {
         matchPadelId: player.match_padel_id ?? null,
         elo: Number(elo?.elo ?? 1000),
         previousElo: Number(elo?.previous_elo ?? 1000),
+        eloDate: elo?.tournament_date ?? null,
         wins: total.wins || 0,
         losses: total.losses || 0,
         points: total.points || 0,

@@ -22,7 +22,7 @@ Each filter uses a pre-computed or once-per-hydration projection.
 - **Never** aggregates monthly `players_overview.json` files for All Time
 - `players.json` is updated automatically after every `completeTournament()` and via the Settings → "Generate players.json" button
 - Contains: `[{ Name, ELO, PreviousELO, Wins, Losses, TotalPoints, Average, Tournaments }]`
-- Stored in `Store` as `players_summary` (camelCase: `{ name, elo, previousElo, wins, losses, points, average, tournaments }`)
+- Stored in `Store` as `players_summary` (camelCase: `{ name, elo, previousElo, eloDate, wins, losses, points, average, tournaments }`; `eloDate` = tournament date of the player's latest ELO row, used by the tournament Matches-tab ELO indicators)
 
 **Fallback** (local-only / no GitHub backend): if `players.json` is not loaded, stats are computed on the fly from `allMatches` in localStorage. This only occurs when there is no GitHub backend configured.
 

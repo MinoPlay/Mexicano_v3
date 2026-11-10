@@ -88,17 +88,12 @@ export async function approveUser(email, options = {}) {
   const supabaseUrl = (options.supabaseUrl || requiredEnvironment('SUPABASE_URL'))
     .replace(/\/+$/, '');
   const serviceRoleKey = options.serviceRoleKey || requiredEnvironment('SUPABASE_SERVICE_ROLE_KEY');
-  const accessDays = Number(options.accessDays ?? process.env.AUTH_USER_ACCESS_DAYS ?? 3650);
-  if (!Number.isFinite(accessDays) || accessDays <= 0) {
-    throw new Error('AUTH_USER_ACCESS_DAYS must be a positive number.');
-  }
   const normalizedEmail = normalizeEmail(email);
   const user = await ensureAuthUser(supabaseUrl, serviceRoleKey, normalizedEmail);
-  const expiresAt = new Date(Date.now() + accessDays * 86400000).toISOString();
   const approval = await invokeRpc(supabaseUrl, serviceRoleKey, 'approve_email_user', {
     p_user_id: user.id,
     p_email: normalizedEmail,
-    p_expires_at: expiresAt,
+    p_expires_at: 'infinity',
     p_approved_by: process.env.AUTH_USER_APPROVED_BY || 'local-script',
     p_notes: process.env.AUTH_USER_NOTES || null,
   });
