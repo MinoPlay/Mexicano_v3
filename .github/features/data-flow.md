@@ -161,7 +161,7 @@ No writes.
 
 | Direction | File / Store key | When |
 |-----------|-----------------|------|
-| READ | `players_summaries/summary_<slug>.json` | On dialog open via `readPlayerSummary()` |
+| READ | Supabase full match history (`pullAllMatches`, only if `Store.isMatchesFullyLoaded()` is false) → `Store.getMatches()` | On dialog open via `readPlayerSummary(name)`, computed client-side by `buildPlayerProfile` |
 
 No writes.
 
@@ -498,7 +498,7 @@ No writes.
 
 | Direction | File / Store key | When |
 |-----------|-----------------|------|
-| READ | `players_summaries/summary_<slug>.json` | On dialog open via `readPlayerSummary()` |
+| READ | Supabase full match history (`pullAllMatches`, only if `Store.isMatchesFullyLoaded()` is false) → `Store.getMatches()` | On dialog open via `readPlayerSummary(name)`, computed client-side by `buildPlayerProfile` |
 
 No writes.
 

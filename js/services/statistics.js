@@ -177,6 +177,35 @@ export function calculatePartnershipStats(playerName, allMatches) {
   }));
 }
 
+function recentResultsBy(playerName, allMatches, keysOf) {
+  const played = allMatches
+    .filter(m => !(m.scoreTeam1 === 0 && m.scoreTeam2 === 0) && involvesPlayer(m, playerName))
+    .sort((a, b) => b.date.localeCompare(a.date) || (b.roundNumber ?? 0) - (a.roundNumber ?? 0));
+  const results = {};
+  for (const m of played) {
+    const result = getPlayerTeamScore(m, playerName) > getOpponentTeamScore(m, playerName) ? 'W' : 'L';
+    for (const key of keysOf(m)) {
+      if (!key) continue;
+      results[key] ??= [];
+      if (results[key].length < 3) results[key].push(result);
+    }
+  }
+  return results;
+}
+
+/** Full player-profile data (Overview + Head-to-Head + Partners); recentResults newest first. */
+export function buildPlayerProfile(playerName, allMatches) {
+  const recentVs = recentResultsBy(playerName, allMatches, m => getOpponents(m, playerName));
+  const recentWith = recentResultsBy(playerName, allMatches, m => [getPartner(m, playerName)]);
+  return {
+    ...generatePlayerSummary(playerName, allMatches),
+    opponents: calculateOpponentStats(playerName, allMatches)
+      .map(o => ({ ...o, recentResults: recentVs[o.opponentName] || [] })),
+    partners: calculatePartnershipStats(playerName, allMatches)
+      .map(p => ({ ...p, recentResults: recentWith[p.partnerName] || [] })),
+  };
+}
+
 function compareTableValues(a, b, direction) {
   if (typeof a === 'string') {
     const cmp = a.localeCompare(b);

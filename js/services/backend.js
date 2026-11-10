@@ -2,6 +2,7 @@ import { Cache } from '../cache.js';
 import { Store } from '../store.js';
 import * as supabase from './supabase.js';
 import { FAST_TIMEOUTS } from './http.js';
+import { buildPlayerProfile } from './statistics.js';
 
 export { FAST_TIMEOUTS };
 
@@ -291,8 +292,9 @@ export async function deleteTournamentDayFile(date) {
   return mutate('delete_tournament', { date });
 }
 
-export async function readPlayerSummary() {
-  return null;
+export async function readPlayerSummary(playerName) {
+  if (!Store.isMatchesFullyLoaded()) await pullAllMatches();
+  return buildPlayerProfile(playerName, Store.getMatches());
 }
 
 export async function pullMonthlyOverviewRaw(yearMonth) {

@@ -494,21 +494,8 @@ export function showPlayerProfile(playerName) {
   import('../services/backend.js').then(({ readPlayerSummary }) =>
     readPlayerSummary(playerName)
   ).then(data => {
-    if (data) {
-      summaryData = data;
-      renderBody();
-    } else {
-      const hasGitHub = !!Store.getSupabaseConfig();
-      body.innerHTML = `
-        <div class="empty-state">
-          <div class="empty-state-icon">📊</div>
-          <div class="empty-state-text">No summary data</div>
-          ${hasGitHub
-            ? '<p class="text-secondary text-sm">Go to <strong>Settings → Generate Summaries</strong> to build player statistics.</p>'
-            : '<p class="text-secondary text-sm">Connect to Supabase, then retry.</p>'
-          }
-        </div>`;
-    }
+    summaryData = data;
+    renderBody();
   }).catch(() => {
     body.innerHTML = '<p class="text-secondary text-center mt-lg">Failed to load summary.</p>';
   });
