@@ -105,6 +105,8 @@ Zero-zero matches (0-0) ignored everywhere (same as statistics service).
 ## Pages
 - **Home** — dashboard: KPI row, latest tournament leaderboard, current month table,
   ELO movers of latest tournament, active tournament card. Confirmation popup unchanged.
+  Async month-overview refreshes from a superseded render must not touch the KPI row
+  (otherwise "Latest winner"/"Players last time" get blanked to "—").
 - **Players** `/players` (NEW, nav item 👥) — split view. Left: data-grid of `buildPlayerRows`
   (search, "members only" toggle, sortable, sparkline + form cells, checkbox multi-select).
   Right: inline detail from `buildPlayerDetail` (KPIs, ELO chart, partners/opponents tables,

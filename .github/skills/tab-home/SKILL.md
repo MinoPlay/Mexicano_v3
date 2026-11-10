@@ -40,7 +40,7 @@ The page is implemented by `renderHome(container, params)` in `js/pages/home.js`
 - The title `#home-title` renders `🎾 Mexicano v<APP_VERSION>` and is clickable. After confirmation, it clears the in-memory `matches`, `matches_fully_loaded` and `active_tournament` cache entries, then reloads the page (which re-pulls everything from Supabase).
 - The title also contains `#app-refresh-btn` (refresh icon `↻`). Its click stops propagation (so the clear-cache handler does not fire) and calls `refreshApp()` from `js/version.js`, which clears all caches and reloads.
 - Tournament attendance confirmation is shown only when `shouldShowConfirmationPopup(activeTournament, currentUser)` returns true and no `#tournament-confirm-overlay` exists. Confirmation calls `confirmAttendanceAndPush(currentUser)` (which persists to Supabase), removes the overlay, and best-effort sends a Telegram alert.
-- `renderKpis()` fills `#home-kpis` with latest winner, latest player count, month average leader, tournaments this month, and active players this month.
+- `renderKpis()` fills `#home-kpis` with latest winner, latest player count, month average leader, tournaments this month, and active players this month. Async callbacks (month overview refresh) bail out when a newer render has replaced `#home-kpis`, so stale closures cannot overwrite the KPIs.
 - `renderMovers()` fills `#home-movers` with a compact latest-tournament ELO delta bar list.
 - `renderNotificationBell()` mounts asynchronously into `#home-header-right`.
 - `State`, `calculateAllEloRankings`, and `getMembers` are imported in `home.js` but are not used by the current implementation.

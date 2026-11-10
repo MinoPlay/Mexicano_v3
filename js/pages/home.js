@@ -545,6 +545,8 @@ export function renderHome(container, params) {
     </div>
   `;
 
+  const kpisEl = container.querySelector('#home-kpis');
+
   function renderMovers() {
     const el = container.querySelector('#home-movers');
     if (!el) return;
@@ -636,7 +638,8 @@ export function renderHome(container, params) {
       ))
     ).then(() => {
       const tableEl = container.querySelector('#current-month-table');
-      if (!tableEl) return;
+      // A newer render replaced this one: its closure stats are stale.
+      if (!tableEl || !container.contains(kpisEl)) return;
       const freshStats = resolveCurrentMonthStats();
       if (freshStats.length > 0) {
         currentMonthStats = freshStats;
