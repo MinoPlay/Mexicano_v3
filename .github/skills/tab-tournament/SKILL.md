@@ -25,7 +25,7 @@ The page is the live tournament workspace and the historical tournament viewer. 
 - `tournament`, loaded by `initLoad()` and refreshed by `loadTournament()`.
 - `currentTab`, initially `'matches'`, but switched to `'leaderboard'` when a completed tournament loads.
 - `viewingRound`, where `-1` means "latest round".
-- `isLoading` for on-demand GitHub loads.
+- `isLoading` for on-demand Supabase loads.
 
 Loading rules:
 
@@ -84,9 +84,9 @@ Round generation and scoring logic live in `js/services/tournament.js`:
 
 - `isMatchComplete(match)` is `match.team1Score + match.team2Score === 25`.
 - `isRoundComplete(round)` requires every match to be complete.
-- `setMatchScore()` is admin-gated in the service layer, validates the 25-point total, updates the match, recalculates stats, persists via `saveTournamentState()`, and cancels automatic sync so individual score edits are not pushed immediately.
+- `setMatchScore()` is admin-gated in the service layer, validates the 25-point total, updates the match, recalculates stats, refreshes the in-memory state via `saveTournamentState()`, and writes each score edit through to Supabase via `persistTournamentState()`.
 - If editing a previous round (`roundNumber < tournament.currentRoundNumber`), `setMatchScore()` deletes later rounds, recalculates all player stats, and auto-generates the next round if the edited round is complete.
-- `startNextRound(tournament)` requires admin access, current round existence, and round completion. It stamps `completedAt`, calls `recalculateAllPlayerStats()`, logs the completed round with `logRoundResult()`, ranks players with `rankPlayers()`, creates the next round with `createMexicanoMatches()`, saves state, cancels pending sync, and calls `flushPush()`.
+- `startNextRound(tournament)` requires admin access, current round existence, and round completion. It stamps `completedAt`, calls `recalculateAllPlayerStats()`, logs the completed round with `logRoundResult()`, ranks players with `rankPlayers()`, creates the next round with `createMexicanoMatches()`, saves state, and writes the generated round to Supabase via `persistTournamentState()`.
 - Round 1 generation uses `createRound1Matches(players)`: groups players by fours and pairs `[0]+[3]` vs `[1]+[2]`.
 - Later rounds use `createMexicanoMatches(rankedPlayers)`: ranked groups of four, also `[0]+[3]` vs `[1]+[2]`.
 - `rankPlayers(players)` sorts by total points descending, wins descending, points per game descending, then name ascending.
@@ -95,12 +95,13 @@ End tournament and confirmation popup:
 
 - Admins on the latest incomplete round see "Next Round" when the round is complete, "End Tournament", and "Delete Tournament".
 - "End Tournament" computes unscored matches across all rounds. If any exist, the progress confirm message warns that they will be removed.
-- `showProgressConfirmDialog(title, message, steps, onConfirm)` renders a modal checklist. The steps come from `COMPLETION_STEPS` (`js/services/tournament.js`): `finalize`, `push`, `index`, `telegram`, and `notify`.
+- `showProgressConfirmDialog(title, message, steps, onConfirm)` renders a modal checklist. The steps come from `COMPLETION_STEPS` (`js/services/tournament.js`): `finalize` (results and local ELO), `save` (saving the tournament to Supabase), `telegram`, and `notify`. There are no separate `push` or `index` steps.
 - On confirm, unscored matches are removed, empty rounds are removed, then `runTournamentCompletion(tournament, (id, status, detail) => api.setStep(id, status, detail))` runs. The page no longer orchestrates the alerts itself.
-- `runTournamentCompletion()` calls `completeTournament()`, then the Telegram alert, then the Web Push relay (`sendTournamentCompletedPush(tournament, Store.getMatches())`). It never rejects: each failure is reported on its own step, any step left `pending`/`running` when the sync fails is flipped to `error`, and failures are logged through `round-log.js`.
-- `completeTournament()` marks the tournament completed, logs the final round, resolves the pre-tournament ELO baseline with `resolveEloBaseline()` (no full-history pull), writes completed match entities to `Store.getMatches()`, updates the tournaments index, writes local dev files, snapshots post-tournament ELO to the in-memory `elo_baseline` cache key, then calls `pushCompletedTournament(date, dayMatches, indexEntry)`.
-- `pushCompletedTournament()` writes only the day file and `tournaments.json`, bypassing the debounced `pushAll()` queue (it cancels any pending sync first), using the `FAST_TIMEOUTS` ladder `2s → 3s` (5s total per request) from `js/services/http.js`. Telegram and Web Push dispatches use the same timed fetch.
-- On sync failure the in-memory copy is kept so the user can retry from the open page; calling `completeTournament()` again on an already-completed tournament re-pushes it. Nothing is buffered on the device across a refresh.
+- `runTournamentCompletion()` calls `completeTournament()`, then the Telegram alert, then the Web Push relay (`sendTournamentCompletedPush(tournament, Store.getMatches() || [])`), reusing the computed match cache. It never rejects: each failure is reported on its own step, any step left `pending`/`running` when the save fails is flipped to `error`, and failures are logged through `round-log.js`. A save failure does not skip either notification, and a Telegram failure does not skip Web Push. Both notifications are queued through Supabase `notification_outbox`.
+- `completeTournament()` marks the tournament completed, logs the final round, resolves the pre-tournament ELO baseline with `resolveEloBaseline()` (no full-history pull), writes completed match entities to `Store.getMatches()`, updates the in-memory tournaments index, and snapshots post-tournament ELO to the in-memory `elo_baseline` cache key. It best-effort mirrors day matches and the index only in localhost dev-data mode, then calls `pushCompletedTournament(date, dayMatches, indexEntry)`.
+- `pushCompletedTournament()` reports the single `save` step and uses the per-date write queue to submit one `save_tournament` mutation through the Supabase `domain-mutation` Edge Function. It persists `tournaments`, `tournament_players`, `matches`, and `match_players`; there are no separate GitHub day-file or index uploads. Database triggers rebuild the authoritative ELO and summary tables; the client-computed ELO only updates the immediate in-memory display.
+- `resolveEloBaseline()` uses the same-session `elo_baseline` snapshot, cached player summary, previous tournament's embedded post-match ELO, or locally cached match replay. Loading the previous tournament's matches uses `readDayMatches()` and needs at most one extra date-scoped read; the completion flow does not pass a `FAST_TIMEOUTS` option.
+- On save failure the in-memory copy is kept so the user can retry from the open page; calling `completeTournament()` again on an already-completed tournament re-saves it via `persistTournamentState()`. A successful save clears the active tournament from `Store`. Nothing is buffered on the device across a refresh.
 - The simpler `showConfirmDialog()` is used for delete confirmation. Delete calls `deleteTournament(date)`, then navigates to `#/tournaments`.
 
 Attendance confirmation:
@@ -122,13 +123,13 @@ Admin gating:
 - `js/app.js` — route table maps `'/tournament/:date'` to `renderTournament`.
 - `js/services/tournament.js` — lifecycle and persistence symbols: `getActiveTournament()`, `setMatchScore()`, `startNextRound()`, `completeTournament()`, `runTournamentCompletion()`, `COMPLETION_STEPS`, `resolveEloBaseline()`, `ELO_BASELINE_KEY`, `loadTournamentByDate()`, `saveTournamentState()`, `persistTournamentState()`, `isTournamentEditable()`, `updateAccessCode()`, `deleteTournament()`, `confirmAttendance()`, `createRound1Matches()`, and `createMexicanoMatches()`. Pure shape helpers `isMatchComplete()`, `isRoundComplete()` and `recalculateAllPlayerStats()` live in `js/services/tournament-shape.js` and are re-exported here.
 - `js/services/ranking.js` — `rankPlayers(players)` for player standings and next-round seeding.
-- `js/services/backend.js` — imported lazily for `fetchActiveTournamentJson()`, `ensureDayMatchesLoaded()`, `readDayMatches()`, `pushTournamentDayFile()`, `pushCompletedTournament()`, `updateTournamentIndexEntry()`, `removeTournamentIndexEntry()`, and `deleteTournamentDayFile()`.
-- `js/services/http.js` — `fetchWithTimeout()`, `fetchWithRetry()`, and the `FAST_TIMEOUTS` (`2s → 3s`, 5s total) ladder used by every request in the completion flow.
+- `js/services/backend.js` — Supabase adapter for `fetchActiveTournamentJson()`, `ensureDayMatchesLoaded()`, `readDayMatches()`, `pushTournamentDayFile()`, `pushCompletedTournament()`, `updateTournamentIndexEntry()`, `removeTournamentIndexEntry()`, and `deleteTournamentDayFile()`. Legacy file-oriented names do not imply GitHub writes.
+- `js/services/supabase.js` — date-scoped hydration, read-cache invalidation, and Edge Function invocation (`invokeFunction()`).
 - `js/services/round-log.js` — `logRoundResult()` records completed rounds; `logError()` records sync/Telegram failures for the Logs tab.
 - `js/services/telegram.js` — `sendTournamentConfirmationAlert()` and `sendTournamentCompletedAlert()`.
 - `js/services/push.js` — `sendTournamentCompletedPush(tournament, allMatches)` for the `notify` step.
 - `js/pages/statistics.js` — `renderDayStatsInto()` renders the rich leaderboard; `showPlayerProfile()` opens player details.
-- `js/store.js` — `Store` localStorage/cache facade: `getActiveTournament()`, `setActiveTournament()`, `clearActiveTournament()`, `getMatches()`, `setMatches()`, `getTournamentsIndex()`, `setTournamentsIndex()`, `getCurrentUser()`, `isAdministrator()`, `getGitHubConfig()`, `set()`.
+- `js/store.js` — `Store` in-memory application-data and preferences facade: `getActiveTournament()`, `setActiveTournament()`, `clearActiveTournament()`, `getMatches()`, `setMatches()`, `getTournamentsIndex()`, `setTournamentsIndex()`, `getCurrentUser()`, `isAdministrator()`, `getSupabaseConfig()`, `set()`.
 - `js/state.js` — `State.on('tournament-changed', ...)` subscription and `State.emit('tournament-changed', tournament)` updates.
 - `js/components/match-card.js`, `js/components/score-input.js`, `js/components/leaderboard.js` — reusable components with similar UI patterns, but the current Tournament detail page renders match cards, score input, and fallback leaderboard inline instead of importing these components.
 
@@ -183,7 +184,7 @@ Tournament object shape:
 }
 ```
 
-Completed match entity shape in `mexicano_matches` and day files:
+Completed match entity shape in the in-memory `matches` cache and optional local dev day files:
 
 ```js
 {
@@ -207,13 +208,13 @@ During the legacy Supabase import, completed files contribute top-level `matches
 active file contributes nested `tournament.rounds[].matches[]`; stale unfinished snapshots older
 than the latest completed index date are ignored.
 
-GitHub data flow:
+Supabase and local cache data flow:
 
-- `saveTournamentState(tournament)` stores active tournament state, rewrites completed match entities for that date, emits `tournament-changed`, and calls `markMatchDateDirty(tournament.tournamentDate)`.
-- Individual score edits call `cancelPendingSync()` after saving, so partial score changes are not pushed one-by-one.
-- `startNextRound()` saves and then calls `flushPush()` to push the completed round.
-- `completeTournament()` writes all completed matches, updates the tournaments index, and calls `pushCompletedTournament(date, dayMatches, indexEntry)` — day file first, then `tournaments.json`, bypassing the debounced `pushAll()` queue. It never pulls the full match history.
-- `deleteTournament(date)` removes local index/matches/active state and calls `removeTournamentIndexEntry(date)` plus `deleteTournamentDayFile(date)`.
+- `saveTournamentState(tournament)` updates the in-memory active tournament, rewrites completed match entities for that date, and emits `tournament-changed`; it does not itself write remotely.
+- `persistTournamentState(tournament)` refreshes that local state and calls `pushTournamentDayFile(tournament)`, which queues a `save_tournament` mutation. The payload includes every generated round, with unplayed matches stored as 0-0 so pairings survive a reload.
+- Individual score edits and `startNextRound()` call `persistTournamentState()` immediately. `cancelPendingSync()`, `markMatchDateDirty()`, and `flushPush()` are compatibility no-ops, not a deferred GitHub write mechanism.
+- `completeTournament()` refreshes completed matches and the index locally, then calls `pushCompletedTournament(date, dayMatches, indexEntry)` for the single Supabase save. It never pulls the full match history.
+- `deleteTournament(date)` refuses completed tournaments, removes local index/matches/active state, and calls `removeTournamentIndexEntry(date)` plus `deleteTournamentDayFile(date)`; both backend wrappers invoke the Supabase `delete_tournament` mutation.
 - On-demand page load uses `ensureDayMatchesLoaded(date)` and `readDayMatches(date)` when local
   data is missing or stale. Both use the date-scoped Supabase hydration and share its in-flight
   or completed request state.
@@ -227,7 +228,7 @@ Switching works through `data-tab` buttons in `#tournament-tabs`. The click hand
 
 ## Related Feature Docs
 
-- `.github/features/tournament-management.md` — Defines the core tournament lifecycle, score rules, round generation, admin access policy, access-code behavior, read/write access, delete rules, leaderboard expectations, and GitHub integration.
+- `.github/features/tournament-management.md` — Defines the core tournament lifecycle, score rules, round generation, admin access policy, access-code behavior, read/write access, delete rules, leaderboard expectations, and Supabase integration.
 - `.github/features/tournament-confirmation-popup.md` — Defines player attendance confirmation, persisted `players[].confirmed`, the green checkmark on the Tournament page, the in-page confirm button, and Telegram confirmation alerts.
 - `.github/features/tournament-round-logs.md` — Defines local admin-only round logging and error logging. The Tournament page triggers round logs through `startNextRound()` and `completeTournament()`, and records completion/Telegram errors through `logError()`.
 

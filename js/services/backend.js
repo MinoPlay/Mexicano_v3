@@ -1,9 +1,6 @@
 import { Cache } from '../cache.js';
 import { Store } from '../store.js';
 import * as supabase from './supabase.js';
-import { FAST_TIMEOUTS } from './http.js';
-
-export { FAST_TIMEOUTS };
 
 const FULL_SNAPSHOT_ROUTE = '#/__full__';
 let syncStatus = 'idle';
@@ -187,7 +184,7 @@ export async function pushTournamentDayFile(tournament) {
 }
 
 export async function pushCompletedTournament(date, dayMatches, indexEntry, { onStep } = {}) {
-  onStep?.('push', 'running');
+  onStep?.('save', 'running');
   const tournament = Store.getActiveTournament() || {
     tournamentDate: date,
     players: [...new Set(dayMatches.flatMap((match) => [
@@ -200,8 +197,7 @@ export async function pushCompletedTournament(date, dayMatches, indexEntry, { on
     completedAt: Date.now(),
   };
   await queueTournamentWrite(date, tournamentDataset(tournament, dayMatches));
-  onStep?.('push', 'success');
-  onStep?.('index', 'success');
+  onStep?.('save', 'success');
 }
 
 export async function dispatchConfirmAttendance(date, playerName) {

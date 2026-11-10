@@ -177,64 +177,34 @@ the page only renders `COMPLETION_STEPS` and forwards `report(id, status, detail
 Reported steps:
 | id | Step |
 |----|------|
-| `finalize` | Local finalize (ELO baseline read + Store writes) |
-| `push` | GitHub day-file write (`pushCompletedTournament`) |
-| `index` | GitHub tournaments index update (`updateTournamentIndexEntry`) |
-| `telegram` | Telegram tournament-completed alert |
-| `notify` | Web Push tournament-completed relay |
+| `finalize` | Local finalize (ELO baseline read + in-memory Store writes) |
+| `save` | Single Supabase `save_tournament` mutation (`pushCompletedTournament`) |
+| `telegram` | Telegram tournament-completed alert (`notification_outbox`) |
+| `notify` | Web Push tournament-completed relay (`notification_outbox`) |
 
 `runTournamentCompletion` never rejects: each failure is reported on its own step and
 written to the Logs tab via `logError`, and any step still `pending`/`running` when the
-sync fails is flipped to `error` — so the dialog always reaches a terminal state.
-The Telegram and Web Push relays are independent of the GitHub sync and of each other.
+save fails is flipped to `error` — so the dialog always reaches a terminal state.
+The Telegram and Web Push relays are independent of the Supabase save and of each other.
 
-#### Fast, bounded completion (why it no longer hangs)
-Ending a tournament used to pull the **entire** match history — one sequential GitHub read
-per tournament date — because the pre-tournament ELO baseline was recomputed from scratch
-via `calculateAllEloRankings()`. On a slow or stalled connection this took minutes; when the
-`matches_fully_loaded` cache flag happened to be set it returned instantly, which is why
-it felt random.
+#### What gets written
+`save_tournament` (edge function `domain-mutation` → `import_legacy_dataset`, with
+`replace_matches: true`) upserts `tournaments` (`status = 'completed'`, `completed_at`),
+`tournament_players` and `matches`/`match_players`, deletes that day's `matches` rows
+missing from the payload (unscored matches dropped on End Tournament), and logs an
+`audit_events` row. Statement triggers then rebuild `player_tournament_elo`,
+`player_monthly_summary`, `player_totals_summary` and `home_route_summary`, so the
+authoritative ELO is computed server-side. The client-side ELO computed during
+`finalize` only refreshes the in-memory caches for immediate display.
 
-The baseline is now **read, not recomputed** — `resolveEloBaseline(date)` in
+#### Fast, bounded completion
+The pre-tournament ELO baseline is **read, not recomputed** — `resolveEloBaseline(date)` in
 `js/services/tournament.js`, first hit wins:
 1. the in-memory `elo_baseline` snapshot written by the previous completion in the same session — 0 requests
-2. `players_summary` (`players.json`, normally already cached) — 0–1 request
-3. the previous tournament's day file, whose embedded `Team*Elo` are authoritative for its
-   participants (covers a lagging data pipeline) — ≤1 request, 0 if already cached locally
+2. the cached players summary — 0 requests
+3. the previous tournament's matches, whose embedded post-match ELO is authoritative for its
+   participants — ≤1 request (`readDayMatches`), 0 if already cached locally
 4. replay of locally cached matches — 0 requests
-
-Files touched when ending a tournament:
-| File | Purpose |
-|------|---------|
-| `YYYY/YYYY-MM/<date>.json` | the completed day file (read sha + write) |
-| `tournaments.json` | index entry upsert (read sha + write) |
-| `players.json` / previous day file | ELO baseline, only if not already cached |
-| `POST /dispatches` ×2 | Telegram alert + Web Push relay |
-
-`players.json` and the month's `players_overview.json` are **not** written by the app — the
-data pipeline regenerates them from our `tournaments.json` push. Until that pipeline run
-finishes, a GitHub pull can still fetch pre-tournament ELO. `js/services/backend.js`
-`applyEloBaselineOverlay()` (called after every `fetchTournamentsIndex()` in the route pull
-functions) overlays the in-memory `elo_baseline` snapshot onto the freshly pulled summary when
-the snapshot belongs to the latest complete tournament date, so refreshing right after ending
-a tournament doesn't briefly regress to stale ELO. The overlay is per-player and staleness-gated:
-it only replaces a player's ELO while `players.json` still reports that player's *pre-tournament*
-value (`existing.elo === previousElo`). Once the pipeline has moved `players.json` on to its own
-recomputed final ELO — even if it differs slightly from the local snapshot — the backend value
-wins and is never clobbered again for that date. Without this gate, a local snapshot could
-permanently mask a legitimate backend recalculation (e.g. Statistics showing a different ELO
-change than the ELO History chart, which reads per-player history files unaffected by this
-overlay).
-
-The completion push (`pushCompletedTournament` in `js/services/backend.js`) deliberately
-bypasses the debounced `pushAll()` queue (it cancels any pending sync first): waiting for
-that queue — which rewrites every synced file and any unrelated in-flight push — was a
-second source of the hang. Everything else keeps syncing in the background.
-
-All requests in this flow use the shared timed fetch (`js/services/http.js`) with the
-`FAST_TIMEOUTS` ladder `2s → 3s` (5s total per request, hard cap), so a stalled connection
-fails fast and retries once instead of hanging forever. Telegram and Web Push relay
-dispatches use the same helper; background reads use a single 5s attempt.
 
 On failure the in-memory copy is kept so the user can retry from the open page — calling `completeTournament()` again on an already-completed tournament re-pushes it. Nothing is buffered on the device across a page refresh.
 

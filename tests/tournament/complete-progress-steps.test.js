@@ -9,10 +9,8 @@ import { vi, describe, it, expect, beforeEach } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   pushCompletedTournament: vi.fn(async (_date, _matches, _entry, opts = {}) => {
-    opts.onStep?.('push', 'running');
-    opts.onStep?.('push', 'success');
-    opts.onStep?.('index', 'running');
-    opts.onStep?.('index', 'success');
+    opts.onStep?.('save', 'running');
+    opts.onStep?.('save', 'success');
   }),
   sendTournamentCompletedAlert: vi.fn().mockResolvedValue(undefined),
   sendTournamentCompletedPush: vi.fn().mockResolvedValue(undefined),
@@ -100,25 +98,25 @@ beforeEach(() => {
 
 describe('runTournamentCompletion', () => {
   it('declares a step for every awaited operation, including the push relay', () => {
-    expect(COMPLETION_STEPS.map(s => s.id)).toEqual(['finalize', 'push', 'index', 'telegram', 'notify']);
+    expect(COMPLETION_STEPS.map(s => s.id)).toEqual(['finalize', 'save', 'telegram', 'notify']);
   });
 
   it('reports every step as terminal on the happy path', async () => {
     const { steps, report } = record();
     await runTournamentCompletion(makePlayedTournament(), report);
 
-    for (const id of ['finalize', 'push', 'index', 'telegram', 'notify']) {
+    for (const id of ['finalize', 'save', 'telegram', 'notify']) {
       expect(steps).toContain(`${id}:success`);
     }
   });
 
-  it('still sends the alerts when the GitHub sync fails, and marks the failed step', async () => {
+  it('still sends the alerts when the Supabase save fails, and marks the failed step', async () => {
     mocks.pushCompletedTournament.mockRejectedValueOnce(new Error('Request timed out after 2000ms'));
     const { steps, report } = record();
 
     await runTournamentCompletion(makePlayedTournament(), report);
 
-    expect(steps).toContain('push:error');
+    expect(steps).toContain('save:error');
     expect(mocks.sendTournamentCompletedAlert).toHaveBeenCalledTimes(1);
     expect(steps).toContain('telegram:success');
     expect(steps).toContain('notify:success');

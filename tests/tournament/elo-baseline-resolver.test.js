@@ -7,8 +7,8 @@
  *
  * Absolute ELO is already persisted, so the baseline is READ, not recomputed:
  *   1. local snapshot written by the previous completion   → 0 requests
- *   2. players_summary (players.json, already cached)      → 0 requests
- *   3. previous tournament day file (overlay, authoritative) → ≤1 request
+ *   2. cached players summary                              → 0 requests
+ *   3. previous tournament matches (overlay, authoritative) → ≤1 request
  *   4. replay of locally cached matches                    → 0 requests
  */
 import { vi, describe, it, expect, beforeEach } from 'vitest';
@@ -109,7 +109,7 @@ describe('resolveEloBaseline', () => {
     const { elo } = await resolveEloBaseline(TODAY);
 
     expect(gh.readDayMatches).toHaveBeenCalledTimes(1);
-    expect(gh.readDayMatches).toHaveBeenCalledWith(PREV, expect.anything());
+    expect(gh.readDayMatches).toHaveBeenCalledWith(PREV);
     expect(elo.Alice).toBe(1016);   // overlay wins over stale summary
     expect(elo.Carol).toBe(984);    // player missing from summary is added
     expect(elo.Zoe).toBe(1234);     // untouched summary entries survive
