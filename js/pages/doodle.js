@@ -37,14 +37,14 @@ class DoodleEditSession {
   }
 
   isDirty() {
-    for (const [player, editedSet] of Object.entries(this.currentEdits)) {
-      const originalSet = this.originalState[player] || new Set();
-      if (editedSet.size !== originalSet.size) return true;
-      for (const date of editedSet) {
-        if (!originalSet.has(date)) return true;
-      }
-    }
-    return false;
+    return Object.keys(this.currentEdits).some(player => this.hasChanges(player));
+  }
+
+  hasChanges(playerName) {
+    const editedSet = this.getEffectiveSelection(playerName);
+    const originalSet = this.originalState[playerName] || new Set();
+    return editedSet.size !== originalSet.size
+      || [...editedSet].some(date => !originalSet.has(date));
   }
 
   addChange(playerName, dateStr) {
@@ -85,6 +85,7 @@ class DoodleEditSession {
       // Apply accumulated edits to the in-memory store (all in one batch)
       const pendingAlerts = [];
       for (const [playerName, editedSet] of Object.entries(this.currentEdits)) {
+        if (!this.hasChanges(playerName)) continue;
         const selectedDates = [...editedSet].sort();
         const change = saveDoodle(playerName, year, month, selectedDates);
         if (change) pendingAlerts.push(change);
@@ -124,6 +125,8 @@ class DoodleEditSession {
   }
 
   revert() {
+    this.currentEdits = {};
+    this.originalState = {};
     this._captureCurrentState();
     this._notifyChange();
     showToast('Changes cancelled');
@@ -387,6 +390,7 @@ export function renderDoodle(container, params = {}) {
   function renderMatrix() {
     matrixContainer.innerHTML = '';
 
+    const isAdmin = Store.isAdministrator();
     const todayStr = new Date().toISOString().slice(0, 10);
     const doodleData = getDoodle(currentYear, currentMonth);
     const allDates = getAllDatesInMonth(currentYear, currentMonth);
@@ -400,6 +404,7 @@ export function renderDoodle(container, params = {}) {
     // Collect players
     const allPlayerSet = new Set();
     if (currentUser) allPlayerSet.add(currentUser);
+    if (isAdmin) Store.getMembers().forEach(name => allPlayerSet.add(name));
     if (doodleData) {
       doodleData.forEach(entry => { if (entry.name) allPlayerSet.add(entry.name); });
     }
@@ -417,9 +422,9 @@ export function renderDoodle(container, params = {}) {
         }
       });
     } else if (editSession && doodleData) {
-      // Merge Store data for non-current users
+      // Keep remote selections fresh for players without local edits.
       doodleData.forEach(entry => {
-        if (entry.name !== currentUser && entry.selected) {
+        if (!editSession.hasChanges(entry.name) && entry.selected) {
           selections[entry.name] = new Set();
           Object.keys(entry.selected).forEach(d => {
             if (entry.selected[d]) selections[entry.name].add(d);
@@ -429,7 +434,7 @@ export function renderDoodle(container, params = {}) {
     }
 
     const players = allPlayers
-      .filter(p => p === currentUser || visibleDates.some(d => selections[p].has(d)))
+      .filter(p => isAdmin || p === currentUser || visibleDates.some(d => selections[p].has(d)))
       .sort((a, b) => a.localeCompare(b));
 
     const totals = {};
@@ -478,17 +483,17 @@ export function renderDoodle(container, params = {}) {
       visibleDates.forEach(dateStr => {
         const td = document.createElement('td');
         const isSelected = selections[player].has(dateStr);
-        const isOwn = player === currentUser;
+        const canEdit = isAdmin || player === currentUser;
         const isPast = dateStr < todayStr;
 
         const cell = document.createElement('div');
         cell.className = 'doodle-cell'
           + (isSelected ? ' selected' : '')
-          + ((!isOwn || isPast) ? ' readonly' : '')
+          + ((!canEdit || isPast) ? ' readonly' : '')
           + (isPast ? ' past' : '');
         cell.textContent = isSelected ? '✓' : '';
 
-        if (isOwn && !isPast) {
+        if (canEdit && !isPast) {
           cell.addEventListener('click', async () => {
             if (!editSession) {
               editSession = new DoodleEditSession(`${currentYear}-${String(currentMonth).padStart(2, '0')}`, currentUser);
@@ -502,9 +507,9 @@ export function renderDoodle(container, params = {}) {
         }
 
         // Apply pending styling if in edit session
-        if (editSession && player === currentUser) {
+        if (editSession && canEdit) {
           const isEditedSelected = editSession.getEffectiveSelection(player).has(dateStr);
-          const wasOriginallySelected = editSession.originalState[player]?.has(dateStr);
+          const wasOriginallySelected = editSession.originalState[player]?.has(dateStr) ?? false;
           if (isEditedSelected !== wasOriginallySelected) {
             cell.classList.add('doodle-pending');
           }
