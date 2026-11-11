@@ -21,10 +21,10 @@ It creates a new Mexicano tournament for one date, a fixed player count, optiona
 - `params.date` prepopulates the date input. Without it, `todayStr()` sets the date to today in `yyyy-MM-dd` format.
 - Each player slot has ▲ and ▼ controls. `shiftDown(idx)` moves the selected player and the filled block below it one slot down if there is empty space after the block. `shiftUp(idx)` moves a player up only when the immediate slot above is empty. `refreshShiftButtons()` disables impossible moves.
 - Start validation requires a selected count, a date, and every player name filled, each name at most 50 characters, and no duplicate names case-insensitively.
-- If a tournament already exists for the date (from `loadTournamentByDate(date)` or an active tournament with the same `tournamentDate`), a confirm dialog ("Tournament Already Exists") is shown instead of blocking creation. Confirming calls `deleteTournament(date)` (purges matches/index entry, clears active tournament, best-effort removes remote day file + index entry) then proceeds with creation; canceling does nothing. `deleteTournament` throws for a completed tournament, surfaced as a toast, so completed tournaments cannot be overwritten this way.
+- If a tournament already exists for the date (from `loadTournamentByDate(date)` or an active tournament with the same `tournamentDate`), a confirm dialog ("Tournament Already Exists") is shown instead of blocking creation. Confirming calls `deleteTournament(date)` (purges matches/index entry, clears active tournament, best-effort removes remote day file + index entry) then proceeds with creation; canceling does nothing. Before the delete, the page captures the names of players with `confirmed: true` on the replaced active tournament (same date only) and passes them as the 5th argument to `createTournament()`, so attendance confirmations persist for players who are still playing (replacement players start unconfirmed). `deleteTournament` throws for a completed tournament, surfaced as a toast, so completed tournaments cannot be overwritten this way.
 - Court numbers are optional. If entered, `tournament-courts` is split on commas, every value must be numeric, and the count must equal `selectedCount / 4`. Values are stored as numbers.
 - `accessCodeInput.value.trim() || null` becomes the tournament `accessCode`. The Disable Telegram checkbox only skips the created alert; it does not affect tournament data.
-- Save flow calls `createTournament(date, names, accessCode, courts)` then `startTournament(tournament)`. After that, an async create pipeline runs: `triggerNewTournamentDayFile(tournament)` first, then navigate to `#/tournament/${date}`, then `triggerTournamentIndexEntry(tournament)`, then dynamic import of `sendTournamentCreatedAlert()` unless disabled, then dynamic import of `refreshApp()`.
+- Save flow calls `createTournament(date, names, accessCode, courts, confirmedNames)` then `startTournament(tournament)`. `confirmedNames` is only non-empty on the overwrite flow. After that, an async create pipeline runs: `triggerNewTournamentDayFile(tournament)` first, then navigate to `#/tournament/${date}`, then `triggerTournamentIndexEntry(tournament)`, then dynamic import of `sendTournamentCreatedAlert()` unless disabled, then dynamic import of `refreshApp()`.
 - The day file write is intentionally awaited before navigation so the tournament page does not refresh against a missing GitHub day file and clear the active tournament.
 
 ## Key Files & Symbols
@@ -41,7 +41,7 @@ It creates a new Mexicano tournament for one date, a fixed player count, optiona
 Route load (`pullForRoute('#/create-tournament')`): active tournament and participation (`player_attendance`) for the previous and current month, plus players. `getRecentMembers()` reads `Store.getParticipation()` (falls back to `Store.getMembers()`). No match history. See `.github/features/route-data-loading.md`.
 The page does not write directly to `Store`; it delegates to `js/services/tournament.js`.
 
-`createTournament(date, playerNames, accessCode = null, courts = null)` creates:
+`createTournament(date, playerNames, accessCode = null, courts = null, confirmedNames = [])` creates (players listed in `confirmedNames` also get `confirmed: true`):
 
 ```javascript
 {

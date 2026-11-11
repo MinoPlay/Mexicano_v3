@@ -96,7 +96,72 @@ describe('create tournament - override existing date', () => {
     document.querySelector('#dialog-confirm').click();
     await flush();
     expect(deleteTournament).toHaveBeenCalledWith('2024-01-01');
-    expect(createTournament).toHaveBeenCalledWith('2024-01-01', ['Alice', 'Bob', 'Carol', 'Dave'], null, null);
+    expect(createTournament).toHaveBeenCalledWith('2024-01-01', ['Alice', 'Bob', 'Carol', 'Dave'], null, null, []);
     expect(startTournament).toHaveBeenCalled();
+  });
+});
+
+describe('create tournament - keep attendance confirmations on override', () => {
+  let container;
+
+  function recreate(names) {
+    container.querySelector('.player-count-option[data-count="8"]').click();
+    const inputs = container.querySelectorAll('#player-slots input');
+    names.forEach((v, i) => {
+      inputs[i].value = v;
+      inputs[i].dispatchEvent(new Event('input'));
+    });
+    container.querySelector('#tournament-date').value = '2024-01-01';
+    container.querySelector('#start-btn').click();
+  }
+
+  beforeEach(() => {
+    document.body.innerHTML = '';
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    createTournament.mockClear();
+    deleteTournament.mockClear();
+    loadTournamentByDate.mockReturnValue(null);
+    getActiveTournament.mockReturnValue({
+      tournamentDate: '2024-01-01',
+      isCompleted: false,
+      players: [
+        { id: 1, name: 'Alice', confirmed: true },
+        { id: 2, name: 'Bob' },
+        { id: 3, name: 'Carol', confirmed: true },
+        { id: 4, name: 'Dave', confirmed: true },
+        { id: 5, name: 'Eve' },
+        { id: 6, name: 'Frank', confirmed: true },
+        { id: 7, name: 'Grace' },
+        { id: 8, name: 'Heidi', confirmed: true },
+      ],
+    });
+    renderCreateTournament(container, {});
+  });
+
+  it('passes the confirmed names of the replaced tournament to createTournament', async () => {
+    recreate(['Alice', 'Zed', 'Carol', 'Dave', 'Eve', 'Frank', 'Grace', 'Heidi']);
+    document.querySelector('#dialog-confirm').click();
+    await flush();
+    expect(deleteTournament).toHaveBeenCalledWith('2024-01-01');
+    expect(createTournament).toHaveBeenCalledWith(
+      '2024-01-01',
+      ['Alice', 'Zed', 'Carol', 'Dave', 'Eve', 'Frank', 'Grace', 'Heidi'],
+      null,
+      null,
+      ['Alice', 'Carol', 'Dave', 'Frank', 'Heidi']
+    );
+  });
+
+  it('passes no confirmed names when the active tournament is for another date', async () => {
+    getActiveTournament.mockReturnValue({
+      tournamentDate: '2024-02-02',
+      players: [{ id: 1, name: 'Alice', confirmed: true }],
+    });
+    loadTournamentByDate.mockReturnValue({ tournamentDate: '2024-01-01', isCompleted: false });
+    recreate(['Alice', 'Bob', 'Carol', 'Dave', 'Eve', 'Frank', 'Grace', 'Heidi']);
+    document.querySelector('#dialog-confirm').click();
+    await flush();
+    expect(createTournament.mock.calls[0][4]).toEqual([]);
   });
 });

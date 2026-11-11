@@ -164,7 +164,7 @@ export function createMexicanoMatches(rankedPlayers) {
 
 // ─── Tournament lifecycle ───
 
-export function createTournament(date, playerNames, accessCode = null, courts = null) {
+export function createTournament(date, playerNames, accessCode = null, courts = null, confirmedNames = []) {
   if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
     throw new Error('Invalid date format, expected yyyy-MM-dd');
   }
@@ -173,6 +173,7 @@ export function createTournament(date, playerNames, accessCode = null, courts = 
     throw new Error('Player count must be 4, 8, 12, or 16');
   }
 
+  const confirmed = new Set((confirmedNames || []).map(n => String(n).trim().toLowerCase()));
   const seen = new Set();
   const players = playerNames.map((name, idx) => {
     if (typeof name !== 'string') throw new Error('Player name must be a string');
@@ -190,7 +191,8 @@ export function createTournament(date, playerNames, accessCode = null, courts = 
       totalPoints: 0,
       gamesPlayed: 0,
       wins: 0,
-      losses: 0
+      losses: 0,
+      ...(confirmed.has(lower) ? { confirmed: true } : {})
     };
   });
 

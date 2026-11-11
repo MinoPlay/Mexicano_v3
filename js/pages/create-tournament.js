@@ -248,6 +248,11 @@ export function renderCreateTournament(container, params = {}) {
     const hasExisting = !!existing || (active && active.tournamentDate === date);
 
     if (hasExisting) {
+      // Captured before deleteTournament() clears the active tournament, so
+      // players already confirmed stay confirmed in the recreated tournament.
+      const confirmedNames = active && active.tournamentDate === date
+        ? (active.players || []).filter(p => p.confirmed).map(p => p.name)
+        : [];
       showConfirmDialog(
         'Tournament Already Exists',
         `A tournament already exists for ${date}. Do you want to overwrite it?`,
@@ -258,7 +263,7 @@ export function renderCreateTournament(container, params = {}) {
             showToast(err.message || 'Failed to overwrite tournament');
             return;
           }
-          submitTournament(date);
+          submitTournament(date, confirmedNames);
         }
       );
       return;
@@ -267,7 +272,7 @@ export function renderCreateTournament(container, params = {}) {
     submitTournament(date);
   });
 
-  async function submitTournament(date) {
+  async function submitTournament(date, confirmedNames = []) {
     // Validate names
     const names = playerInputs.map(inp => inp.value.trim());
     const errors = [];
@@ -317,7 +322,7 @@ export function renderCreateTournament(container, params = {}) {
     try {
       const accessCode = accessCodeInput.value.trim() || null;
       const telegramDisabled = disableTelegramInput.checked;
-      const tournament = createTournament(date, names, accessCode, courts);
+      const tournament = createTournament(date, names, accessCode, courts, confirmedNames);
       startTournament(tournament);
 
       // Day file is the critical step. Write + verify it on GitHub FIRST, using
