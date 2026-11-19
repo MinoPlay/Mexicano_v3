@@ -48,9 +48,9 @@ Pair matrix panel:
 - `js/components/pair-heatmap.js` — `renderPairHeatmap` and `pickActivePlayers`.
 - `js/components/chart.js` — `drawBarChart` and `heatColor` support Attendance and heatmaps.
 - `js/services/player-insights.js` — `buildPlayerRows` and `buildPairMatrix` support the heatmap.
-- `js/services/statistics.js` — `calculatePlayerStatistics`, `getMonthsForAttendanceFilter`, `computeAttendance`, `getPlayerAttendanceDates`, and `formatRecentResults`.
+- `js/services/statistics.js` — `calculatePlayerStatistics`, `getMonthsForAttendanceFilter`, `computeAttendance`, `getPlayerAttendanceDates`, `formatRecentResults`, and `buildPlayerProfile` (profile dialog data computed from Supabase matches).
 - `js/services/elo.js` — ELO fallback helpers.
-- `js/services/backend.js` — `pullMonthlyOverview`, `pullMonthlyOverviewRaw`, `ensureDayMatchesLoaded`, and full-history `pullForRoute`.
+- `js/services/backend.js` — `pullMonthlyOverview`, `pullMonthlyOverviewRaw`, `ensureDayMatchesLoaded`, `readPlayerSummary`, and full-history `pullForRoute`.
 - `js/store.js` — matches, players summary, monthly overviews, tournament dates, manual attendance, full-match state, and Supabase config.
 - `js/app.js` — registers `/statistics`.
 - `css/desktop.css` — `dash-grid`, `span-7`, `span-5`, `span-12`, `panel`, and heatmap layout.
@@ -64,6 +64,8 @@ Raw match rows are stored in `Store.getMatches()` and use flattened player/team 
 `STAT_COLUMNS` are rank, name, W/T, points, average, win rate, ELO, and WLO/ELO change. Player clicks are route navigations to the Players hub.
 
 All-time canonical data comes from `players.json`, exposed through `Store.getPlayersSummary()` as camelCase rows like `{ name, elo, previousElo, eloDate, wins, losses, points, average, tournaments }` (`eloDate` = tournament date of the player's latest ELO row; the Tournament page uses it for the per-match ELO indicators).
+
+Player-profile data for `showPlayerProfile` is computed client-side: `readPlayerSummary(name)` loads full Supabase match history if needed (`pullAllMatches`) and returns `buildPlayerProfile(name, Store.getMatches())` (no pre-generated summaries). The dialog is always populated; a load error shows "Failed to load summary."
 
 ## Sub-tabs / Sections
 There are no top-level sub-tabs. Sections are:

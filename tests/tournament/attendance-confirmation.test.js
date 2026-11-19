@@ -74,6 +74,29 @@ beforeEach(() => {
   githubMock.dispatchConfirmAttendance.mockResolvedValue(true);
 });
 
+// ─── createTournament: carried-over confirmations (recreate flow) ───
+
+describe('createTournament with confirmedNames', () => {
+  it('marks only the listed players confirmed (case-insensitive) and ignores unknown names', () => {
+    const t = createTournament(DATE, ['Alice', 'Bob', 'Carol', 'Dave'], null, null, ['alice', ' Carol ', 'Zed']);
+    expect(t.players.map(p => p.confirmed === true)).toEqual([true, false, true, false]);
+  });
+
+  it('keeps the carried confirmation on round 1 match players and in the stored active tournament', () => {
+    const t = createTournament(DATE, PLAYERS_4, null, null, ['Bob']);
+    startTournament(t);
+    const m = Store.getActiveTournament().rounds[0].matches[0];
+    const bob = [m.player1, m.player2, m.player3, m.player4].find(p => p.name === 'Bob');
+    expect(bob.confirmed).toBe(true);
+    expect(Store.getActiveTournament().players.find(p => p.name === 'Alice').confirmed).toBeFalsy();
+  });
+
+  it('confirms nobody when confirmedNames is omitted', () => {
+    const t = createTournament(DATE, PLAYERS_4);
+    expect(t.players.every(p => !p.confirmed)).toBe(true);
+  });
+});
+
 // ─── markPlayerConfirmed (pure) ───
 
 describe('markPlayerConfirmed', () => {

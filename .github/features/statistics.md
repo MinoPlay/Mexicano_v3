@@ -197,8 +197,8 @@ Player profile modal dialog (opened by clicking player name in Statistics page) 
 Both tables render in static sort order (by `gamesPlayed` descending only). Column headers are plain `<th>` elements with no click handlers or sort indicators.
 
 ### Files Involved
-- **Render logic**: `js/components/player-profile.js` lines 57–106 (opponent + partner table generation)
-- **Data source**: `js/services/statistics.js` exports `calculateOpponentStats()` (lines 117–146) and `calculatePartnershipStats()` (lines 148–178)
+- **Render logic**: `showPlayerProfile` in `js/pages/statistics.js`
+- **Data source**: `readPlayerSummary(name)` in `js/services/backend.js` → loads full Supabase match history if `Store.isMatchesFullyLoaded()` is false, then `buildPlayerProfile(name, matches)` in `js/services/statistics.js` (= `generatePlayerSummary` + `calculateOpponentStats` / `calculatePartnershipStats` rows with `recentResults`, last up to 3 played games newest first by date then round). Always populated; no "Generate Summaries" step (GitHub-era, removed).
 
 ### Data Columns
 
