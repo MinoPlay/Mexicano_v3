@@ -437,7 +437,7 @@ function buildPlayerSummary(dataset, appMatches, eloByName) {
     }
   }
 
-  return (dataset.players || []).map((player) => {
+  return (dataset.players || []).filter(isActivePlayer).map((player) => {
     const playerStats = stats.get(player.name) || {
       wins: 0, losses: 0, points: 0, games: 0, tournaments: new Set(),
     };
@@ -748,7 +748,9 @@ export async function selectAll(table, query = 'select=*') {
   return rows;
 }
 
-const PLAYER_QUERY = 'select=id,name,email,match_padel_id&active=eq.true&order=name.asc,id.asc';
+// Inactive players are fetched too so their past matches still resolve names.
+const PLAYER_QUERY = 'select=id,name,email,match_padel_id,active&order=name.asc,id.asc';
+const isActivePlayer = (player) => player.active !== false;
 const TOURNAMENT_SELECT = 'id,tournament_date,status,current_round_number,completed_at,access_code,courts,tournament_players(player_id,seed_position,confirmed)';
 const MATCH_SELECT = 'id,tournament_id,round_number,match_order,score_team_1,score_team_2,match_players(player_id,team,position)';
 const MATCH_ORDER = 'order=tournament_id.asc,round_number.asc,match_order.asc,id.asc';
@@ -861,7 +863,7 @@ export function loadPlayers() {
   return loadResource('players', async () => {
     const players = await selectAll('players', PLAYER_QUERY);
     Cache.set('supabase_players_rows', players);
-    Store.setMembers(players.map((player) => player.name).sort());
+    Store.setMembers(players.filter(isActivePlayer).map((player) => player.name).sort());
   });
 }
 
@@ -1116,7 +1118,7 @@ export function loadPlayerSummary() {
     ]);
     const totalsById = new Map(totals.map((row) => [row.player_id, row]));
     const eloById = new Map((currentElo || []).map((row) => [row.player_id, row]));
-    Store.setPlayersSummaryCache((Cache.get('supabase_players_rows') || []).map((player) => {
+    Store.setPlayersSummaryCache((Cache.get('supabase_players_rows') || []).filter(isActivePlayer).map((player) => {
       const total = totalsById.get(player.id) || {};
       const elo = eloById.get(player.id);
       const games = total.games || 0;
