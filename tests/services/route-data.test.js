@@ -399,6 +399,18 @@ describe('route-scoped Supabase reads', () => {
     expect(Store.getMembers().length).toBeGreaterThan(0);
   });
 
+  it('shows inactive players in past matches but not as members', async () => {
+    const players = PLAYERS.map((p) => ({ ...p, active: p.id !== 'p4' }));
+    vi.stubGlobal('fetch', backendMock({
+      '/rest/v1/players?': (url) => respond(url.includes('active=eq.true') ? players.filter((p) => p.active) : players),
+    }));
+
+    const [match] = await supabase.loadDayMatches(['2026-09-24']);
+
+    expect(match.team2Player2Name).toBe('D');
+    expect(Store.getMembers()).toEqual(['A', 'B', 'C']);
+  });
+
   it('ELO history reads precomputed per-player rows, never the replay RPC', async () => {
     vi.stubGlobal('fetch', backendMock());
 

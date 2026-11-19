@@ -115,8 +115,10 @@ Pages use a domain backend facade, not GitHub or Supabase directly. During migra
 - Three concurrent first-load calls => one shared hydration request batch.
 - One hydration batch => six logical PostgREST resources; nested tournament/match/attendance
   children are returned with their parent rows.
-- Tournament route `#/tournament/2026-09-24` => load active players, tournament metadata, and
+- Tournament route `#/tournament/2026-09-24` => load players, tournament metadata, and
   only matches belonging to `2026-09-24`; do not load doodle availability or attendance records.
+- Player reads include inactive players so past matches resolve their names (no `?`); members
+  and player summary lists contain only active players.
 - Home route on `2026-09-25` => load players, `tournament_index`, the active tournament, only the
   matches of August 2026, September 2026 and the latest completed tournament, and
   `get_player_elo` for those dates; never the full match history, doodle availability or
