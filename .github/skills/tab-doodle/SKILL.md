@@ -20,14 +20,14 @@ Scheduling:
 
 - The viewed month starts at the current month and changes with previous/next buttons in `renderNav()`.
 - Valid dates are Tuesdays and Thursdays from `getAllDatesInMonth(year, month)`.
-- Only playable future dates can be clicked. Past dates and other players' matrix cells are read-only.
-- Availability toggles from `renderUserCalendar()` or the current user's row in `renderMatrix()`.
+- Only playable dates today or later can be clicked. Past dates remain read-only.
+- Availability toggles from `renderUserCalendar()` or editable rows in `renderMatrix()`. Members edit only themselves; admins (`Store.isAdministrator()`) can edit any player in the matrix. The personal calendar stays bound to the logged-in user.
 
 Edits:
 
 - Edits are staged in `DoodleEditSession`, not written immediately.
-- Dirty cells get `doodle-pending`.
-- A fixed save bar appears when the session is dirty. Save calls `DoodleEditSession.save()`; Cancel reverts and re-renders.
+- Dirty cells get `doodle-pending`, including edits to other players by an admin. Checkmarks and totals reflect staged selections.
+- A fixed save bar appears when the session is dirty. Save calls `DoodleEditSession.save()`; Cancel discards every player's staged changes, including entries not yet saved, and re-renders.
 - Route changes and browser unload are blocked while dirty through `State.addRouteBlocker()` and `beforeunload`.
 
 Saving:
@@ -35,7 +35,7 @@ Saving:
 Saving runs through `DoodleEditSession.save()`:
 1. Prevent concurrent saves with `isSaving`.
 2. Re-pull the latest month via `pullDoodleMonth(ym)` so edits are applied on top of the current Supabase state.
-3. Apply the edited selections with `saveDoodle(playerName, year, month, selectedDates)`.
+3. Apply only locally changed players' selections with `saveDoodle(playerName, year, month, selectedDates)`. Untouched players keep their freshly pulled remote selections.
 4. Collect the returned changelog entries as pending Telegram alerts.
 5. Push the month immediately with `pushDoodleNow(ym, changes)` — one batched `save_doodle` mutation carrying only the changed players' availability entries (members may write only their own) plus the new changelog entries.
 6. Fire `sendDoodleAlert()` for each changed player after the write succeeds.
@@ -43,7 +43,8 @@ Saving runs through `DoodleEditSession.save()`:
 
 Overall availability:
 
-- `renderMatrix()` builds one row per current user or player with future availability.
+- For members, `renderMatrix()` builds one row per current user or player with future availability. Admins see every roster member from `Store.getMembers()` plus existing doodle players, including players with no future selections.
+- Removing a player's last selection does not hide their row from admins.
 - Per-date totals highlight best dates with `doodle-best`.
 - Clicking a future total cell with at least one available player routes to `#/create-tournament?date=<date>&names=<names>`.
 - Names for create-tournament are sorted by ELO from `buildEloMap()`.
@@ -71,7 +72,7 @@ Route/month loading:
 - `js/services/backend.js` — `pullDoodleMonth`, `pushDoodleNow`, `cancelPendingSync`, `clearSessionTTL`, and `pullMonthlyOverview`.
 - `js/services/telegram.js` — `sendDoodleAlert`.
 - `js/services/elo.js` — `calculateAllEloRankings` fallback for availability sorting.
-- `js/store.js` — current user, doodle data/changelog, players summary, monthly overview, matches, manual attendance, and Supabase config.
+- `js/store.js` — current user, administrator role, members, doodle data/changelog, players summary, monthly overview, matches, manual attendance, and Supabase config.
 - `js/state.js` — `State.emit('doodle-changed')`, `State.on('doodle-changed')`, and `State.addRouteBlocker`.
 - `js/app.js` — registers `/doodle`.
 - `css/desktop.css` — `doodle-desktop`, `dash-grid`, `span-4`, `span-8`, `stack`, and panel styles.

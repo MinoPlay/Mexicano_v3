@@ -26,6 +26,7 @@ export function getDoodle(year, month) {
   const entries = Store.getDoodle(yearMonth);
   const allDates = getAllDatesInMonth(year, month);
   const currentUser = Store.getCurrentUser();
+  const isAdmin = Store.isAdministrator();
 
   return entries.map(entry => {
     const selected = {};
@@ -35,7 +36,7 @@ export function getDoodle(year, month) {
     return {
       name: entry.name,
       selected,
-      allowEdit: entry.name === currentUser
+      allowEdit: isAdmin || entry.name === currentUser
     };
   });
 }
