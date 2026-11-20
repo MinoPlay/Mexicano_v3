@@ -231,6 +231,48 @@ describe('route-scoped Supabase reads', () => {
     ]));
   });
 
+  it('Home preserves each current-month player’s start rating from precomputed summaries', async () => {
+    vi.stubGlobal('fetch', backendMock({
+      '/rest/v1/player_monthly_summary?': (url) => {
+        expect(decodeURIComponent(url)).toContain('previous_elo');
+        return respond([
+          { year_month: '2026-09', player_id: 'p2', wins: 2, losses: 0, points: 26, average: 13, elo: 1030, previous_elo: 1000 },
+        ]);
+      },
+    }));
+    await supabase.pullForRoute('#/');
+    expect(Store.getMonthlyOverview('2026-09')).toEqual([
+      expect.objectContaining({ name: 'B', elo: 1030, previousElo: 1000 }),
+    ]);
+  });
+
+  it('month match fallback uses the first tournament baseline and last tournament rating', () => {
+    const matches = [
+      { date: '2026-09-10', team1Player1Name: 'A', team1Player2Name: 'B', team2Player1Name: 'C', team2Player2Name: 'D', scoreTeam1: 13, scoreTeam2: 10 },
+      { date: '2026-09-24', team1Player1Name: 'A', team1Player2Name: 'B', team2Player1Name: 'C', team2Player2Name: 'D', scoreTeam1: 13, scoreTeam2: 10 },
+    ];
+    const overview = supabase.buildMonthOverviewFromMatches('2026-09', matches, {
+      '2026-09-10': { A: { elo: 1016, previousElo: 1000 } },
+      '2026-09-24': { A: { elo: 1030.56, previousElo: 1016 } },
+    });
+    expect(overview).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: 'A', elo: 1030.56, previousElo: 1000 }),
+    ]));
+  });
+
+  it('does not use a later tournament baseline when the first rating is missing', () => {
+    const matches = [
+      { date: '2026-09-10', team1Player1Name: 'A', team1Player2Name: 'B', team2Player1Name: 'C', team2Player2Name: 'D', scoreTeam1: 13, scoreTeam2: 10 },
+      { date: '2026-09-24', team1Player1Name: 'A', team1Player2Name: 'B', team2Player1Name: 'C', team2Player2Name: 'D', scoreTeam1: 13, scoreTeam2: 10 },
+    ];
+    const overview = supabase.buildMonthOverviewFromMatches('2026-09', matches, {
+      '2026-09-24': { A: { elo: 1030.56, previousElo: 1016 } },
+    });
+    expect(overview).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: 'A', elo: 1030.56, previousElo: null }),
+    ]));
+  });
+
   it('Home merges its days into already loaded matches instead of replacing them', async () => {
     const older = { date: '2025-01-02', team1Player1Name: 'X', team1Player2Name: 'Y', team2Player1Name: 'Z', team2Player2Name: 'W', scoreTeam1: 13, scoreTeam2: 5 };
     Store.setMatches([older]);

@@ -8,7 +8,7 @@ description: >
 # Home tab
 
 ## Purpose
-The Home tab is the desktop dashboard for route `/`. It is available to all users and summarizes the current state in a `dash-grid`: KPI row, active tournament, latest tournament, current month, ELO movers, and Explore links.
+The Home tab is the desktop dashboard for route `/`. It is available to all users and summarizes the current state in a `dash-grid`: KPI row, active tournament, latest tournament, current month, and their ELO movers.
 
 The page is implemented by `renderHome(container, params)` in `js/pages/home.js` and registered in `js/app.js` as `'/'`. Player names in dashboard tables link to the Players hub with `#/players?p=<name>`.
 
@@ -21,7 +21,7 @@ The page is implemented by `renderHome(container, params)` in `js/pages/home.js`
 - Latest tournament ELO is attached by `attachEloToStats(stats)`. It prefers `Store.getPlayersSummary()` (`elo` and `previousElo`) and falls back to `getEloSnapshots(Store.getMatches())` plus `getEloForDate(snapshots, latestDate)`.
 - Current month is calculated from the browser date as `YYYY-MM`; previous month is derived with `getPrevYearMonth(yearMonth)`.
 - Current-month stats are resolved by `resolveCurrentMonthStats()`. Primary source is `Store.getMonthlyOverview(currentYearMonth)`, converted by `overviewToStats(overview, prevOverview)`. Fallback source is local matches whose `date` starts with the current `YYYY-MM`.
-- `overviewToStats()` maps monthly overview rows to table stats and computes month-over-month `eloChange` by comparing current and previous monthly overview ELO values by player name.
+- `overviewToStats()` maps monthly overview rows to table stats and computes table `eloChange` from current and previous monthly overviews. Monthly movers use the current row's month-start `previousElo`, falling back to the previous overview when available.
 - Both tables have independent client-side sort state:
   - latest tournament: `sortCol`, `sortDir`, initially `average` / `desc`. The rendered column key is `avg`, so the first render keeps the `calculatePlayerStatistics()` order until the user clicks a sortable header;
   - current month: `sortCol2`, `sortDir2`, initially `avg` / `desc`.
@@ -41,7 +41,7 @@ The page is implemented by `renderHome(container, params)` in `js/pages/home.js`
 - The title also contains `#app-refresh-btn` (refresh icon `↻`). Its click stops propagation (so the clear-cache handler does not fire) and calls `refreshApp()` from `js/version.js`, which clears all caches and reloads.
 - Tournament attendance confirmation is shown only when `shouldShowConfirmationPopup(activeTournament, currentUser)` returns true and no `#tournament-confirm-overlay` exists. Confirmation calls `confirmAttendanceAndPush(currentUser)` (which persists to Supabase), removes the overlay, and best-effort sends a Telegram alert.
 - `renderKpis()` fills `#home-kpis` with latest winner, latest player count, month average leader, tournaments this month, and active players this month. Async callbacks (month overview refresh) bail out when a newer render has replaced `#home-kpis`, so stale closures cannot overwrite the KPIs.
-- `renderMovers()` fills `#home-movers` with a compact latest-tournament ELO delta bar list.
+- `renderMovers()` fills `#home-movers` and `#home-month-movers` with compact latest-tournament and current-month ELO delta bar lists. The monthly list refreshes with the month overview; unknown month-start ratings are omitted. Local match fallback replays month ELO only when full history is available.
 - `renderNotificationBell()` mounts asynchronously into `#home-header-right`.
 - `State`, `calculateAllEloRankings`, and `getMembers` are imported in `home.js` but are not used by the current implementation.
 
@@ -66,12 +66,11 @@ The page is implemented by `renderHome(container, params)` in `js/pages/home.js`
   - `current_user` — current player name used for attendance confirmation.
   - `supabase_config` — enables route-scoped Supabase hydration.
   - cached `home_players_summary` — Home-only player rows with `name`, `elo`, and `previousElo`.
-  - cached `monthly_YYYY-MM` — monthly overview rows (`name, wins, losses, totalPoints, average, elo`), read from `player_monthly_summary` on Home (or derived from matches + ELO elsewhere).
+  - cached `monthly_YYYY-MM` — monthly overview rows (`name, wins, losses, totalPoints, average, elo, previousElo`), read from `player_monthly_summary` on Home (or derived from matches + ELO elsewhere).
   - cached `tournaments_index` — entries with at least `date` and `isComplete`.
   - `confirmed` flag on each `active_tournament` player — hydrated from Supabase and used to suppress the confirmation popup.
-- Monthly overview rows are derived from date-scoped canonical matches and runtime ELO:
-  `{ name, totalPoints, wins, losses, average, elo }`.
-- `overviewToStats()` converts monthly rows to table rows: `{ name, wins, losses, points, average, winRate, elo, eloChange }`.
+- Monthly overview rows contain `{ name, totalPoints, wins, losses, average, elo, previousElo }`, where `previousElo` is the rating before the player's first tournament in the month.
+- `overviewToStats()` converts monthly rows to table rows: `{ name, wins, losses, points, average, winRate, elo, eloChange, monthlyEloChange }`.
 - `calculatePlayerStatistics()` returns table-compatible rows from raw matches, including `{ rank, name, wins, losses, points, wl, average, winRate, ... }`.
 - `ensureDayMatchesLoaded(date)` reuses or fetches the date-scoped Supabase tournament hydration
   and returns only that day's matches.
@@ -84,8 +83,7 @@ Home has no sub-tabs. It has these dashboard sections:
 - Active Tournament — live tournament card linking to `#/tournament/<date>`.
 - Latest Tournament — sortable table for latest completed day; player names link to `#/players?p=<name>`.
 - Current Month — sortable current-month overview table; player names link to `#/players?p=<name>`.
-- ELO movers — compact latest-tournament ELO gain/loss list with a link to ELO Charts.
-- Explore — cards linking to Players, Statistics, ELO Charts, and Tournaments.
+- ELO movers — latest-tournament and current-month gain/loss lists with links to ELO Charts, each directly below its corresponding table.
 - Attendance confirmation popup — modal confirmation for a registered current user in an active tournament.
 
 ## Related Feature Docs

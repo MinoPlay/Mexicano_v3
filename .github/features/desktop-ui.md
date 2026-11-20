@@ -103,8 +103,7 @@ Zero-zero matches (0-0) ignored everywhere (same as statistics service).
   players:[{ name, months[12], total }] }` sorted total desc; counts distinct dates per player.
 
 ## Pages
-- **Home** — dashboard: KPI row, latest tournament leaderboard, current month table,
-  ELO movers of latest tournament, active tournament card. Confirmation popup unchanged.
+- **Home** — dashboard: KPI row, active tournament card, and side-by-side latest tournament and current month tables, each with its ELO movers directly below. There is no Explore panel. Confirmation popup unchanged.
   Async month-overview refreshes from a superseded render must not touch the KPI row
   (otherwise "Latest winner"/"Players last time" get blanked to "—").
 - **Players** `/players` (NEW, nav item 👥) — split view. Left: data-grid of `buildPlayerRows`

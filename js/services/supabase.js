@@ -567,10 +567,11 @@ function hydrateMonthlyProjections(appMatches, eloByName) {
 
   const monthlyElo = new Map();
   for (const [name, history] of eloByName) {
-    for (const { date, elo } of history) {
+    for (const { date, elo, previous_elo } of history) {
       const month = date.slice(0, 7);
       const eloByPlayer = monthlyElo.get(month) || new Map();
-      eloByPlayer.set(name, { date, elo });
+      const previousElo = eloByPlayer.get(name)?.previousElo ?? previous_elo;
+      eloByPlayer.set(name, { date, elo, previousElo });
       monthlyElo.set(month, eloByPlayer);
     }
   }
@@ -584,6 +585,7 @@ function hydrateMonthlyProjections(appMatches, eloByName) {
       totalPoints: row.points,
       average: row.average,
       elo: eloByPlayer.get(row.name)?.elo ?? null,
+      previousElo: eloByPlayer.get(row.name)?.previousElo ?? null,
     }));
     Cache.set(`monthly_${month}`, overview);
   }
@@ -995,6 +997,13 @@ function latestCompletedDate() {
 export function buildMonthOverviewFromMatches(yearMonth, matches = [], eloByDate = {}) {
   const monthMatches = (matches || []).filter((match) => match.date?.startsWith(yearMonth));
   const monthElo = {};
+  const firstMatchDates = new Map();
+  for (const match of monthMatches) {
+    if (match.scoreTeam1 === 0 && match.scoreTeam2 === 0) continue;
+    for (const name of [match.team1Player1Name, match.team1Player2Name, match.team2Player1Name, match.team2Player2Name]) {
+      if (!firstMatchDates.has(name) || match.date < firstMatchDates.get(name)) firstMatchDates.set(name, match.date);
+    }
+  }
   for (const date of [...new Set(monthMatches.map((match) => match.date).filter(Boolean))].sort()) {
     Object.assign(monthElo, eloByDate[date] || {});
   }
@@ -1006,6 +1015,7 @@ export function buildMonthOverviewFromMatches(yearMonth, matches = [], eloByDate
     totalPoints: row.points,
     average: row.average,
     elo: monthElo[row.name]?.elo ?? null,
+    previousElo: eloByDate[firstMatchDates.get(row.name)]?.[row.name]?.previousElo ?? null,
   }));
   Cache.set(`monthly_${yearMonth}`, overview);
 
@@ -1211,6 +1221,7 @@ function monthSummaryRowsToOverview(rows, byId) {
       totalPoints: Number(row.points) || 0,
       average: Number(row.average) || 0,
       elo: row.elo == null ? null : Number(row.elo),
+      previousElo: row.previous_elo == null ? null : Number(row.previous_elo),
     });
     byMonth.set(row.year_month, overview);
   }
@@ -1255,7 +1266,7 @@ async function loadHomeRoute() {
     loadActiveTournament(),
     selectAll(
       'player_monthly_summary',
-      `select=year_month,player_id,wins,losses,points,games,average,elo&year_month=in.(${previousMonth},${month})`,
+      `select=year_month,player_id,wins,losses,points,games,average,elo,previous_elo&year_month=in.(${previousMonth},${month})`,
     ).catch((error) => {
       if (isMissingSchemaError(error)) return null;
       throw error;

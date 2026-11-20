@@ -1,7 +1,7 @@
 import { Store } from '../store.js';
 import { Cache } from '../cache.js';
 import { State } from '../state.js';
-import { calculateAllEloRankings, getEloSnapshots, getEloForDate } from '../services/elo.js';
+import { calculateAllEloRankings, getEloSnapshots, getEloForDate, getEloForMonth } from '../services/elo.js';
 import { getLatestCompleteTournamentDate, getActiveTournament, confirmAttendanceAndPush } from '../services/tournament.js';
 import { getMembers } from '../services/members.js';
 import { calculatePlayerStatistics } from '../services/statistics.js';
@@ -66,6 +66,10 @@ function overviewToStats(overview, prevOverview = []) {
     const eloChange = elo != null && prevElo != null
       ? Math.round((elo - prevElo) * 100) / 100
       : null;
+    const monthStartElo = p.previousElo ?? prevElo;
+    const monthlyEloChange = elo != null && monthStartElo != null
+      ? Math.round((elo - monthStartElo) * 100) / 100
+      : null;
     return {
       name: p.name,
       wins: p.wins,
@@ -75,6 +79,7 @@ function overviewToStats(overview, prevOverview = []) {
       winRate: totalMatches > 0 ? Math.round((p.wins / totalMatches) * 100 * 100) / 100 : 0,
       elo,
       eloChange,
+      monthlyEloChange,
     };
   });
 }
@@ -164,6 +169,16 @@ export function renderHome(container, params) {
           if (p) {
             stat.elo = p.elo;
             stat.eloChange = Math.round(((p.elo ?? 1000) - (p.previousElo ?? 1000)) * 100) / 100;
+          }
+        }
+      }
+      if (!Store.getSupabaseConfig() || Store.isMatchesFullyLoaded()) {
+        const { snapshots } = getEloSnapshots(Store.isMatchesFullyLoaded() ? Store.getMatches() : allMatches);
+        const monthElo = getEloForMonth(snapshots, currentYearMonth);
+        for (const stat of stats) {
+          if (monthElo[stat.name]) {
+            stat.monthlyEloChange = monthElo[stat.name].eloChange;
+            stat.monthlyElo = monthElo[stat.name].elo;
           }
         }
       }
@@ -496,49 +511,49 @@ export function renderHome(container, params) {
             </div>
           </a>` : ''}
 
-        <div class="panel span-6">
-          <div class="panel-header">
-            <span class="panel-title">Latest Tournament</span>
-            ${latestDate ? `<a class="text-sm" href="#/tournament/${latestDate}">${formatDate(latestDate)} →</a>` : ''}
-          </div>
-          <div class="panel-body flush">
-          ${latestTournamentStats.length === 0 ? `
-            <div id="latest-no-data" class="text-sm text-secondary text-center" style="padding:var(--space-md);">
-              No tournament data available
+        <div class="span-6 stack">
+          <div class="panel">
+            <div class="panel-header">
+              <span class="panel-title">Latest Tournament</span>
+              ${latestDate ? `<a class="text-sm" href="#/tournament/${latestDate}">${formatDate(latestDate)} →</a>` : ''}
             </div>
-          ` : `
-            <div class="latest-tournament-table" id="latest-tournament-table">
-              <!-- Table rendered by renderTable() -->
+            <div class="panel-body flush">
+            ${latestTournamentStats.length === 0 ? `
+              <div id="latest-no-data" class="text-sm text-secondary text-center" style="padding:var(--space-md);">
+                No tournament data available
+              </div>
+            ` : `
+              <div class="latest-tournament-table" id="latest-tournament-table">
+                <!-- Table rendered by renderTable() -->
+              </div>
+            `}
             </div>
-          `}
+          </div>
+          <div class="panel">
+            <div class="panel-header">
+              <span class="panel-title">ELO movers — latest tournament</span>
+              <a class="text-sm" href="#/elo-charts">ELO charts →</a>
+            </div>
+            <div class="panel-body" id="home-movers"></div>
           </div>
         </div>
 
-        <div class="panel span-6">
-          <div class="panel-header">
-            <span class="panel-title">Current Month</span>
-            <span class="text-sm text-secondary">${formatMonth(currentYearMonth)}</span>
+        <div class="span-6 stack">
+          <div class="panel">
+            <div class="panel-header">
+              <span class="panel-title">Current Month</span>
+              <span class="text-sm text-secondary">${formatMonth(currentYearMonth)}</span>
+            </div>
+            <div class="panel-body flush" id="current-month-table">
+              ${currentMonthStats.length === 0 ? `<p id="current-month-no-data" class="text-sm text-secondary text-center" style="padding:var(--space-md);">No data for this month</p>` : ''}
+            </div>
           </div>
-          <div class="panel-body flush" id="current-month-table">
-            ${currentMonthStats.length === 0 ? `<p id="current-month-no-data" class="text-sm text-secondary text-center" style="padding:var(--space-md);">No data for this month</p>` : ''}
-          </div>
-        </div>
-
-        <div class="panel span-6">
-          <div class="panel-header">
-            <span class="panel-title">ELO movers — latest tournament</span>
-            <a class="text-sm" href="#/elo-charts">ELO charts →</a>
-          </div>
-          <div class="panel-body" id="home-movers"></div>
-        </div>
-
-        <div class="panel span-6">
-          <div class="panel-header"><span class="panel-title">Explore</span></div>
-          <div class="panel-body kpi-row">
-            <a class="kpi" href="#/players"><div class="kpi-label">👥 Players</div><div class="kpi-sub">Full profiles, partners, nemesis</div></a>
-            <a class="kpi" href="#/statistics"><div class="kpi-label">📊 Statistics</div><div class="kpi-sub">Periods &amp; pair heatmaps</div></a>
-            <a class="kpi" href="#/elo-charts"><div class="kpi-label">📈 ELO</div><div class="kpi-sub">Rating history</div></a>
-            <a class="kpi" href="#/tournaments"><div class="kpi-label">📋 Tournaments</div><div class="kpi-sub">All results</div></a>
+          <div class="panel">
+            <div class="panel-header">
+              <span class="panel-title">ELO movers — current month</span>
+              <a class="text-sm" href="#/elo-charts">ELO charts →</a>
+            </div>
+            <div class="panel-body" id="home-month-movers"></div>
           </div>
         </div>
       </div>
@@ -547,12 +562,12 @@ export function renderHome(container, params) {
 
   const kpisEl = container.querySelector('#home-kpis');
 
-  function renderMovers() {
-    const el = container.querySelector('#home-movers');
+  function renderMovers(selector, stats, deltaKey) {
+    const el = container.querySelector(selector);
     if (!el) return;
-    const rows = latestTournamentStats
-      .filter(s => s.eloChange != null)
-      .map(s => ({ name: s.name, delta: s.eloChange, elo: s.elo }))
+    const rows = stats
+      .filter(s => s[deltaKey] != null)
+      .map(s => ({ name: s.name, delta: s[deltaKey], elo: s.monthlyElo ?? s.elo }))
       .sort((a, b) => b.delta - a.delta);
     if (!rows.length) { el.innerHTML = '<p class="text-sm text-secondary">No ELO data</p>'; return; }
     const max = Math.max(...rows.map(r => Math.abs(r.delta)), 1);
@@ -585,7 +600,8 @@ export function renderHome(container, params) {
 
   // Render table after DOM is ready
   renderKpis();
-  renderMovers();
+  renderMovers('#home-movers', latestTournamentStats, 'eloChange');
+  renderMovers('#home-month-movers', currentMonthStats, 'monthlyEloChange');
   if (latestTournamentStats.length > 0) {
     renderTable();
   } else if (latestDate && Store.getSupabaseConfig()) {
@@ -606,7 +622,7 @@ export function renderHome(container, params) {
           noDataEl.textContent = '';
           renderTable();
           renderKpis();
-          renderMovers();
+          renderMovers('#home-movers', latestTournamentStats, 'eloChange');
         } else {
           noDataEl.textContent = 'No tournament data available';
         }
@@ -646,6 +662,7 @@ export function renderHome(container, params) {
         tableEl.innerHTML = '';
         renderCurrentMonthTable();
         renderKpis();
+        renderMovers('#home-month-movers', currentMonthStats, 'monthlyEloChange');
       } else {
         const nd = container.querySelector('#current-month-no-data');
         if (nd) nd.textContent = 'No data for this month';

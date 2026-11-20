@@ -1,7 +1,7 @@
 # Home Page — Current Month Table
 
 ## Summary
-Below the "Latest Tournament" table on the home page, a second table shows aggregated stats for **the current calendar month**.
+The home page shows Latest Tournament and Current Month tables side by side, with each table's ELO movers directly below it. On narrow screens the two table-and-movers pairs stack.
 
 ---
 
@@ -9,20 +9,13 @@ Below the "Latest Tournament" table on the home page, a second table shows aggre
 
 | Source | Path |
 |--------|------|
-| Primary | Supabase matches for the current and previous calendar months; ELO calculated at runtime from the full match history |
+| Primary | Supabase `player_monthly_summary` for the current and previous calendar months, including month-start ELO |
 | Latest tournament | Supabase matches for the latest completed tournament |
 | Fallback | Previously cached local matches |
 
-- Home hydration fetches players and lightweight tournament metadata first.
-- Tournament metadata must not embed historical matches; Home only needs tournament dates,
-  completion state, and roster metadata.
-- It then fetches the full match history (with embedded player slots). ELO and ELO change are
-  calculated at runtime from all matches; stats tables and `home_matches` use only the current
-  month, previous month, and latest completed tournament.
-- Doodle availability and attendance records are not Home dependencies and must not be
-  requested. There is no stored ELO table.
-- Partial Home matches and player summary live in Home-specific in-memory cache entries. They
-  must not overwrite `Store.getMatches()` or masquerade as fully hydrated history for other tabs.
+- Home hydration fetches players, tournament metadata, active tournament and the monthly summaries, then the latest completed tournament's matches and ELO.
+- If precomputed summaries are unavailable, Home loads matches and ELO for the current and previous months and latest tournament. See `route-data-loading.md`.
+- Doodle availability and attendance records are not Home dependencies.
 - Current and previous monthly projections remain available through
   `Store.getMonthlyOverview(yearMonth)`.
 
@@ -43,24 +36,24 @@ Same columns as the statistics page monthly view.
 - Shows "No data for this month" when no matches exist for current month
 - Uses route-scoped Supabase hydration when configured; otherwise uses local match data
 - If the current month projection is empty, falls back to computing stats from cached raw matches
+- **"ELO movers — latest tournament"** sits directly below Latest Tournament, and **"ELO movers — current month"** sits directly below Current Month. Both use the same bars, ordering, rounded deltas, ratings and ELO charts link.
+- The Home dashboard does not show an Explore container.
+- Monthly movers use each player's change from their ELO before their first tournament this month to their latest ELO this month, even if they did not play last month. Unknown changes are omitted; if none are known, show "No ELO data". Never treat a latest-tournament delta as a monthly delta.
+- Refresh the monthly movers when a pending monthly overview finishes loading; an older render must not overwrite a newer render.
 
 ## Acceptance
 
-- At `2026-09-25`, Home with August and September tournaments => three logical PostgREST
-  resources: players, tournament metadata, and all matches (no tournament filter).
-- A July match plus a September match (A+B beat C+D 13-10 both times) => Home summary
-  `A` has `elo 1030.56`, `previousElo 1016`, `wins 1` (wins only from relevant months);
-  `monthly_2026-09` has `A elo 1030.56`, `C elo 970.84`.
+- Home layout => Latest Tournament followed by its ELO movers, alongside Current Month followed by its ELO movers; no Explore container.
+- Month overview `Ann: elo 1030, previousElo 1000`, `Bob: elo 980, previousElo 1000` => movers `Ann +30.0 1030`, then `Bob -20.0 980`, regardless of last month's participation.
+- Empty overview or unknown month-start ratings => "No ELO data".
+- A delayed overview update => monthly movers render the freshly loaded month values.
 - Home refresh => zero doodle-availability or attendance-record requests.
 - Re-rendering Home after route hydration => no second PostgREST batch.
-- Current/previous-month page requests racing Home startup => join the Home hydration promise;
-  they must not start the six-resource full-history snapshot.
-- Existing full-history `Store.getMatches()` => unchanged by partial Home hydration.
 
 ---
 
 ## File References
 
 - **Page logic**: `js/pages/home.js` — `renderCurrentMonthTable()` function
-- **Data fetch**: `js/services/supabase.js` — Home route hydration through `pullForRoute('#/')`
+- **Data fetch**: `js/services/supabase.js` — Home route hydration and month-start ELO through `pullForRoute('#/')`
 - **Store**: `js/store.js` — `getMonthlyOverview(yearMonth)`
