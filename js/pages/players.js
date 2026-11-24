@@ -46,8 +46,8 @@ export const PLAYER_COLUMNS = [
   { key: 'lastPlayed', label: 'Last', type: 'str', defaultDir: 'desc', format: formatShortDate },
 ];
 
-function kpi(label, value, sub = '') {
-  return `<div class="kpi"><div class="kpi-label">${label}</div><div class="kpi-value num">${value}</div>${sub ? `<div class="kpi-sub">${sub}</div>` : ''}</div>`;
+function kpi(label, value, sub = '', title = '') {
+  return `<div class="kpi"${title ? ` title="${title}"` : ''}><div class="kpi-label">${label}</div><div class="kpi-value num">${value}</div>${sub ? `<div class="kpi-sub">${sub}</div>` : ''}</div>`;
 }
 
 function pick(label, entry, nameKey) {
@@ -88,7 +88,7 @@ function renderDetail(el, name, matches, row, onPlayer) {
             ${kpi('Avg pts', gp ? (s.totalPoints / gp).toFixed(1) : '—', `${s.totalPoints} total`)}
             ${kpi('Tournaments', s.totalTournaments, `avg place ${avgPlace}`)}
             ${kpi('Podiums', `${s.firstPlaceFinishes}/${s.secondPlaceFinishes}/${s.thirdPlaceFinishes}`, '🥇/🥈/🥉')}
-            ${kpi('Win types', `${s.tightWins}/${s.solidWins}/${s.dominatingWins}`, 'tight/solid/dominant')}
+            ${kpi('Win types', `${s.tightWins}/${s.solidWins}/${s.dominatingWins}`, 'tight/solid/dominant', 'Tight: won 13-12. Solid: won with 14-18 points. Dominant: won with 19+ points.')}
           </div>
           <div class="player-picks">
             ${pick('Best partner', d.bestPartner, 'partnerName')}
