@@ -206,8 +206,10 @@ input, select, textarea {
 .kpi-value { font-size: var(--font-size-2xl); font-weight: var(--font-weight-bold); line-height: 1.2; }
 .kpi-label { font-size: var(--font-size-xs); color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.04em; }
 .kpi-sub { font-size: var(--font-size-xs); color: var(--text-tertiary); }
-.split-detail .kpi-row { grid-template-columns: repeat(auto-fit, minmax(6.5rem, 1fr)); }
 .split-detail .kpi { padding: var(--space-xs) var(--space-sm); }
+.split-detail .kpi-row { display: flex; flex-wrap: wrap; }
+.split-detail .kpi { flex: 1 1 auto; }
+.split-detail .kpi-value, .split-detail .kpi-sub { white-space: nowrap; }
 
 .pos { color: var(--color-success); }
 .neg { color: var(--color-danger); }

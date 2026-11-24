@@ -62,7 +62,8 @@ describe('desktop responsive layout', () => {
   it('gives the Players table priority and keeps selected-player cards compact', () => {
     const css = read('css/desktop.css');
 
-    expect(css).toMatch(/\.split-detail \.kpi-row\s*\{[^}]*minmax\(6\.5rem,\s*1fr\)/s);
+    expect(css).toMatch(/\.split-detail \.kpi-row\s*\{[^}]*display:\s*flex/s);
+    expect(css).toMatch(/\.split-detail \.kpi-value,[^{]*\{[^}]*white-space:\s*nowrap/s);
     expect(css).toMatch(/\.split-detail \.kpi\s*\{[^}]*padding:\s*var\(--space-xs\)\s+var\(--space-sm\)/s);
     expect(css).toMatch(/\.data-grid th\s*\{[^}]*padding:\s*0\.45em\s+0\.55em/s);
     expect(css).toMatch(/\.data-grid td\s*\{[^}]*padding:\s*0\.4em\s+0\.55em/s);
