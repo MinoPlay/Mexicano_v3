@@ -20,7 +20,7 @@ export const PINNED_ANNOUNCEMENTS = [
 
 📌 RULES:
 • We play at 6:00 SHARP – you count as "on time" when you're standing on the court ready to play. Not in the locker room, not in the parking lot. 😉
-• Fines are paid to the MobilePay box immediately – no running tabs.
+• Fines are paid to the MobilePay box 0675SW immediately – no running tabs.
 • No exceptions and no negotiating – same rules for everyone, and that's exactly what keeps it fair.
 
 🍻 AND THE BEST PART:
